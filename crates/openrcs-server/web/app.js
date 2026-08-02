@@ -1,0 +1,402 @@
+// openrcs control surface — vanilla ES module, no build step.
+
+// ---------- tiny DOM helper ----------
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    n.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return n;
+}
+const keyOf = (m, idx) => m + '|' + idx.join(',');
+
+// ---------- known LiveCore device models (by DEV_PLATFORM id) ----------
+const MODELS = {
+  97: 'NeXtage 16', 96: 'NeXtage 08',
+  98: 'Ascender 16', 99: 'Ascender 32', 100: 'Ascender 48',
+  101: 'SmartMatriX Ultra', 112: 'VIO 4K',
+};
+
+// ---------- store ----------
+class Store {
+  constructor() {
+    this.state = new Map();          // "MNEM|i,i" -> value
+    this.byMnem = new Map();         // mnemonic -> def
+    this.byGroup = new Map();        // group -> [def]
+    this.meta = null;
+    this.connected = false;
+    this.log = [];                   // {dir, text}
+    this.listeners = new Set();
+    this._pending = false;
+    this.connect();
+  }
+  connect() {
+    this.ws = new WebSocket(`ws://${location.host}/ws`);
+    this.ws.onmessage = (e) => this.onMsg(JSON.parse(e.data));
+    this.ws.onclose = () => { this.connected = false; this.notify(); setTimeout(() => this.connect(), 1500); };
+  }
+  onMsg(m) {
+    switch (m.t) {
+      case 'meta':
+        this.meta = m;
+        for (const v of m.vars) {
+          this.byMnem.set(v.m, v);
+          if (!this.byGroup.has(v.group)) this.byGroup.set(v.group, []);
+          this.byGroup.get(v.group).push(v);
+        }
+        onReady();
+        break;
+      case 'snap':
+        for (const [mn, i, v] of m.items) this.state.set(keyOf(mn, i), v);
+        break;
+      case 'val':
+        this.state.set(keyOf(m.m, m.i), m.v);
+        this.pushLog('rx', `${m.m}${m.i.length ? ' ' + m.i.join(',') : ''} = ${m.v}`);
+        break;
+      case 'err':
+        this.pushLog('er', `E${m.code}`);
+        break;
+      case 'status':
+        this.connected = m.connected;
+        break;
+    }
+    this.notify();
+  }
+  pushLog(dir, text) {
+    this.log.push({ dir, text });
+    if (this.log.length > 400) this.log.shift();
+  }
+  // value accessor, by answer mnemonic (what the device sends)
+  val(m, ...idx) { return this.state.get(keyOf(m, idx)); }
+  arr(m, n) { return Array.from({ length: n }, (_, i) => this.val(m, i)); }
+
+  send(o) { if (this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
+  set(m, idx, v) { this.send({ t: 'set', m, i: idx, v }); this.pushLog('tx', `${m} ${[...idx, v].join(',')}`); }
+  get(m, idx = []) { this.send({ t: 'get', m, i: idx }); }
+  scan(m) { this.send({ t: 'scan', m }); }
+  raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
+
+  subscribe(fn) { this.listeners.add(fn); }
+  notify() {
+    if (this._pending) return;
+    this._pending = true;
+    requestAnimationFrame(() => { this._pending = false; this.listeners.forEach(f => f()); });
+  }
+}
+
+// ---------- app shell ----------
+const store = new Store();
+let currentView = 'memories';
+const VIEWS = {};
+
+function onReady() {
+  store.get('?');            // DEV
+  store.get('!');            // DEV_PLATFORM -> PDEV
+  VIEWS.memories.enter();
+}
+
+function header() {
+  const dev = store.val('PDEV');
+  const model = dev != null ? (MODELS[dev] || `device ${dev}`) : '—';
+  const plat = store.meta ? store.meta.platform : '';
+  return el('header', { class: 'head' },
+    el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
+    el('div', { class: 'dev-id' },
+      el('div', { class: 'model', text: model }),
+      el('div', { class: 'sub', text: `${plat.toUpperCase()} · :${store.meta?.port ?? ''}` })),
+    el('div', { class: 'spacer' }),
+    el('div', { class: 'legend' },
+      el('span', { class: 'pgm' }, el('b'), 'program'),
+      el('span', { class: 'pvw' }, el('b'), 'preview')),
+    el('div', { class: 'chip ' + (store.connected ? 'on' : 'off') },
+      el('span', { class: 'dot' }), store.connected ? 'ONLINE' : 'OFFLINE'));
+}
+
+const NAV = [
+  ['memories', 'Memories'],
+  ['live', 'Live'],
+  ['screens', 'Screens'],
+  ['inspector', 'Inspector'],
+  ['console', 'Console'],
+];
+
+function nav() {
+  const n = el('nav', { class: 'nav' });
+  for (const [id, label] of NAV) {
+    n.append(el('button', {
+      class: id === currentView ? 'active' : '',
+      onclick: () => { currentView = id; VIEWS[id].enter?.(); render(); },
+    }, label));
+  }
+  n.append(el('div', { class: 'grow' }));
+  n.append(el('div', { class: 'foot', text: store.meta ? `${store.byMnem.size} vars` : 'connecting…' }));
+  return n;
+}
+
+function render() {
+  const root = document.getElementById('app');
+  // preserve focus + caret across full re-render (device frames re-render us)
+  const act = document.activeElement;
+  const fid = act && act.id ? act.id : null;
+  const selS = fid ? act.selectionStart : null;
+  const selE = fid ? act.selectionEnd : null;
+
+  root.replaceChildren(
+    header(),
+    nav(),
+    el('main', { class: 'main' }, VIEWS[currentView].render()),
+  );
+
+  if (fid) {
+    const next = document.getElementById(fid);
+    if (next) {
+      next.focus();
+      if (selS != null && next.setSelectionRange) {
+        try { next.setSelectionRange(selS, selE); } catch { /* non-text input */ }
+      }
+    }
+  }
+}
+
+store.subscribe(() => render());
+
+// ================= views =================
+
+// ---------- Memories ----------
+VIEWS.memories = (() => {
+  let scope = 'master';          // 'master' | 'screen'
+  let mode = 'recall';           // 'recall' | 'take' | 'save'
+  let screen = 0;
+  let selected = null;
+
+  function enter() {
+    store.scan('PSval');         // master validity
+    store.scan('PMscw');         // screen-memory content width (>0 = present)
+    store.scan('PMmly');         // stored layer count
+    store.scan('SCmly');         // per-screen max layers
+  }
+
+  function slotTap(n) {
+    selected = n;
+    if (scope === 'master') {
+      store.set('PSmet', [], n);                       // target slot
+      if (mode === 'recall') store.set('PSloa', [], 1);
+      else if (mode === 'take') store.set('PSlot', [], 1);
+      else if (mode === 'save') { store.set('PSprf', [], 0); store.set('PSsav', [], 1); store.scan('PSval'); }
+    } else {
+      store.set('PMscf', [], screen);
+      store.set('PMmet', [], n);
+      if (mode === 'recall') store.set('PMloa', [], 1);
+      else if (mode === 'take') store.set('PMlot', [], 1);
+      else if (mode === 'save') { store.set('PMprf', [], 0); store.set('PMsav', [], 1); store.scan('PMscw'); }
+    }
+    store.notify();
+  }
+
+  function grid() {
+    const g = el('div', { class: `mem-grid mode-${mode}` });
+    const N = 144;
+    for (let i = 0; i < N; i++) {
+      let valid, cls = 'slot';
+      if (scope === 'master') valid = store.val('PSval', i) === 1;
+      else valid = (store.val('PMscw', i) || 0) > 0;
+      if (valid) cls += ' valid';
+      if (selected === i) cls += ' sel';
+      g.append(el('button', { class: cls, onclick: () => slotTap(i) },
+        el('span', { class: 'num', text: i + 1 }),
+        valid ? el('span', { class: 'lbl', text: scope === 'screen' ? `${store.val('PMmly', i) ?? 0} lyr` : 'saved' }) : null));
+    }
+    return g;
+  }
+
+  function render() {
+    const validCount = scope === 'master'
+      ? store.arr('PSval', 144).filter(v => v === 1).length
+      : store.arr('PMscw', 144).filter(v => (v || 0) > 0).length;
+
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Memories' }),
+        el('span', { class: 'hint', text: `${validCount} saved · tap a slot to ${mode === 'save' ? 'save into' : mode === 'take' ? 'load + take' : 'recall to preview'}` })),
+
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('div', { class: 'seg' },
+            el('button', { class: scope === 'master' ? 'on recall' : '', onclick: () => { scope = 'master'; selected = null; render2(); } }, 'Master'),
+            el('button', { class: scope === 'screen' ? 'on recall' : '', onclick: () => { scope = 'screen'; selected = null; render2(); } }, 'Screen')),
+          scope === 'screen' ? el('label', { class: 'field' }, 'Screen',
+            screenSelect(screen, v => { screen = v; enter(); render2(); })) : null,
+          el('div', { class: 'spacer' }),
+          el('div', { class: 'seg' },
+            el('button', { class: 'recall ' + (mode === 'recall' ? 'on' : ''), onclick: () => { mode = 'recall'; render2(); } }, 'Recall'),
+            el('button', { class: 'take ' + (mode === 'take' ? 'on' : ''), onclick: () => { mode = 'take'; render2(); } }, 'Load + Take'),
+            el('button', { class: 'save ' + (mode === 'save' ? 'on' : ''), onclick: () => { mode = 'save'; render2(); } }, 'Save')))),
+
+      el('div', { class: 'panel' }, grid()));
+  }
+  const render2 = () => render && store.notify();
+
+  return { enter, render };
+})();
+
+function screenSelect(val, onchange) {
+  const s = el('select', { onchange: (e) => onchange(+e.target.value) });
+  for (let i = 0; i < 8; i++) {
+    const opt = el('option', { value: i, text: `Screen ${i + 1}` });
+    if (i === val) opt.selected = true;
+    s.append(opt);
+  }
+  return s;
+}
+
+// ---------- Live ----------
+VIEWS.live = (() => {
+  let screen = 0;
+  let ttime = 1000;
+
+  function enter() {
+    store.scan('SCmly');
+    for (let l = 0; l < 24; l++) { store.get('PRinp', [screen, 0, l]); store.get('PRlay', [screen, 0, l]); }
+    store.get('GCtup', [screen]);
+  }
+
+  function take() { store.set('GCtup', [screen], ttime); store.set('GCtku', [screen], 1); }
+  function cut() { store.set('GCtfr', [screen], 1); }
+
+  function layers() {
+    const max = store.val('SCmly', screen) || 0;
+    if (max === 0) return el('div', { class: 'empty-state', text: 'This screen has no layers. Configure it in Screens, or on the device, then layers appear here.' });
+    const wrap = el('div', { class: 'layers' });
+    for (let l = 0; l < max; l++) {
+      const src = store.val('PRinp', screen, 0, l);
+      const on = store.val('PRlay', screen, 0, l) === 1;
+      wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') },
+        el('span', { class: 'tag', text: 'L' + (l + 1) }),
+        el('span', { class: 'src', text: src != null ? (src === 0 ? '— none —' : 'IN ' + src) : '·' }),
+        el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, 0, l], on ? 0 : 1) }, on ? 'Hide' : 'Show')));
+    }
+    return wrap;
+  }
+
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Live' }),
+        el('span', { class: 'hint', text: 'Preview → Program transitions' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Screen', screenSelect(screen, v => { screen = v; enter(); store.notify(); })))),
+      el('div', { class: 'panel' },
+        el('h2', 'Take'),
+        el('div', { class: 'takebar' },
+          el('div', { class: 'tbar' },
+            el('label', { class: 'field' }, `Transition ${ (ttime/1000).toFixed(1) }s`,
+              el('input', { type: 'range', min: 0, max: 3000, step: 100, value: ttime,
+                oninput: (e) => { ttime = +e.target.value; store.notify(); } }))),
+          el('button', { class: 'btn pvw take-btn', onclick: cut }, 'CUT'),
+          el('button', { class: 'btn pgm take-btn', onclick: take }, 'TAKE'))),
+      el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers`), layers()));
+  }
+  return { enter, render };
+})();
+
+// ---------- Screens ----------
+VIEWS.screens = (() => {
+  function enter() { store.scan('SCmly'); store.scan('OSsou'); store.scan('SCsih'); store.scan('SCsiv'); }
+  function render() {
+    const rows = [];
+    for (let i = 0; i < 8; i++) {
+      const max = store.val('SCmly', i);
+      rows.push(el('tr', {},
+        el('td', { text: 'Screen ' + (i + 1) }),
+        el('td', { class: 'val', text: fmt(store.val('OSsou', i)) }),
+        el('td', { class: 'val', text: `${fmt(store.val('SCsih', i))}×${fmt(store.val('SCsiv', i))}` }),
+        el('td', { class: 'val', text: fmt(max) }),
+        el('td', {}, (max || 0) > 0 ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), 'active') : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'unused'))));
+    }
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Screens' }), el('span', { class: 'hint', text: 'Output screens and their layer capacity' })),
+      el('div', { class: 'panel' },
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Screen', 'Output', 'Size (mode)', 'Max layers', 'State'].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))));
+  }
+  return { enter, render };
+})();
+const fmt = (v) => v == null ? '·' : String(v);
+
+// ---------- Inspector (data-driven variable browser) ----------
+VIEWS.inspector = (() => {
+  let q = '';
+  function render() {
+    const matches = [];
+    if (store.meta) {
+      const needle = q.toLowerCase();
+      for (const v of store.byMnem.values()) {
+        if (!needle || v.m.toLowerCase().includes(needle) || v.name.toLowerCase().includes(needle) || v.group.toLowerCase().includes(needle)) {
+          matches.push(v);
+          if (matches.length > 200) break;
+        }
+      }
+    }
+    const rows = matches.map(v => {
+      const cur = store.val(v.m, ...v.dims.map(() => 0));
+      return el('tr', {},
+        el('td', { text: v.m }),
+        el('td', { style: 'font-family:var(--sans)', text: v.name }),
+        el('td', { class: 'val', text: v.dims.length ? '[' + v.dims.join(',') + ']' : '·' }),
+        el('td', { class: 'val', text: `${v.min}…${v.max}` }),
+        el('td', { class: 'val', text: cur == null ? '·' : cur }),
+        el('td', {},
+          el('button', { class: 'btn ghost', onclick: () => v.dims.length ? store.scan(v.m) : store.get(v.m) }, 'Read'),
+          v.ro ? null : el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: () => {
+            const val = prompt(`Set ${v.name} (${v.min}…${v.max})`, cur ?? v.min);
+            if (val !== null) store.set(v.m, v.dims.map(() => 0), +val);
+          } }, 'Set')));
+    });
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inspector' }),
+        el('span', { class: 'hint', text: 'Every variable the device exposes — search, read, set' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('input', { id: 'insp-search', type: 'text', placeholder: 'search mnemonic / name / group…', value: q, style: 'flex:1',
+            oninput: (e) => { q = e.target.value; store.notify(); } }),
+          el('span', { class: 'hint', text: `${matches.length}${matches.length > 200 ? '+' : ''} shown` }))),
+      el('div', { class: 'panel', style: 'overflow:auto' },
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Mnem', 'Name', 'Dims', 'Range', 'Value@0', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))));
+  }
+  return { render };
+})();
+
+// ---------- Console ----------
+VIEWS.console = (() => {
+  let input = '';
+  function render() {
+    const log = el('div', { class: 'log' });
+    for (const e of store.log.slice(-300)) {
+      log.append(el('div', { class: 'line ' + (e.dir === 'tx' ? 'tx' : e.dir === 'er' ? 'er' : 'rx'), text: (e.dir === 'tx' ? '» ' : e.dir === 'er' ? '✗ ' : '« ') + e.text }));
+    }
+    requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Console' }),
+        el('span', { class: 'hint', text: 'Raw protocol — sent and received frames' })),
+      el('div', { class: 'console' }, log,
+        el('div', { class: 'row' },
+          el('input', { id: 'con-input', type: 'text', placeholder: 'raw line, e.g.  0,VEvar', value: input, style: 'flex:1',
+            oninput: (e) => input = e.target.value,
+            onkeydown: (e) => { if (e.key === 'Enter' && input.trim()) { store.raw(input.trim()); input = ''; e.target.value = ''; store.notify(); } } }),
+          el('button', { class: 'btn', onclick: () => { if (input.trim()) { store.raw(input.trim()); store.notify(); } } }, 'Send'))));
+  }
+  return { render };
+})();
+
+render();

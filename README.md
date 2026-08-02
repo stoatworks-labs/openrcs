@@ -19,9 +19,27 @@ per-variable dimensions, ranges, and read-only flags. The codec is confirmed
 against LiveCore device behaviour; the Midra table has not yet been exercised
 against a device.
 
-Roadmap: a system-tray server with a web UI, then a standalone gateway (Pi or
-ESP32) that sits on the network between the processor and its clients. The
-protocol engine is `no_std`-friendly so the same code backs all of them.
+`openrcs-server` adds a browser control surface over that engine (see below).
+Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
+ESP32) between the processor and its clients. The protocol engine is
+`no_std`-friendly so the same code backs all of them.
+
+## Web control surface
+
+`openrcs-server` bridges a browser control panel to a processor: it holds one
+TCP connection to the device, caches state, and relays a small JSON protocol
+over a websocket to any number of browsers.
+
+```bash
+cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
+# then open http://127.0.0.1:8730/
+```
+
+The UI covers **Memories** (master and per-screen memory grids — recall, load +
+take, save), **Live** (preview→program take with a transition time),
+**Screens** (output/layer overview), an **Inspector** over every one of the
+device's variables, and a raw-protocol **Console**. It's a dependency-free
+vanilla ES-module app served by the server — no build step.
 
 ## Using the crate
 

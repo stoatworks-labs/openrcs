@@ -15,12 +15,19 @@ compatibility.
 ## Layout
 
 ```
-crates/openrcs-proto/   protocol engine: codec, tables, validation
+crates/openrcs-proto/   protocol engine: codec, tables, validation (no_std)
   src/codec.rs          encode/decode; the only place the wire format lives
   src/tables.rs         GENERATED from protocol/*.json — never hand-edit
+crates/openrcs-server/  bridge server (tokio/axum) + web control surface
+  src/hub.rs            one TCP link to the device + state cache + broadcast
+  src/main.rs           HTTP/WS, the browser JSON protocol
+  web/                  vanilla ES-module SPA, no build step
 protocol/*.json         source of truth for the variable tables
 docs/PROTOCOL.md        the wire protocol
 ```
+
+Only `openrcs-proto` is `no_std` and dependency-free; the server is a normal
+std binary and may use crates. Keep the split.
 
 ## Hard rules
 
