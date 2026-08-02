@@ -86,11 +86,17 @@ class Store {
 
   subscribe(fn) { this.listeners.add(fn); }
   notify() {
+    if (DRAG) { this._deferred = true; return; }   // don't rebuild a slider mid-drag
     if (this._pending) return;
     this._pending = true;
     requestAnimationFrame(() => { this._pending = false; this.listeners.forEach(f => f()); });
   }
 }
+
+// suppress re-render while a slider thumb is held, so the drag isn't interrupted
+let DRAG = false;
+function beginDrag() { DRAG = true; }
+function endDrag() { DRAG = false; if (store._deferred) { store._deferred = false; store.notify(); } }
 
 // ---------- app shell ----------
 const store = new Store();
@@ -123,6 +129,7 @@ function header() {
 const NAV = [
   ['memories', 'Memories'],
   ['live', 'Live'],
+  ['layers', 'Layers'],
   ['screens', 'Screens'],
   ['inspector', 'Inspector'],
   ['console', 'Console'],
@@ -257,6 +264,44 @@ function screenSelect(val, onchange) {
   return s;
 }
 
+// throttle device sets during slider drags (per mnemonic+index)
+const _throttle = new Map();
+function throttledSet(m, idx, v) {
+  const k = m + '|' + idx.join(',');
+  const now = performance.now();
+  const last = _throttle.get(k) || 0;
+  if (now - last > 40) { _throttle.set(k, now); store.set(m, idx, v); }
+  else { clearTimeout(_throttle.get(k + ':t')); _throttle.set(k + ':t', setTimeout(() => store.set(m, idx, v), 45)); }
+}
+
+function sourceName(n) { return n == null ? '·' : n === 0 ? '— none —' : 'IN ' + n; }
+
+function sourceSelect(mnem, idx, max = 41) {
+  const cur = store.val(mnem, ...idx);
+  const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
+  for (let i = 0; i <= max; i++) {
+    const opt = el('option', { value: i, text: sourceName(i) });
+    if (i === (cur ?? 0)) opt.selected = true;
+    s.append(opt);
+  }
+  return s;
+}
+
+// a labelled slider bound to a device variable at (mnem, idx)
+function bind(label, mnem, idx, min, max, step = 1, fmt = (v) => v) {
+  const def = store.byMnem.get(mnem);
+  const lo = min ?? def?.min ?? 0, hi = max ?? def?.max ?? 100;
+  const cur = store.val(mnem, ...idx);
+  const shown = cur == null ? '·' : fmt(cur);
+  return el('label', { class: 'field slider' },
+    el('span', {}, label, el('b', { class: 'sv', text: shown })),
+    el('input', {
+      type: 'range', min: lo, max: hi, step, value: cur ?? lo,
+      onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+      oninput: (e) => { throttledSet(mnem, idx, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); },
+    }));
+}
+
 // ---------- Live ----------
 VIEWS.live = (() => {
   let screen = 0;
@@ -297,12 +342,83 @@ VIEWS.live = (() => {
         el('h2', 'Take'),
         el('div', { class: 'takebar' },
           el('div', { class: 'tbar' },
-            el('label', { class: 'field' }, `Transition ${ (ttime/1000).toFixed(1) }s`,
+            el('label', { class: 'field slider' },
+              el('span', {}, 'Transition', el('b', { class: 'sv', text: (ttime / 1000).toFixed(1) + 's' })),
               el('input', { type: 'range', min: 0, max: 3000, step: 100, value: ttime,
-                oninput: (e) => { ttime = +e.target.value; store.notify(); } }))),
+                onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+                oninput: (e) => { ttime = +e.target.value; e.target.parentNode.querySelector('.sv').textContent = (ttime / 1000).toFixed(1) + 's'; } }))),
           el('button', { class: 'btn pvw take-btn', onclick: cut }, 'CUT'),
           el('button', { class: 'btn pgm take-btn', onclick: take }, 'TAKE'))),
       el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers`), layers()));
+  }
+  return { enter, render };
+})();
+
+// ---------- Layers ----------
+VIEWS.layers = (() => {
+  let screen = 0;
+  let ctx = 1;             // PRESET context: 0 = program, 1 = preview (edit here)
+  let sel = 0;            // selected layer
+
+  // working layer count: real if the screen is configured, else a default set
+  const count = () => { const m = store.val('SCmly', screen) || 0; return m > 0 ? m : 8; };
+
+  function enter() {
+    store.scan('SCmly');
+    const n = count();
+    for (let l = 0; l < n; l++) readLayer(l);
+  }
+  function readLayer(l) {
+    for (const m of ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
+      store.get(m, [screen, ctx, l]);
+  }
+
+  function stack() {
+    const n = count();
+    const wrap = el('div', { class: 'layers' });
+    for (let l = n - 1; l >= 0; l--) {           // top layer first, like a stack
+      const src = store.val('PRinp', screen, ctx, l);
+      const on = store.val('PRlay', screen, ctx, l) === 1;
+      wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
+        el('span', { class: 'tag', text: 'L' + (l + 1) }),
+        el('span', { class: 'src', text: sourceName(src) }),
+        el('button', {
+          class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], on ? 0 : 1); },
+        }, on ? 'Hide' : 'Show')));
+    }
+    return wrap;
+  }
+
+  function editor() {
+    const i = [screen, ctx, sel];
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Source', sourceSelect('PRinp', i)),
+        el('button', { class: 'btn ' + (store.val('PRlay', ...i) === 1 ? 'pgm' : 'ghost'), onclick: () => store.set('PRlay', i, store.val('PRlay', ...i) === 1 ? 0 : 1) },
+          store.val('PRlay', ...i) === 1 ? 'Visible' : 'Hidden')),
+      el('div', { class: 'grid2' },
+        bind('Opacity', 'PRalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'),
+        bind('Position H', 'PRpoh', i, 0, 131072, 256),
+        bind('Position V', 'PRpov', i, 0, 131072, 256),
+        bind('Size H', 'PRsih', i, 0, 65535, 128),
+        bind('Size V', 'PRsiv', i, 0, 65535, 128)));
+  }
+
+  function render() {
+    const configured = (store.val('SCmly', screen) || 0) > 0;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Layers' }),
+        el('span', { class: 'hint', text: `Screen ${screen + 1} · ${ctx === 1 ? 'Preview' : 'Program'} · layer ${sel + 1}` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Screen', screenSelect(screen, v => { screen = v; sel = 0; enter(); store.notify(); })),
+          el('div', { class: 'seg' },
+            el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
+            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+          !configured ? el('span', { class: 'hint', text: '⚠ screen not configured — edits are stored but won’t display until a screen is set up' }) : null)),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
+        el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor())));
   }
   return { enter, render };
 })();
