@@ -1,0 +1,7 @@
+/target
+*.swf
+*.vmdk
+*.raw
+*.ova
+__pycache__/
+*.pyc
