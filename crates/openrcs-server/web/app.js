@@ -127,17 +127,20 @@ function header() {
 }
 
 const NAV = [
-  ['memories', 'Memories'],
-  ['live', 'Live'],
-  ['layers', 'Layers'],
-  ['screens', 'Screens'],
-  ['inspector', 'Inspector'],
-  ['console', 'Console'],
+  { section: 'Program' },
+  ['memories', 'Memories'], ['live', 'Live'], ['layers', 'Layers'],
+  { section: 'Setup' },
+  ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
+  ['stills', 'Stills'], ['system', 'System'],
+  { section: 'Tools' },
+  ['inspector', 'Inspector'], ['console', 'Console'],
 ];
 
 function nav() {
   const n = el('nav', { class: 'nav' });
-  for (const [id, label] of NAV) {
+  for (const item of NAV) {
+    if (item.section) { n.append(el('div', { class: 'nav-sec', text: item.section })); continue; }
+    const [id, label] = item;
     n.append(el('button', {
       class: id === currentView ? 'active' : '',
       onclick: () => { currentView = id; VIEWS[id].enter?.(); render(); },
@@ -285,6 +288,24 @@ function sourceSelect(mnem, idx, max = 41) {
     s.append(opt);
   }
   return s;
+}
+
+// a toggle button bound to a 0/1 variable
+function toggleBtn(label, mnem, idx, onClass = 'pgm') {
+  const on = store.val(mnem, ...idx) === 1;
+  return el('button', { class: 'btn ' + (on ? onClass : 'ghost'), onclick: () => store.set(mnem, idx, on ? 0 : 1) }, label);
+}
+function boolChip(v, on = 'yes', off = 'no') {
+  return el('span', { class: 'chip ' + (v === 1 ? 'on' : 'off') }, el('span', { class: 'dot' }), v == null ? '·' : v === 1 ? on : off);
+}
+// green "ok" when fine, red "alarm" when a fault is present
+function alarmChip(bad, okText = 'ok', badText = 'alarm') {
+  if (bad == null) return el('span', { class: 'chip off' }, el('span', { class: 'dot' }), '·');
+  return el('span', { class: 'chip ' + (bad ? 'bad' : 'on') }, el('span', { class: 'dot' }), bad ? badText : okText);
+}
+function fmtIP(iface) {
+  const o = [0, 1, 2, 3].map(k => store.val('ITlip', iface, k));
+  return o.every(x => x != null) ? o.join('.') : '·';
 }
 
 // a labelled slider bound to a device variable at (mnem, idx)
@@ -447,6 +468,154 @@ VIEWS.screens = (() => {
   return { enter, render };
 })();
 const fmt = (v) => v == null ? '·' : String(v);
+// alarm truthiness: null stays null, else nonzero = fault
+const nz = (v) => v == null ? null : v !== 0;
+// card temperature in 0.1 °C units; 0 and 0xFFFF mean "no sensor"
+const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 10).toFixed(1) + ' °C';
+
+// ---------- Inputs ----------
+VIEWS.inputs = (() => {
+  const N = 24;
+  function enter() {
+    for (const m of ['INava', 'INplg', 'INfrz', 'INffz', 'INbla', 'INpat']) store.scan(m);
+    for (const m of ['ISspr', 'ISsva', 'IScfo', 'ISswi', 'ISshe']) store.scan(m);
+  }
+  function row(i) {
+    const avail = store.val('INava', i) === 1;
+    const plug = store.val('INplg', i) ?? 0;
+    const present = store.val('ISspr', i, plug);
+    const valid = store.val('ISsva', i, plug);
+    const w = store.val('ISswi', i, plug), h = store.val('ISshe', i, plug);
+    const frozen = store.val('INfrz', i) === 1;
+    const black = store.val('INbla', i) === 1;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'IN ' + (i + 1) }),
+      el('td', {}, boolChip(avail ? 1 : 0, 'ready', 'unused')),
+      el('td', { class: 'val', text: 'P' + (plug + 1) }),
+      el('td', {}, boolChip(valid === 1 ? 1 : present === 1 ? 0 : (present == null ? null : 0), 'valid', present === 1 ? 'unstable' : 'no signal')),
+      el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
+      el('td', {},
+        el('button', { class: 'btn ghost' + (frozen ? ' pgm' : ''), onclick: () => store.set('INfrz', [i], frozen ? 0 : 1) }, 'Freeze'),
+        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: () => store.set('INbla', [i], black ? 0 : 1) }, 'Black')));
+  }
+  function render() {
+    const ready = Array.from({ length: N }, (_, i) => store.val('INava', i)).filter(v => v === 1).length;
+    const rows = Array.from({ length: N }, (_, i) => row(i));
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }), el('span', { class: 'hint', text: `${ready} of ${N} ready` })),
+      el('div', { class: 'panel', style: 'overflow:auto' },
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Input', 'State', 'Plug', 'Signal', 'Size', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))));
+  }
+  return { enter, render };
+})();
+
+// ---------- Outputs ----------
+VIEWS.outputs = (() => {
+  const N = 8;
+  const FMT = { 0: 'auto' };
+  function enter() {
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUbla', 'OUpat', 'OUshs', 'OUsvs', 'OUhdc']) store.scan(m);
+  }
+  function row(i) {
+    const avail = store.val('OUava', i) === 1;
+    const ena = store.val('OUena', i) === 1;
+    const used = store.val('OUuse', i) === 1;
+    const w = store.val('OUshs', i), h = store.val('OUsvs', i);
+    const black = store.val('OUbla', i) === 1;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'OUT ' + (i + 1) }),
+      el('td', {}, boolChip(avail ? 1 : 0, 'connected', 'no display')),
+      el('td', {}, boolChip(ena ? 1 : 0, 'live', 'off')),
+      el('td', { class: 'val', text: `fmt ${store.val('OUfst', i) ?? '·'}` }),
+      el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
+      el('td', {},
+        el('button', { class: 'btn ghost' + (used ? ' pgm' : ''), onclick: () => store.set('OUuse', [i], used ? 0 : 1) }, 'Use'),
+        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: () => store.set('OUbla', [i], black ? 0 : 1) }, 'Black')));
+  }
+  function render() {
+    const rows = Array.from({ length: N }, (_, i) => row(i));
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }), el('span', { class: 'hint', text: 'Physical outputs and their connected displays' })),
+      el('div', { class: 'panel', style: 'overflow:auto' },
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Output', 'Display', 'State', 'Format', 'Size', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))));
+  }
+  return { enter, render };
+})();
+
+// ---------- Stills ----------
+VIEWS.stills = (() => {
+  const N = 101;
+  let sel = null;
+  function enter() { for (const m of ['Slval', 'SLusd', 'SLiwd', 'SLihe']) store.scan(m); }
+  function render() {
+    const used = Array.from({ length: N }, (_, i) => store.val('Slval', i)).filter(v => (v || 0) > 0).length;
+    const g = el('div', { class: 'mem-grid' });
+    for (let i = 0; i < N; i++) {
+      const valid = (store.val('Slval', i) || 0) > 0;
+      g.append(el('button', { class: 'slot' + (valid ? ' valid' : '') + (sel === i ? ' sel' : ''), onclick: () => { sel = i; store.notify(); } },
+        el('span', { class: 'num', text: i + 1 }),
+        valid ? el('span', { class: 'lbl', text: 'still' }) : null));
+    }
+    const detail = sel != null ? el('div', { class: 'row' },
+      el('span', { class: 'hint', text: `Still ${sel + 1}: ${store.val('SLiwd', sel) ?? '·'}×${store.val('SLihe', sel) ?? '·'}` }),
+      el('div', { class: 'spacer' }),
+      (store.val('Slval', sel) || 0) > 0 ? el('button', { class: 'btn', onclick: () => { store.set('SLera', [sel], 1); store.scan('Slval'); } }, 'Erase') : null) : null;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }), el('span', { class: 'hint', text: `${used} of ${N} slots used` })),
+      detail ? el('div', { class: 'panel' }, detail) : null,
+      el('div', { class: 'panel' }, g));
+  }
+  return { enter, render };
+})();
+
+// ---------- System ----------
+VIEWS.system = (() => {
+  function enter() {
+    for (const m of ['DIdsn', 'DIdre', 'ITlpo', 'ITldp', 'TEdal', 'FAalm', 'VEvar', 'CTloc', 'CTkbr'])
+      store.get(m, store.byMnem.get(m)?.dims.length ? [0] : []);
+    for (let k = 0; k < 4; k++) { store.get('ITlip', [0, k]); store.get('ITlnk', [0, k]); store.get('ITlgw', [0, k]); }
+    store.get('TEcar', [0, 0]); store.get('VEmic', [0, 0]);
+  }
+  function kv(label, value) {
+    return el('div', { class: 'kv' }, el('span', { class: 'k', text: label }), el('span', { class: 'v val', text: value }));
+  }
+  function render() {
+    const lock = store.val('CTloc', 0);
+    const dhcp = store.val('ITldp', 0) === 1;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'System' }), el('span', { class: 'hint', text: 'Device, network and status' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Device'),
+          kv('Model', MODELS[store.val('PDEV')] || `dev ${store.val('PDEV') ?? '·'}`),
+          kv('Serial', fmt(store.val('DIdsn', 0))),
+          kv('Reference', fmt(store.val('DIdre', 0))),
+          kv('Firmware var', fmt(store.val('VEvar', 0))),
+          kv('Micro ver', fmt(store.val('VEmic', 0, 0)))),
+        el('div', { class: 'panel' }, el('h2', 'Network'),
+          kv('IP address', fmtIP(0)),
+          kv('Netmask', [0, 1, 2, 3].map(k => store.val('ITlnk', 0, k)).every(x => x != null) ? [0, 1, 2, 3].map(k => store.val('ITlnk', 0, k)).join('.') : '·'),
+          kv('Gateway', [0, 1, 2, 3].map(k => store.val('ITlgw', 0, k)).every(x => x != null) ? [0, 1, 2, 3].map(k => store.val('ITlgw', 0, k)).join('.') : '·'),
+          kv('Port', fmt(store.val('ITlpo', 0))),
+          el('div', { class: 'kv' }, el('span', { class: 'k', text: 'DHCP' }), boolChip(dhcp ? 1 : 0, 'on', 'off')))),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Health'),
+          el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Temperature' }), alarmChip(nz(store.val('TEdal', 0)))),
+          el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Fans' }), alarmChip(nz(store.val('FAalm', 0)))),
+          kv('Card temp', temp(store.val('TEcar', 0, 0)))),
+        el('div', { class: 'panel' }, el('h2', 'Control'),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'Front-panel lock',
+              el('div', { class: 'seg' },
+                el('button', { class: lock === 0 ? 'on recall' : '', onclick: () => store.set('CTloc', [], 0) }, 'Unlocked'),
+                el('button', { class: lock === 1 ? 'on take' : '', onclick: () => store.set('CTloc', [], 1) }, 'Locked'))),
+            store.byMnem.get('CTkbr') ? bind('Key brightness', 'CTkbr', [], 10, 100) : null))));
+  }
+  return { enter, render };
+})();
 
 // ---------- Inspector (data-driven variable browser) ----------
 VIEWS.inspector = (() => {

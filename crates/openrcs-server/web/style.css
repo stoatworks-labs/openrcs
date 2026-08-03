@@ -73,8 +73,10 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .chip.on  .dot { background: var(--valid); box-shadow: 0 0 8px var(--valid); }
-.chip.off .dot { background: var(--pgm); }
+.chip.off .dot { background: var(--faint); }
 .chip.off { color: var(--muted); }
+.chip.bad .dot { background: var(--pgm); box-shadow: 0 0 8px var(--pgm); }
+.chip.bad { color: var(--pgm); }
 
 .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
 .legend b { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -98,6 +100,15 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .nav button.active { background: var(--accent-dim); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
 .nav .grow { flex: 1; }
 .nav .foot { font-size: 11px; color: var(--faint); padding: 8px 12px; font-family: var(--mono); }
+.nav-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint); padding: 12px 12px 4px; font-weight: 600; }
+.nav-sec:first-child { padding-top: 2px; }
+
+/* key/value rows (System) */
+.kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.kv:last-child { border-bottom: 0; }
+.kv .k { color: var(--muted); font-size: 13px; }
+.kv .v { font-family: var(--mono); font-size: 13px; }
+tr.dim td { opacity: .5; }
 
 /* ---- main ---- */
 .main { grid-area: main; overflow: auto; padding: 16px; }
