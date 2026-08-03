@@ -195,6 +195,33 @@ select, input[type=number], input[type=text] {
 .layer.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .layer { cursor: pointer; }
 
+/* ---- graphical layer arrangement ---- */
+.split-wide { display: grid; grid-template-columns: minmax(400px, 1fr) minmax(280px, 380px); gap: 16px; align-items: start; }
+.canvas-wrap { display: flex; justify-content: center; }
+.screen-canvas {
+  position: relative; background:
+    repeating-conic-gradient(#0e1116 0% 25%, #0b0e12 0% 50%) 50% / 32px 32px;
+  border: 1px solid var(--line-hi); border-radius: 3px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px #000, 0 8px 30px #0007;
+}
+.lrect {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  display: flex; align-items: flex-start; cursor: move; user-select: none;
+  min-width: 8px; min-height: 8px;
+}
+.lrect.off { border-style: dashed; border-color: var(--faint); background: color-mix(in srgb, var(--faint) 10%, transparent); }
+.lrect.sel { border-color: #fff; box-shadow: 0 0 0 1px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); z-index: 999 !important; }
+.lrect-tag { font-family: var(--mono); font-size: 11px; background: #000a; color: var(--text); padding: 1px 5px; border-radius: 0 0 3px 0; pointer-events: none; white-space: nowrap; }
+.handle { position: absolute; width: 12px; height: 12px; background: var(--accent); border: 1px solid #000; border-radius: 2px; }
+.lrect:not(.sel) .handle { display: none; }
+.handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.handle.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+@media (max-width: 1100px) { .split-wide { grid-template-columns: 1fr; } }
+
 /* ---- layer editor ---- */
 .split { display: grid; grid-template-columns: minmax(240px, 360px) 1fr; gap: 16px; align-items: start; }
 .editor { display: flex; flex-direction: column; gap: 14px; }

@@ -375,37 +375,125 @@ VIEWS.live = (() => {
   return { enter, render };
 })();
 
-// ---------- Layers ----------
+// ---------- Layers (graphical arrangement editor) ----------
+// Layer geometry on the wire: PRpoh/PRpov are the layer CENTRE in screen pixels
+// biased by +POS_BIAS (so a centred full-screen 1080p layer reads 33728,33308 =
+// 32768 + 960,540). PRsih/PRsiv are the size in pixels.
+const POS_BIAS = 32768;
+
 VIEWS.layers = (() => {
   let screen = 0;
   let ctx = 1;             // PRESET context: 0 = program, 1 = preview (edit here)
-  let sel = 0;            // selected layer
+  let sel = 0;             // selected layer
 
-  // working layer count: real if the screen is configured, else a default set
   const count = () => { const m = store.val('SCmly', screen) || 0; return m > 0 ? m : 8; };
+  const screenPx = () => ({
+    w: store.val('SCssh', screen) || 1920,
+    h: store.val('SCssv', screen) || 1080,
+  });
 
   function enter() {
-    store.scan('SCmly');
+    store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     const n = count();
-    for (let l = 0; l < n; l++) readLayer(l);
+    for (let l = 0; l < n; l++)
+      for (const m of ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
+        store.get(m, [screen, ctx, l]);
   }
-  function readLayer(l) {
-    for (const m of ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
-      store.get(m, [screen, ctx, l]);
+
+  // device layer -> {left,top,w,h} in device pixels
+  function rectPx(l) {
+    const cx = (store.val('PRpoh', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
+    const cy = (store.val('PRpov', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
+    const w = store.val('PRsih', screen, ctx, l) ?? 0;
+    const h = store.val('PRsiv', screen, ctx, l) ?? 0;
+    return { left: cx - w / 2, top: cy - h / 2, w, h };
+  }
+  const setGeom = (l, r) => {
+    throttledSet('PRsih', [screen, ctx, l], Math.round(r.w));
+    throttledSet('PRsiv', [screen, ctx, l], Math.round(r.h));
+    throttledSet('PRpoh', [screen, ctx, l], Math.round(r.left + r.w / 2 + POS_BIAS));
+    throttledSet('PRpov', [screen, ctx, l], Math.round(r.top + r.h / 2 + POS_BIAS));
+  };
+
+  function canvas() {
+    const s = screenPx();
+    const CW = 720, scale = CW / s.w, CH = s.h * scale;
+    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
+    const n = count();
+    for (let l = 0; l < n; l++) {
+      const on = store.val('PRlay', screen, ctx, l) === 1;
+      const src = store.val('PRinp', screen, ctx, l);
+      // don't clutter the canvas with empty, hidden layers
+      if (!src && !on && l !== sel) continue;
+      const r = rectPx(l);
+      const box = el('div', {
+        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off'),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l + 1}`,
+        onpointerdown: (e) => dragMove(e, l, scale),
+      },
+        el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(c =>
+          el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, l, scale, c) })));
+      cv.append(box);
+    }
+    return el('div', { class: 'canvas-wrap' }, cv);
+  }
+
+  function dragMove(e, l, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      const r = { ...r0, left: r0.left + dx, top: r0.top + dy };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      setGeom(l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+
+  function dragResize(e, l, scale, corner) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget.parentNode;
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      const r = { left, top, w: right - left, h: bot - top };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
+      setGeom(l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+
+  // quick geometry presets for the selected layer
+  function fit() {
+    const s = screenPx();
+    setGeom(sel, { left: 0, top: 0, w: s.w, h: s.h }); store.notify();
+  }
+  function quad(ix) {
+    const s = screenPx(), w = s.w / 2, h = s.h / 2;
+    setGeom(sel, { left: (ix % 2) * w, top: (ix < 2 ? 0 : 1) * h, w, h }); store.notify();
   }
 
   function stack() {
     const n = count();
     const wrap = el('div', { class: 'layers' });
-    for (let l = n - 1; l >= 0; l--) {           // top layer first, like a stack
+    for (let l = n - 1; l >= 0; l--) {
       const src = store.val('PRinp', screen, ctx, l);
       const on = store.val('PRlay', screen, ctx, l) === 1;
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
         el('span', { class: 'tag', text: 'L' + (l + 1) }),
         el('span', { class: 'src', text: sourceName(src) }),
-        el('button', {
-          class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], on ? 0 : 1); },
-        }, on ? 'Hide' : 'Show')));
+        el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], on ? 0 : 1); } }, on ? 'Hide' : 'Show')));
     }
     return wrap;
   }
@@ -417,19 +505,23 @@ VIEWS.layers = (() => {
         el('label', { class: 'field' }, 'Source', sourceSelect('PRinp', i)),
         el('button', { class: 'btn ' + (store.val('PRlay', ...i) === 1 ? 'pgm' : 'ghost'), onclick: () => store.set('PRlay', i, store.val('PRlay', ...i) === 1 ? 0 : 1) },
           store.val('PRlay', ...i) === 1 ? 'Visible' : 'Hidden')),
+      el('div', { class: 'row' },
+        el('span', { class: 'hint', text: 'Snap:' }),
+        el('button', { class: 'btn ghost', onclick: fit }, 'Full'),
+        ...['◰', '◳', '◱', '◲'].map((g, k) => el('button', { class: 'btn ghost', onclick: () => quad(k) }, g))),
       el('div', { class: 'grid2' },
         bind('Opacity', 'PRalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'),
-        bind('Position H', 'PRpoh', i, 0, 131072, 256),
-        bind('Position V', 'PRpov', i, 0, 131072, 256),
-        bind('Size H', 'PRsih', i, 0, 65535, 128),
-        bind('Size V', 'PRsiv', i, 0, 65535, 128)));
+        bind('Position H', 'PRpoh', i, 0, 131072, 16),
+        bind('Position V', 'PRpov', i, 0, 131072, 16),
+        bind('Size H', 'PRsih', i, 0, 65535, 16),
+        bind('Size V', 'PRsiv', i, 0, 65535, 16)));
   }
 
   function render() {
     const configured = (store.val('SCmly', screen) || 0) > 0;
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Layers' }),
-        el('span', { class: 'hint', text: `Screen ${screen + 1} · ${ctx === 1 ? 'Preview' : 'Program'} · layer ${sel + 1}` })),
+        el('span', { class: 'hint', text: `Screen ${screen + 1} · ${ctx === 1 ? 'Preview' : 'Program'} · drag to arrange` })),
       el('div', { class: 'panel' },
         el('div', { class: 'row' },
           el('label', { class: 'field' }, 'Screen', screenSelect(screen, v => { screen = v; sel = 0; enter(); store.notify(); })),
@@ -437,9 +529,11 @@ VIEWS.layers = (() => {
             el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
             el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
           !configured ? el('span', { class: 'hint', text: '⚠ screen not configured — edits are stored but won’t display until a screen is set up' }) : null)),
-      el('div', { class: 'split' },
-        el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
-        el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor())));
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' }, el('h2', 'Arrangement'), canvas()),
+        el('div', {},
+          el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
+          el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor()))));
   }
   return { enter, render };
 })();
