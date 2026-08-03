@@ -79,7 +79,11 @@ Both families speak a terse ASCII protocol over TCP 10500. Commands put the
 5-character mnemonic last, replies put it first, and a reply's final
 comma-separated field is the value. Midra terminates outbound commands with
 CRLF, LiveCore with LF. The device pushes unsolicited updates and NAKs bad
-commands with `E<code>`. Full detail in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+commands with `E<code>`. A short summary is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
+The full protocol reference — framing, the variable model, and every variable
+for both platforms — is a companion repository:
+**[openrcs-protocol](https://github.com/stoatworks-labs/openrcs-protocol)**.
 
 ## Licence
 
