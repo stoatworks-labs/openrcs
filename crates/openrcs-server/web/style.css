@@ -226,6 +226,8 @@ select, input[type=number], input[type=text] {
 .split { display: grid; grid-template-columns: minmax(240px, 360px) 1fr; gap: 16px; align-items: start; }
 .editor { display: flex; flex-direction: column; gap: 14px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.sub-head { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 600; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+input[type=color].swatch { width: 46px; height: 30px; padding: 2px; background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r); cursor: pointer; }
 label.field.slider { gap: 6px; }
 label.field.slider > span { display: flex; justify-content: space-between; align-items: baseline; }
 label.field.slider .sv { font-family: var(--mono); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }

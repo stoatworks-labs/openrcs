@@ -303,6 +303,31 @@ function sourceSelect(mnem, idx, max = 41) {
   return s;
 }
 
+// a <select> over an enum, options[value] = label
+function enumSelect(mnem, idx, options) {
+  const cur = store.val(mnem, ...idx) ?? 0;
+  const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
+  options.forEach((label, i) => {
+    const opt = el('option', { value: i, text: label });
+    if (i === cur) opt.selected = true;
+    s.append(opt);
+  });
+  return s;
+}
+
+// an <input type=color> bound to three 0..255 device variables
+function colorPicker(rM, gM, bM, idx) {
+  const c = [rM, gM, bM].map(m => (store.val(m, ...idx) ?? 0) & 255);
+  const hex = '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+  return el('input', { type: 'color', class: 'swatch', value: hex,
+    oninput: (e) => {
+      const h = e.target.value;
+      store.set(rM, idx, parseInt(h.slice(1, 3), 16));
+      store.set(gM, idx, parseInt(h.slice(3, 5), 16));
+      store.set(bM, idx, parseInt(h.slice(5, 7), 16));
+    } });
+}
+
 // a toggle button bound to a 0/1 variable
 function toggleBtn(label, mnem, idx, onClass = 'pgm') {
   const on = store.val(mnem, ...idx) === 1;
@@ -405,12 +430,14 @@ VIEWS.layers = (() => {
     h: store.val('SCssv', screen) || 1080,
   });
 
+  const LAYER_VARS = ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv',
+    'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
+    'PRcph', 'PRcpv', 'PRcsh', 'PRcsv'];
   function enter() {
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     const n = count();
     for (let l = 0; l < n; l++)
-      for (const m of ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
-        store.get(m, [screen, ctx, l]);
+      for (const m of LAYER_VARS) store.get(m, [screen, ctx, l]);
   }
 
   // device layer -> {left,top,w,h} in device pixels
@@ -527,7 +554,22 @@ VIEWS.layers = (() => {
         bind('Position H', 'PRpoh', i, 0, 131072, 16),
         bind('Position V', 'PRpov', i, 0, 131072, 16),
         bind('Size H', 'PRsih', i, 0, 65535, 16),
-        bind('Size V', 'PRsiv', i, 0, 65535, 16)));
+        bind('Size V', 'PRsiv', i, 0, 65535, 16)),
+      el('div', { class: 'sub-head' }, 'Border'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Style',
+          enumSelect('PRbst', i, ['None', 'Solid', 'Double', 'Bevel', 'Groove', 'Dashed'])),
+        el('label', { class: 'field' }, 'Colour', colorPicker('PRbcr', 'PRbcg', 'PRbcb', i))),
+      el('div', { class: 'grid2' },
+        bind('Border width', 'PRbsh', i, 0, 127, 1),
+        bind('Border height', 'PRbsv', i, 0, 127, 1),
+        bind('Border opacity', 'PRbal', i, 0, 255, 1, v => Math.round(v / 255 * 100) + '%')),
+      el('div', { class: 'sub-head' }, 'Crop'),
+      el('div', { class: 'grid2' },
+        bind('Crop H pos', 'PRcph', i, 0, 65535, 16),
+        bind('Crop V pos', 'PRcpv', i, 0, 65535, 16),
+        bind('Crop width', 'PRcsh', i, 0, 58981, 16),
+        bind('Crop height', 'PRcsv', i, 0, 58981, 16)));
   }
 
   function render() {
