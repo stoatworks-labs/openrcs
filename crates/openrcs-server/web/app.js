@@ -100,13 +100,26 @@ function endDrag() { DRAG = false; if (store._deferred) { store._deferred = fals
 
 // ---------- app shell ----------
 const store = new Store();
-let currentView = 'memories';
+const VIEW_IDS = ['memories', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
+let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
+
+function switchView(id) {
+  currentView = id;
+  if (location.hash.slice(1) !== id) location.hash = id;
+  VIEWS[id].enter?.();
+  render();
+}
+window.addEventListener('hashchange', () => {
+  const v = viewFromHash();
+  if (v && v !== currentView) switchView(v);
+});
 
 function onReady() {
   store.get('?');            // DEV
   store.get('!');            // DEV_PLATFORM -> PDEV
-  VIEWS.memories.enter();
+  VIEWS[currentView].enter?.();
 }
 
 function header() {
@@ -143,7 +156,7 @@ function nav() {
     const [id, label] = item;
     n.append(el('button', {
       class: id === currentView ? 'active' : '',
-      onclick: () => { currentView = id; VIEWS[id].enter?.(); render(); },
+      onclick: () => switchView(id),
     }, label));
   }
   n.append(el('div', { class: 'grow' }));
