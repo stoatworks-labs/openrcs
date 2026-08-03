@@ -47,7 +47,7 @@ with **TAKE**, or switch instantly with **CUT**.
 
 ## Layers
 
-![Graphical layer editor](screenshots/layers.png)
+![Graphical layer editor](screenshots/layer-editor.gif)
 
 Arrange sources on the screen visually. Each layer is a rectangle on a canvas
 that represents the output: **drag to move, drag the corners to resize**, and use

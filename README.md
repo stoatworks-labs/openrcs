@@ -8,7 +8,7 @@ QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra) — a modern, dependency-light control surface for hardware whose original
 software is long out of date.
 
-![The graphical layer arrangement editor](docs/screenshots/layers.png)
+![The graphical layer arrangement editor — arrange sources live](docs/screenshots/layer-editor.gif)
 
 Not affiliated with or endorsed by Analog Way. Product names are used only to
 describe compatibility.
