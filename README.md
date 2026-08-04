@@ -1,5 +1,12 @@
 # openrcs
 
+> **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
+> (Anthropic), directed and reviewed by a human author. The protocol was
+> reverse-engineered rather than taken from a published specification: the codec
+> is confirmed against LiveCore device behaviour, but the Midra table has never
+> been exercised against a device. Check its output against your own processor
+> before a show — see [Status](#status).
+
 A Rust library for controlling **Analog Way Midra and LiveCore series** video
 processors over their native TCP control protocol.
 
