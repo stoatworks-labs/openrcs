@@ -3,6 +3,11 @@
 // ---------- tiny DOM helper ----------
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
+  // allow el('h2', 'text') / el('div', node) — a non-plain-object 2nd arg is a child
+  if (props == null || typeof props !== 'object' || props.nodeType || Array.isArray(props)) {
+    kids = [props, ...kids];
+    props = {};
+  }
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') n.className = v;
     else if (k === 'text') n.textContent = v;
@@ -89,7 +94,11 @@ class Store {
     if (DRAG) { this._deferred = true; return; }   // don't rebuild a slider mid-drag
     if (this._pending) return;
     this._pending = true;
-    requestAnimationFrame(() => { this._pending = false; this.listeners.forEach(f => f()); });
+    // coalesce with rAF, but fall back to a timer: rAF is throttled to zero in a
+    // backgrounded tab, and a control surface must still reflect device state.
+    const run = () => { if (!this._pending) return; this._pending = false; this.listeners.forEach(f => f()); };
+    requestAnimationFrame(run);
+    setTimeout(run, 50);
   }
 }
 
@@ -97,10 +106,15 @@ class Store {
 let DRAG = false;
 function beginDrag() { DRAG = true; }
 function endDrag() { DRAG = false; if (store._deferred) { store._deferred = false; store.notify(); } }
+// safety net: a pointer release or cancel anywhere ends a drag, so a missed
+// pointerup (pointer left the control/window) can never freeze the UI's renders
+window.addEventListener('pointerup', () => { if (DRAG) endDrag(); }, true);
+window.addEventListener('pointercancel', () => { if (DRAG) endDrag(); }, true);
+window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -141,7 +155,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['stage', 'Stage'], ['memories', 'Memories'], ['live', 'Live'], ['layers', 'Layers'],
+  ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['system', 'System'],
@@ -360,6 +374,89 @@ function bind(label, mnem, idx, min, max, step = 1, fmt = (v) => v) {
       oninput: (e) => { throttledSet(mnem, idx, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); },
     }));
 }
+
+// ---------- Cues (a show script over the memory system) ----------
+VIEWS.cues = (() => {
+  const KEY = 'openrcs.cues';
+  let cues = [];      // { id, label, scope:'master'|'screen', slot, screen }
+  let cur = -1;       // index of the last cue taken
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    cues = saved.cues || []; cur = saved.cur ?? -1;
+  } catch { /* first run */ }
+  const persist = () => localStorage.setItem(KEY, JSON.stringify({ cues, cur }));
+
+  // draft for the "add cue" row
+  let dScope = 'master', dSlot = 1, dScreen = 0, dLabel = '';
+
+  function recall(c, take) {
+    if (c.scope === 'master') {
+      store.set('PSmet', [], c.slot);
+      store.set(take ? 'PSlot' : 'PSloa', [], 1);
+    } else {
+      store.set('PMscf', [], c.screen);
+      store.set('PMmet', [], c.slot);
+      store.set(take ? 'PMlot' : 'PMloa', [], 1);
+    }
+  }
+  function go(i) { if (i < 0 || i >= cues.length) return; recall(cues[i], true); cur = i; persist(); store.notify(); }
+  function goNext() { go(cur + 1 < cues.length ? cur + 1 : cur); }
+  function arm(i) { recall(cues[i], false); store.notify(); }
+  function addCue() {
+    const label = dLabel.trim() || (dScope === 'master' ? `Master ${dSlot}` : `Screen ${dScreen + 1} · ${dSlot}`);
+    cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen });
+    dLabel = ''; persist(); store.notify();
+  }
+  function move(i, d) { const j = i + d; if (j < 0 || j >= cues.length) return; [cues[i], cues[j]] = [cues[j], cues[i]]; if (cur === i) cur = j; else if (cur === j) cur = i; persist(); store.notify(); }
+  function del(i) { cues.splice(i, 1); if (cur >= cues.length) cur = cues.length - 1; persist(); store.notify(); }
+
+  function cueRow(c, i) {
+    const target = c.scope === 'master' ? `Master ${c.slot + 1}` : `Screen ${c.screen + 1} · slot ${c.slot + 1}`;
+    return el('div', { class: 'cue' + (i === cur ? ' current' : '') },
+      el('span', { class: 'cue-n', text: i + 1 }),
+      el('div', { class: 'cue-main' },
+        el('div', { class: 'cue-label', text: c.label }),
+        el('div', { class: 'cue-target', text: target })),
+      el('button', { class: 'btn ghost', onclick: () => arm(i) }, 'Preview'),
+      el('button', { class: 'btn pvw', onclick: () => go(i) }, 'Go'),
+      el('div', { class: 'cue-ord' },
+        el('button', { class: 'btn ghost', onclick: () => move(i, -1) }, '↑'),
+        el('button', { class: 'btn ghost', onclick: () => move(i, 1) }, '↓'),
+        el('button', { class: 'btn ghost', onclick: () => del(i) }, '✕')));
+  }
+
+  function render() {
+    const next = cur + 1 < cues.length ? cues[cur + 1] : null;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Cues' }),
+        el('span', { class: 'hint', text: 'A show script — each cue recalls a memory and takes it' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'takebar' },
+          el('div', { class: 'tbar' },
+            el('div', { class: 'cue-next-label', text: next ? `Next: ${next.label}` : (cues.length ? 'End of list' : 'No cues yet') })),
+          el('button', { class: 'btn pgm take-btn', onclick: goNext, disabled: !next || undefined }, 'GO NEXT'))),
+      el('div', { class: 'panel' },
+        el('h2', 'Add cue'),
+        el('div', { class: 'row' },
+          el('div', { class: 'seg' },
+            el('button', { class: dScope === 'master' ? 'on recall' : '', onclick: () => { dScope = 'master'; store.notify(); } }, 'Master'),
+            el('button', { class: dScope === 'screen' ? 'on recall' : '', onclick: () => { dScope = 'screen'; store.notify(); } }, 'Screen')),
+          dScope === 'screen' ? el('label', { class: 'field' }, 'Screen', screenSelect(dScreen, v => { dScreen = v; store.notify(); })) : null,
+          el('label', { class: 'field' }, 'Slot',
+            el('input', { type: 'number', min: 1, max: 144, value: dSlot + 1, style: 'width:70px',
+              oninput: (e) => dSlot = Math.max(0, (+e.target.value || 1) - 1) })),
+          el('label', { class: 'field' }, 'Label',
+            el('input', { id: 'cue-label', type: 'text', placeholder: 'optional', value: dLabel, style: 'width:200px',
+              oninput: (e) => dLabel = e.target.value })),
+          el('button', { class: 'btn', onclick: addCue }, 'Add'))),
+      el('div', { class: 'panel' },
+        el('h2', `Cue list (${cues.length})`),
+        cues.length
+          ? el('div', { class: 'cue-list' }, ...cues.map(cueRow))
+          : el('div', { class: 'empty-state', text: 'Build a cue list from your saved memories, then run the show with GO NEXT.' })));
+  }
+  return { render };
+})();
 
 // ---------- Live ----------
 VIEWS.live = (() => {

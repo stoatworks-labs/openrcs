@@ -8,6 +8,8 @@
 </head>
 <body>
 <div id="app" class="app"></div>
-<script type="module" src="app.js"></script>
+<!-- Served locally and iterated live; load fresh every time so a cached
+     module can never leave the operator on a stale build of the UI. -->
+<script type="module">import(`./app.js?v=${Date.now()}`);</script>
 </body>
 </html>
