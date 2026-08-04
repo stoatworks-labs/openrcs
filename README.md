@@ -94,6 +94,10 @@ The full protocol reference — framing, the variable model, and every variable
 for both platforms — is a companion repository:
 **[openrcs-protocol](https://github.com/stoatworks-labs/openrcs-protocol)**.
 
+<!-- attributions:start -->
+This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+<!-- attributions:end -->
+
 ## Licence
 
 MIT.
