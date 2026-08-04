@@ -195,6 +195,20 @@ select, input[type=number], input[type=text] {
 .layer.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .layer { cursor: pointer; }
 
+/* ---- Stage overview ---- */
+.stage-grid { display: flex; flex-wrap: wrap; gap: 18px; }
+.stage-card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; cursor: pointer; transition: border-color .1s; }
+.stage-card:hover { border-color: var(--accent); }
+.stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.stage-name { font-weight: 600; }
+.stage-dim { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.stage-screen {
+  position: relative; border: 1px solid var(--line-hi); border-radius: 3px; overflow: hidden;
+  background: repeating-conic-gradient(#0e1116 0% 25%, #0b0e12 0% 50%) 50% / 24px 24px;
+}
+.stage-layer { position: absolute; box-sizing: border-box; border: 1px solid #ffffff40; display: flex; align-items: flex-start; opacity: .82; }
+.stage-layer span { font-family: var(--mono); font-size: 10px; background: #000a; color: #fff; padding: 0 4px; border-radius: 0 0 3px 0; }
+
 /* ---- graphical layer arrangement ---- */
 .split-wide { display: grid; grid-template-columns: minmax(400px, 1fr) minmax(280px, 380px); gap: 16px; align-items: start; }
 .canvas-wrap { display: flex; justify-content: center; }

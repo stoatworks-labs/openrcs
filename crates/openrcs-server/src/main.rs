@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::{header, HeaderValue};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
@@ -22,6 +23,7 @@ use futures_util::{SinkExt, StreamExt};
 use openrcs_proto::Platform;
 use serde::{Deserialize, Serialize};
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use hub::{DeviceEvent, Hub};
 
@@ -109,6 +111,12 @@ async fn main() {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .fallback_service(ServeDir::new(&cfg.web_dir))
+        // the control surface is served locally and iterated live — never let a
+        // browser hold a stale copy of the UI.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        ))
         .with_state(hub);
 
     println!("openrcs-server");

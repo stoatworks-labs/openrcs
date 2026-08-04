@@ -23,6 +23,15 @@ The interface is a single dark theme, chosen deliberately for the blacked-out
 environments these processors live in. The left nav is grouped into **Program**
 (the things you touch during a show), **Setup** (configuration), and **Tools**.
 
+## Stage
+
+![All screens at a glance](screenshots/stage.png)
+
+A mission-control overview: every active screen, drawn to scale with its live
+layers, in one place. Layers are coloured by source so the same input reads the
+same across screens. Toggle **Program / Preview**, and click any screen to jump
+straight into its layer editor.
+
 ## Memories
 
 ![Memory grids](screenshots/memories.png)

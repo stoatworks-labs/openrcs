@@ -100,7 +100,7 @@ function endDrag() { DRAG = false; if (store._deferred) { store._deferred = fals
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['memories', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -141,7 +141,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['memories', 'Memories'], ['live', 'Live'], ['layers', 'Layers'],
+  ['stage', 'Stage'], ['memories', 'Memories'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['system', 'System'],
@@ -418,6 +418,8 @@ VIEWS.live = (() => {
 // biased by +POS_BIAS (so a centred full-screen 1080p layer reads 33728,33308 =
 // 32768 + 960,540). PRsih/PRsiv are the size in pixels.
 const POS_BIAS = 32768;
+// transition-type labels are best-effort; 0 is always "cut" (no animation)
+const TRANSITIONS = ['Cut', 'Fade', 'Slide', 'Wipe', 'Zoom', 'Rotate', 'Push', 'Effect 7'];
 
 VIEWS.layers = (() => {
   let screen = 0;
@@ -432,7 +434,7 @@ VIEWS.layers = (() => {
 
   const LAYER_VARS = ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv',
     'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
-    'PRcph', 'PRcpv', 'PRcsh', 'PRcsv'];
+    'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     const n = count();
@@ -564,6 +566,12 @@ VIEWS.layers = (() => {
         bind('Border width', 'PRbsh', i, 0, 127, 1),
         bind('Border height', 'PRbsv', i, 0, 127, 1),
         bind('Border opacity', 'PRbal', i, 0, 255, 1, v => Math.round(v / 255 * 100) + '%')),
+      el('div', { class: 'sub-head' }, 'Transitions (on take)'),
+      el('div', { class: 'grid2' },
+        el('label', { class: 'field' }, 'Opening', enumSelect('PRotr', i, TRANSITIONS)),
+        el('label', { class: 'field' }, 'Closing', enumSelect('PRctr', i, TRANSITIONS)),
+        bind('Opening direction', 'PRowa', i, 0, 10, 1),
+        bind('Closing direction', 'PRcwa', i, 0, 10, 1)),
       el('div', { class: 'sub-head' }, 'Crop'),
       el('div', { class: 'grid2' },
         bind('Crop H pos', 'PRcph', i, 0, 65535, 16),
@@ -589,6 +597,74 @@ VIEWS.layers = (() => {
         el('div', {},
           el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
           el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor()))));
+  }
+  return { enter, render, focus(s, c) { screen = s; if (c != null) ctx = c; sel = 0; } };
+})();
+
+// device layer -> {left,top,w,h} in device pixels (shared with the Stage view)
+function layerRectPx(screen, ctx, l) {
+  const cx = (store.val('PRpoh', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
+  const cy = (store.val('PRpov', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
+  const w = store.val('PRsih', screen, ctx, l) ?? 0;
+  const h = store.val('PRsiv', screen, ctx, l) ?? 0;
+  return { left: cx - w / 2, top: cy - h / 2, w, h };
+}
+// stable-ish colour per source, so a source reads the same across screens
+function srcColor(n) {
+  if (!n) return 'transparent';
+  const hue = (n * 47) % 360;
+  return `hsl(${hue} 55% 45%)`;
+}
+
+// ---------- Stage (all screens at a glance) ----------
+VIEWS.stage = (() => {
+  let ctx = 0;   // 0 = program (what's on air), 1 = preview
+  const NL = 24;
+  const active = () => [0, 1, 2, 3, 4, 5, 6, 7].filter(s => (store.val('SCssh', s) || 0) > 0);
+
+  function enter() {
+    for (const m of ['SCssh', 'SCssv', 'SCmly']) store.scan(m);
+    for (const s of [0, 1, 2, 3, 4, 5, 6, 7])
+      for (let l = 0; l < NL; l++)
+        for (const m of ['PRinp', 'PRlay', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
+          store.get(m, [s, ctx, l]);
+  }
+
+  function screenCard(s) {
+    const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
+    const CW = 380, scale = CW / sw, CH = Math.round(sh * scale);
+    const cv = el('div', { class: 'stage-screen', style: `width:${CW}px;height:${CH}px` });
+    const max = store.val('SCmly', s) || 0;
+    for (let l = 0; l < max; l++) {
+      if (store.val('PRlay', s, ctx, l) !== 1) continue;
+      const src = store.val('PRinp', s, ctx, l);
+      const r = layerRectPx(s, ctx, l);
+      cv.append(el('div', {
+        class: 'stage-layer',
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;`
+             + `background:${srcColor(src)};z-index:${l + 1}`,
+      }, el('span', { text: sourceName(src) })));
+    }
+    return el('div', { class: 'stage-card', onclick: () => { VIEWS.layers.focus(s, ctx); switchView('layers'); } },
+      el('div', { class: 'stage-head' },
+        el('span', { class: 'stage-name', text: `Screen ${s + 1}` }),
+        el('span', { class: 'stage-dim', text: `${sw}×${sh} · ${store.val('SCmly', s) || 0} layers` })),
+      cv);
+  }
+
+  function render() {
+    const screens = active();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Stage' }),
+        el('span', { class: 'hint', text: `${screens.length} active screen${screens.length === 1 ? '' : 's'} · click one to edit its layers` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('div', { class: 'seg' },
+            el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
+            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')))),
+      screens.length
+        ? el('div', { class: 'stage-grid' }, ...screens.map(screenCard))
+        : el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured yet.' })));
   }
   return { enter, render };
 })();
