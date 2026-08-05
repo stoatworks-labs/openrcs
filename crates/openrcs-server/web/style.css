@@ -328,4 +328,14 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .cap-presets { flex-wrap: wrap; gap: 6px; }
 .btn.big { padding: 10px 20px; font-size: 14px; font-weight: 700; }
 
+/* ---- multiviewer memories ---- */
+.mon-mem { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mon-mem-cell { border: 1px solid var(--line); border-radius: var(--r); padding: 8px; background: var(--bg); }
+.mon-mem-cell.saved { border-color: var(--accent-dim); background: var(--panel-2); }
+.mon-mem-cell .mm-n { font: 600 12px var(--mono); color: var(--muted); }
+.mon-mem-cell.saved .mm-n { color: var(--accent); }
+.mm-btns { display: flex; gap: 6px; margin-top: 6px; }
+.mm-btns .btn { flex: 1; }
+@media (max-width: 720px) { .mon-mem { grid-template-columns: repeat(2, 1fr); } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -18,7 +18,9 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   opening/closing transitions, and the screen's native background.
 - **Setup** — a live **Tally** grid; Inputs; Outputs with format, HDCP and output
   processing (brightness/contrast/gamma/gain); Screens; Stills; **Capture** (grab
-  a source frame — full or a graphical region — into the still library); GPIO.
+  a source frame — full or a graphical region — into the still library);
+  **Multiviewer** (a drag/resize layout designer for the monitoring outputs, with
+  layout memories); GPIO.
 - **System** — identity, network, health, front-panel.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
@@ -66,10 +68,12 @@ device's own sequences.
 The Keys view runs multi-action macros on one tap. Next: colour/label per key,
 and mapping to the device's own shotbox keys where present.
 
-### Multiviewer designer — *LivePremier, Event Master*
-`MONITORING_LAYOUT` / `MONITORING__OUTPUTS` control the multiviewer. A drag-drop
-layout editor for the monitor output, with monitoring memories (`MON_MEM`).
-**Feasible.**
+### Multiviewer designer — *LivePremier, Event Master* — **shipped, v1**
+The Multiviewer view is a drag/resize layout editor over `MONITORING_LAYOUT`: up
+to 12 widgets per monitoring output, each with a source, OSD label and free
+geometry, plus grid presets (quad / 3×3 / 4×3 / single), a fullscreen mode, apply
+(`MLupd`) and 8 layout memories (`MON_MEM`). Next: per-widget borders/labels and
+placing the two monitor outputs in a screen (`MONITORING_SCREEN`).
 
 ### Tally & GPIO — *Event Master*
 `TALLY` and `GPIO` are exposed — surface tally state, and let GPIO triggers fire

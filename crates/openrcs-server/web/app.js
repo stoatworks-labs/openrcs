@@ -114,7 +114,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -158,7 +158,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['capture', 'Capture'], ['gpio', 'GPIO'], ['system', 'System'],
+  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -1177,6 +1177,172 @@ VIEWS.capture = (() => {
         el('table', { class: 'grid' },
           el('thead', el('tr', ...['Slot', 'Status', 'Size', 'Done'].map(h => el('th', { text: h })))),
           el('tbody', ...Array.from({ length: NSLOT }, (_, i) => slotRow(i))))));
+  }
+  return { enter, render };
+})();
+
+// ---------- Multiviewer designer (monitoring output layout) ----------
+VIEWS.multiview = (() => {
+  const NW = 12;                      // custom widgets per monitoring output
+  let out = 0;                        // monitoring output 0/1
+  let sel = 0;                        // selected widget
+  // NB widget geometry assumed top-left origin in output px (MLcph/MLcpv/MLcsh/MLcsv);
+  // unlike the main layers, no +bias was observed — confirm on hardware.
+  function enter() {
+    for (const m of ['MLfen', 'MLfes', 'MLfso', 'MLupd', 'MOshs', 'MOsvs', 'MOava']) store.get(m, [out]);
+    for (let w = 0; w < NW; w++)
+      for (const m of ['MLcen', 'MLces', 'MLcso', 'MLcph', 'MLcpv', 'MLcsh', 'MLcsv']) store.get(m, [out, w]);
+    for (let mem = 0; mem < 8; mem++) { store.get('MMouw', [mem]); store.get('MMouh', [mem]); }
+  }
+  const outSize = () => [store.val('MOshs', out) || 1920, store.val('MOsvs', out) || 1080];
+  const monName = n => n == null ? '·' : n === 0 ? '—' : 'Src ' + n;
+  function monSource(mnem, idx) {
+    const cur = store.val(mnem, ...idx) ?? 0;
+    const s = el('select', { onchange: (e) => { store.set(mnem, idx, +e.target.value); } });
+    for (let i = 0; i <= 55; i++) { const o = el('option', { value: i, text: monName(i) }); if (i === cur) o.selected = true; s.append(o); }
+    return s;
+  }
+  function rectPx(w) {
+    return { left: store.val('MLcph', out, w) ?? 0, top: store.val('MLcpv', out, w) ?? 0,
+      w: store.val('MLcsh', out, w) ?? 0, h: store.val('MLcsv', out, w) ?? 0 };
+  }
+  const setGeom = (w, r) => {
+    throttledSet('MLcph', [out, w], Math.round(r.left)); throttledSet('MLcpv', [out, w], Math.round(r.top));
+    throttledSet('MLcsh', [out, w], Math.round(r.w)); throttledSet('MLcsv', [out, w], Math.round(r.h));
+  };
+  const setGeomNow = (w, r) => {
+    store.set('MLcph', [out, w], Math.round(r.left)); store.set('MLcpv', [out, w], Math.round(r.top));
+    store.set('MLcsh', [out, w], Math.round(r.w)); store.set('MLcsv', [out, w], Math.round(r.h));
+  };
+  function canvas() {
+    const [W, H] = outSize();
+    const CW = 720, scale = CW / W, CH = H * scale;
+    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
+    for (let w = 0; w < NW; w++) {
+      const on = store.val('MLcen', out, w) === 1;
+      if (!on && w !== sel) continue;
+      const r = rectPx(w), src = store.val('MLces', out, w);
+      const box = el('div', {
+        class: 'lrect' + (w === sel ? ' sel' : '') + (on ? '' : ' off'),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${w + 1}`,
+        onpointerdown: (e) => dragMove(e, w, scale),
+      },
+        el('span', { class: 'lrect-tag', text: `${w + 1}${src ? ' · ' + monName(src) : ''}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, w, scale, c) })));
+      cv.append(box);
+    }
+    return el('div', { class: 'canvas-wrap' }, cv);
+  }
+  function dragMove(e, w, scale) {
+    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = w;
+    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = rectPx(w);
+    const move = (ev) => {
+      const r = { ...r0, left: r0.left + (ev.clientX - sx) / scale, top: r0.top + (ev.clientY - sy) / scale };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px'; setGeom(w, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragResize(e, w, scale, corner) {
+    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = w;
+    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = rectPx(w);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      const r = { left, top, w: right - left, h: bot - top };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px'; setGeom(w, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  // lay N=cols*rows widgets over the output, assigning Src 1..N to empty ones
+  function layout(cols, rows) {
+    const [W, H] = outSize(), cw = Math.floor(W / cols), ch = Math.floor(H / rows), n = cols * rows;
+    for (let w = 0; w < NW; w++) {
+      if (w < n) {
+        store.set('MLcen', [out, w], 1);
+        if (!(store.val('MLces', out, w) > 0)) store.set('MLces', [out, w], w + 1);
+        setGeomNow(w, { left: (w % cols) * cw, top: Math.floor(w / cols) * ch, w: cw, h: ch });
+      } else store.set('MLcen', [out, w], 0);
+    }
+    sel = 0; store.notify();
+  }
+  function widgetEditor() {
+    const i = [out, sel], on = store.val('MLcen', ...i) === 1, [W, H] = outSize();
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('span', { class: 'hint', text: `Widget ${sel + 1}` }), el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ' + (on ? 'pgm' : 'ghost'), onclick: () => store.set('MLcen', i, on ? 0 : 1) }, on ? 'Enabled' : 'Disabled')),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Source', monSource('MLces', i)),
+        el('label', { class: 'field' }, 'OSD label', checkbox(store.val('MLcso', ...i) === 1, v => store.set('MLcso', i, v ? 1 : 0)))),
+      el('div', { class: 'grid2' },
+        bind('X', 'MLcph', i, 0, W, 8), bind('Y', 'MLcpv', i, 0, H, 8),
+        bind('Width', 'MLcsh', i, 16, W, 8), bind('Height', 'MLcsv', i, 16, H, 8)));
+  }
+  function list() {
+    const wrap = el('div', { class: 'layers' });
+    for (let w = 0; w < NW; w++) {
+      const on = store.val('MLcen', out, w) === 1, src = store.val('MLces', out, w);
+      wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (w === sel ? ' sel' : ''), onclick: () => { sel = w; store.notify(); } },
+        el('span', { class: 'tag', text: '' + (w + 1) }),
+        el('span', { class: 'src', text: monName(src) }),
+        el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('MLcen', [out, w], on ? 0 : 1); } }, on ? 'On' : 'Off')));
+    }
+    return wrap;
+  }
+  function memories() {
+    const g = el('div', { class: 'mon-mem' });
+    for (let mem = 0; mem < 8; mem++) {
+      const wpx = store.val('MMouw', mem) || 0;
+      g.append(el('div', { class: 'mon-mem-cell' + (wpx ? ' saved' : '') },
+        el('span', { class: 'mm-n', text: 'M' + (mem + 1) }),
+        el('div', { class: 'mm-btns' },
+          el('button', { class: 'btn ghost', onclick: () => { store.set('MMsav', [out, mem], 1); store.get('MMouw', [mem]); } }, 'Save'),
+          el('button', { class: 'btn ghost', onclick: () => { store.set('MMloa', [mem, out], 1); enter(); store.notify(); } }, 'Load'))));
+    }
+    return g;
+  }
+  function render() {
+    const avail = store.val('MOava', out) === 1;
+    const full = store.val('MLfen', out) === 1;
+    const [W, H] = outSize();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Multiviewer' }),
+        el('span', { class: 'hint', text: `Monitor ${out + 1} · ${W}×${H}${avail ? '' : ' · output not present'}` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Output',
+            el('div', { class: 'seg' },
+              el('button', { class: out === 0 ? 'on take' : '', onclick: () => { out = 0; sel = 0; enter(); store.notify(); } }, 'Monitor 1'),
+              el('button', { class: out === 1 ? 'on take' : '', onclick: () => { out = 1; sel = 0; enter(); store.notify(); } }, 'Monitor 2'))),
+          el('label', { class: 'field' }, 'Mode',
+            el('div', { class: 'seg' },
+              el('button', { class: !full ? 'on recall' : '', onclick: () => { store.set('MLfen', [out], 0); store.notify(); } }, 'Custom'),
+              el('button', { class: full ? 'on take' : '', onclick: () => { store.set('MLfen', [out], 1); store.notify(); } }, 'Fullscreen'))),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn ghost', onclick: () => { store.set('MLres', [out], 1); enter(); store.notify(); } }, 'Reset'),
+          el('button', { class: 'btn take', onclick: () => { store.set('MLupd', [out], 1); } }, 'Apply to output'))),
+      full
+        ? el('div', { class: 'panel' }, el('h2', 'Fullscreen source'),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'Source', monSource('MLfes', [out])),
+            el('label', { class: 'field' }, 'OSD label', checkbox(store.val('MLfso', out) === 1, v => store.set('MLfso', [out], v ? 1 : 0)))))
+        : el('div', { class: 'split-wide' },
+          el('div', { class: 'panel' },
+            el('div', { class: 'row' },
+              el('span', { class: 'hint', text: 'Layouts:' }),
+              el('button', { class: 'btn ghost', onclick: () => layout(2, 2) }, 'Quad'),
+              el('button', { class: 'btn ghost', onclick: () => layout(3, 3) }, '3×3'),
+              el('button', { class: 'btn ghost', onclick: () => layout(4, 3) }, '4×3'),
+              el('button', { class: 'btn ghost', onclick: () => layout(1, 1) }, 'Single')),
+            canvas()),
+          el('div', { class: 'panel' }, widgetEditor(), el('div', { class: 'sub-head' }, 'Widgets'), list())),
+      el('div', { class: 'panel' }, el('h2', 'Layout memories'), memories()));
   }
   return { enter, render };
 })();
