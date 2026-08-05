@@ -109,6 +109,8 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .kv .k { color: var(--muted); font-size: 13px; }
 .kv .v { font-family: var(--mono); font-size: 13px; }
 tr.dim td { opacity: .5; }
+table.grid tbody tr { cursor: pointer; }
+table.grid tbody tr.sel-row { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
 
 /* ---- main ---- */
 .main { grid-area: main; overflow: auto; padding: 16px; }

@@ -466,11 +466,14 @@ VIEWS.live = (() => {
   function enter() {
     store.scan('SCmly');
     for (let l = 0; l < 24; l++) { store.get('PRinp', [screen, 0, l]); store.get('PRlay', [screen, 0, l]); }
-    store.get('GCtup', [screen]);
+    store.get('GCtup', [screen]); store.get('MAsna', [screen]); store.get('MAfat', []);
   }
 
   function take() { store.set('GCtup', [screen], ttime); store.set('GCtku', [screen], 1); }
   function cut() { store.set('GCtfr', [screen], 1); }
+  // MAmfa (master fade auto): 1 = fade to black, 2 = fade up. Best-effort mapping.
+  function fadeToBlack() { store.set('MAmfa', [screen], 1); }
+  function fadeUp() { store.set('MAmfa', [screen], 2); }
 
   function layers() {
     const max = store.val('SCmly', screen) || 0;
@@ -505,6 +508,13 @@ VIEWS.live = (() => {
                 oninput: (e) => { ttime = +e.target.value; e.target.parentNode.querySelector('.sv').textContent = (ttime / 1000).toFixed(1) + 's'; } }))),
           el('button', { class: 'btn pvw take-btn', onclick: cut }, 'CUT'),
           el('button', { class: 'btn pgm take-btn', onclick: take }, 'TAKE'))),
+      el('div', { class: 'panel' },
+        el('h2', 'Master fade'),
+        el('div', { class: 'row' },
+          bind('Fade time', 'MAfat', [], 0, 100, 1, v => (v / 10).toFixed(1) + 's'),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn', onclick: fadeUp }, 'Fade Up'),
+          el('button', { class: 'btn pgm', onclick: fadeToBlack }, 'Fade to Black'))),
       el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers`), layers()));
   }
   return { enter, render };
@@ -836,9 +846,11 @@ VIEWS.inputs = (() => {
 // ---------- Outputs ----------
 VIEWS.outputs = (() => {
   const N = 8;
-  const FMT = { 0: 'auto' };
+  let sel = 0;
+  const FORMATS = Array.from({ length: 55 }, (_, i) => i === 0 ? 'Auto' : `Format ${i}`);
   function enter() {
-    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUbla', 'OUpat', 'OUshs', 'OUsvs', 'OUhdc']) store.scan(m);
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
+      'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl']) store.scan(m);
   }
   function row(i) {
     const avail = store.val('OUava', i) === 1;
@@ -846,24 +858,42 @@ VIEWS.outputs = (() => {
     const used = store.val('OUuse', i) === 1;
     const w = store.val('OUshs', i), h = store.val('OUsvs', i);
     const black = store.val('OUbla', i) === 1;
-    return el('tr', { class: avail ? '' : 'dim' },
+    return el('tr', { class: (avail ? '' : 'dim') + (i === sel ? ' sel-row' : ''), onclick: () => { sel = i; store.notify(); } },
       el('td', { text: 'OUT ' + (i + 1) }),
-      el('td', {}, boolChip(avail ? 1 : 0, 'connected', 'no display')),
-      el('td', {}, boolChip(ena ? 1 : 0, 'live', 'off')),
+      el('td', boolChip(avail ? 1 : 0, 'connected', 'no display')),
+      el('td', boolChip(ena ? 1 : 0, 'live', 'off')),
       el('td', { class: 'val', text: `fmt ${store.val('OUfst', i) ?? '·'}` }),
       el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
-      el('td', {},
-        el('button', { class: 'btn ghost' + (used ? ' pgm' : ''), onclick: () => store.set('OUuse', [i], used ? 0 : 1) }, 'Use'),
-        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: () => store.set('OUbla', [i], black ? 0 : 1) }, 'Black')));
+      el('td',
+        el('button', { class: 'btn ghost' + (used ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('OUuse', [i], used ? 0 : 1); } }, 'Use'),
+        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: (e) => { e.stopPropagation(); store.set('OUbla', [i], black ? 0 : 1); } }, 'Black')));
+  }
+  function detail() {
+    const i = [sel];
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Format', enumSelect('OUfor', i, FORMATS)),
+        toggleBtn('HDCP', 'OUhdc', i),
+        toggleBtn('Black', 'OUbla', i, 'pgm')),
+      el('div', { class: 'sub-head' }, 'Output processing'),
+      el('div', { class: 'grid2' },
+        bind('Brightness', 'OCbri', i, 0, 255, 1),
+        bind('Contrast', 'OCcon', i, 0, 255, 1),
+        bind('Gamma', 'OCgam', i, 5, 40, 1, v => (v / 10).toFixed(1)),
+        bind('Gain R', 'OCgre', i, 0, 255, 1),
+        bind('Gain G', 'OCggr', i, 0, 255, 1),
+        bind('Gain B', 'OCgbl', i, 0, 255, 1)));
   }
   function render() {
     const rows = Array.from({ length: N }, (_, i) => row(i));
     return el('div', {},
-      el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }), el('span', { class: 'hint', text: 'Physical outputs and their connected displays' })),
-      el('div', { class: 'panel', style: 'overflow:auto' },
-        el('table', { class: 'grid' },
-          el('thead', {}, el('tr', {}, ...['Output', 'Display', 'State', 'Format', 'Size', ''].map(h => el('th', { text: h })))),
-          el('tbody', {}, ...rows))));
+      el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }), el('span', { class: 'hint', text: 'Physical outputs, formats and processing' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel', style: 'overflow:auto' },
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['Output', 'Display', 'State', 'Format', 'Size', ''].map(h => el('th', { text: h })))),
+            el('tbody', ...rows))),
+        el('div', { class: 'panel' }, el('h2', `Output ${sel + 1}`), detail())));
   }
   return { enter, render };
 })();
