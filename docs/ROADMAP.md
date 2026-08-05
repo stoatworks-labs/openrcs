@@ -7,17 +7,17 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 
 ## Shipped
 
-- **Stage** — an all-screens overview: every active screen with its layers, in
-  one canvas, click-through to editing.
+- **Stage** — an all-screens overview: every active screen with its layers in
+  one canvas, a global TAKE ALL / CUT ALL, click-through to editing.
 - **Memories** — master and screen memory grids (recall / load+take / save).
 - **Cues** — a show script over the memories: an ordered cue list with GO NEXT.
 - **Keys** — programmable one-tap macros (recall + take, freeze, black, fade…).
 - **Live** — preview→program take with a transition time, and master fade.
 - **Layers** — a graphical arrangement canvas (drag/resize, snap presets) plus a
-  full property editor: source, opacity, position, size, border, crop, and
-  per-layer opening/closing transitions.
-- **Setup** — Inputs; Outputs with format, HDCP and output processing
-  (brightness/contrast/gamma/gain); Screens; Stills.
+  full property editor: source, opacity, position, size, border, crop, per-layer
+  opening/closing transitions, and the screen's native background.
+- **Setup** — a live **Tally** grid; Inputs; Outputs with format, HDCP and output
+  processing (brightness/contrast/gamma/gain); Screens; Stills.
 - **System** — identity, network, health, front-panel.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
@@ -25,15 +25,12 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 
 Concrete device capabilities not yet given a dedicated surface:
 
-- **Output format / resolution** (`OUfor`) and **EDID** management (`EDID_IN`,
-  `EDID_OUT`, `EDID_LIB`) — the last big Setup gap.
-- **Native backgrounds** (`PRESET_NATIVE`, `NATIVE_SET`) — the full-screen
-  background layer beneath the live layers.
+- **EDID** management (`EDID_IN`, `EDID_OUT`, `EDID_LIB`) — the last big Setup gap.
 - **Soft edge** (`SOFTEDGE`) and **screen mapping** for blended/multi-output
   screens.
 - **Still capture** (`STILLS_CAPTURE`) — grab a frame from a source into the
   still library.
-- **Master fade / black** (`MASTER_ALPHA`) per screen.
+- **GPIO** (`GPIO`) — trigger inputs and tally outputs.
 - **Layer swap** (`LAYER_SWAP`) — swap two layers' sources/geometry.
 
 ## Beyond the stock control software

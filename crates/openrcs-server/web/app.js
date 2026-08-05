@@ -114,7 +114,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -158,7 +158,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['system', 'System'],
+  ['stills', 'Stills'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -1077,6 +1077,51 @@ VIEWS.stills = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }), el('span', { class: 'hint', text: `${used} of ${N} slots used` })),
       detail ? el('div', { class: 'panel' }, detail) : null,
       el('div', { class: 'panel' }, g));
+  }
+  return { enter, render };
+})();
+
+// ---------- GPIO ----------
+VIEWS.gpio = (() => {
+  const NIN = 2, NOUT = 10;
+  const MODES = ['Disabled', 'Take', 'Custom'];
+  function enter() {
+    for (const m of ['GPiav', 'GPist', 'GPipo', 'GPimo']) store.scan(m);
+    for (let i = 0; i < NIN; i++) for (let s = 0; s < 8; s++) store.get('GPits', [i, s]);
+    for (const m of ['GPoav', 'GPopo', 'GPomo', 'GPofa']) store.scan(m);
+  }
+  function inRow(i) {
+    const avail = store.val('GPiav', i) === 1;
+    const scr = Array.from({ length: 8 }, (_, s) => store.val('GPits', i, s) === 1 ? s + 1 : null).filter(Boolean);
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'GPI ' + (i + 1) }),
+      el('td', boolChip(avail ? 1 : 0, 'present', 'none')),
+      el('td', boolChip(store.val('GPist', i), 'high', 'low')),
+      el('td', toggleBtn('Invert', 'GPipo', [i], 'pgm')),
+      el('td', { class: 'val', text: scr.length ? 'takes ' + scr.join(',') : '—' }));
+  }
+  function outRow(i) {
+    const avail = store.val('GPoav', i) === 1;
+    const cmd = store.val('GPofa', i) === 1;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'GPO ' + (i + 1) }),
+      el('td', boolChip(avail ? 1 : 0, 'present', 'none')),
+      el('td', el('label', { class: 'field' }, '', enumSelect('GPomo', [i], MODES))),
+      el('td', toggleBtn('Invert', 'GPopo', [i], 'pgm')),
+      el('td', el('button', { class: 'btn ghost' + (cmd ? ' pgm' : ''), onclick: () => store.set('GPofa', [i], cmd ? 0 : 1) }, 'Fire')));
+  }
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'GPIO' }), el('span', { class: 'hint', text: 'Trigger inputs and tally/relay outputs' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'Inputs'),
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['GPI', 'Port', 'State', 'Polarity', 'Action'].map(h => el('th', { text: h })))),
+            el('tbody', ...Array.from({ length: NIN }, (_, i) => inRow(i))))),
+        el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'Outputs'),
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['GPO', 'Port', 'Mode', 'Polarity', ''].map(h => el('th', { text: h })))),
+            el('tbody', ...Array.from({ length: NOUT }, (_, i) => outRow(i)))))));
   }
   return { enter, render };
 })();
