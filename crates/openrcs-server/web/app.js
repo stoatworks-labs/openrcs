@@ -848,8 +848,11 @@ function srcColor(n) {
 // ---------- Stage (all screens at a glance) ----------
 VIEWS.stage = (() => {
   let ctx = 0;   // 0 = program (what's on air), 1 = preview
+  let ttime = 1000;
   const NL = 24;
   const active = () => [0, 1, 2, 3, 4, 5, 6, 7].filter(s => (store.val('SCssh', s) || 0) > 0);
+  function takeAll() { for (const s of active()) { store.set('GCtup', [s], ttime); store.set('GCtku', [s], 1); } }
+  function cutAll() { for (const s of active()) store.set('GCtfr', [s], 1); }
 
   function enter() {
     for (const m of ['SCssh', 'SCssv', 'SCmly']) store.scan(m);
@@ -887,10 +890,18 @@ VIEWS.stage = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'Stage' }),
         el('span', { class: 'hint', text: `${screens.length} active screen${screens.length === 1 ? '' : 's'} · click one to edit its layers` })),
       el('div', { class: 'panel' },
-        el('div', { class: 'row' },
+        el('div', { class: 'takebar' },
           el('div', { class: 'seg' },
             el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
-            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')))),
+            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+          el('div', { class: 'tbar' },
+            el('label', { class: 'field slider' },
+              el('span', {}, 'Transition', el('b', { class: 'sv', text: (ttime / 1000).toFixed(1) + 's' })),
+              el('input', { type: 'range', min: 0, max: 3000, step: 100, value: ttime,
+                onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+                oninput: (e) => { ttime = +e.target.value; e.target.parentNode.querySelector('.sv').textContent = (ttime / 1000).toFixed(1) + 's'; } }))),
+          el('button', { class: 'btn pvw take-btn', onclick: cutAll }, 'CUT ALL'),
+          el('button', { class: 'btn pgm take-btn', onclick: takeAll }, 'TAKE ALL'))),
       screens.length
         ? el('div', { class: 'stage-grid' }, ...screens.map(screenCard))
         : el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured yet.' })));
