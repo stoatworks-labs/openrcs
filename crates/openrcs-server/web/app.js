@@ -114,7 +114,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -158,7 +158,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['gpio', 'GPIO'], ['system', 'System'],
+  ['stills', 'Stills'], ['capture', 'Capture'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -1077,6 +1077,106 @@ VIEWS.stills = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }), el('span', { class: 'hint', text: `${used} of ${N} slots used` })),
       detail ? el('div', { class: 'panel' }, detail) : null,
       el('div', { class: 'panel' }, g));
+  }
+  return { enter, render };
+})();
+
+// ---------- Still capture (grab a frame from a live source) ----------
+VIEWS.capture = (() => {
+  const NSLOT = 8;
+  // presets operate on the source's total frame (fw × fh)
+  const PRESETS = [
+    ['Full frame', (w, h) => [0, 0, w, h]],
+    ['Left half', (w, h) => [0, 0, (w / 2) | 0, h]],
+    ['Right half', (w, h) => [(w / 2) | 0, 0, (w / 2) | 0, h]],
+    ['Top half', (w, h) => [0, 0, w, (h / 2) | 0]],
+    ['Bottom half', (w, h) => [0, (h / 2) | 0, w, (h / 2) | 0]],
+    ['Centre ½', (w, h) => [(w / 4) | 0, (h / 4) | 0, (w / 2) | 0, (h / 2) | 0]],
+  ];
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  function enter() {
+    for (const m of ['STcso', 'STcen', 'STcfe', 'STcpx', 'STcpy', 'STcwi', 'STche', 'STcdo', 'STctw', 'STcth'])
+      store.get(m, []);
+    for (const m of ['STsss', 'STsdo', 'STswi', 'STshe']) store.scan(m);
+    store.scan('INava');
+  }
+  // the source frame we're cropping out of; sim reports 0 with no signal, so fall back to 1080p
+  function frame() {
+    const w = store.val('STctw') || 0, h = store.val('STcth') || 0;
+    return w > 0 && h > 0 ? [w, h] : [1920, 1080];
+  }
+  function setRegion(x, y, w, h) {
+    const [fw, fh] = frame();
+    w = clamp(w | 0, 16, fw); h = clamp(h | 0, 16, fh);
+    x = clamp(x | 0, 0, fw - w); y = clamp(y | 0, 0, fh - h);
+    store.set('STcwi', [], w); store.set('STche', [], h);
+    store.set('STcpx', [], x); store.set('STcpy', [], y);
+    store.notify();
+  }
+  // click the preview to recentre the region on that point (size kept)
+  function onCanvasClick(e) {
+    const [fw, fh] = frame();
+    const r = e.currentTarget.getBoundingClientRect();
+    const cx = ((e.clientX - r.left) / r.width) * fw;
+    const cy = ((e.clientY - r.top) / r.height) * fh;
+    const w = store.val('STcwi') || (fw / 2) | 0, h = store.val('STche') || (fh / 2) | 0;
+    setRegion(cx - w / 2, cy - h / 2, w, h);
+  }
+  function preview(region) {
+    const [fw, fh] = frame();
+    const x = store.val('STcpx') || 0, y = store.val('STcpy') || 0;
+    const w = store.val('STcwi') || fw, h = store.val('STche') || fh;
+    const box = el('div', { class: 'cap-frame', style: `aspect-ratio:${fw}/${fh}`, onclick: region ? onCanvasClick : null });
+    if (region) box.append(el('div', {
+      class: 'cap-region',
+      style: `left:${(x / fw) * 100}%;top:${(y / fh) * 100}%;width:${(w / fw) * 100}%;height:${(h / fh) * 100}%`,
+    }, el('span', { class: 'cap-dim', text: `${w}×${h}` })));
+    else box.append(el('div', { class: 'cap-region full' }, el('span', { class: 'cap-dim', text: `${fw}×${fh}` })));
+    return box;
+  }
+  function slotRow(i) {
+    const st = store.val('STsss', i);
+    const done = store.val('STsdo', i) === 1;
+    const w = store.val('STswi', i), h = store.val('STshe', i);
+    return el('tr', { class: st ? '' : 'dim' },
+      el('td', { text: 'Slot ' + (i + 1) }),
+      el('td', boolChip(st ? 1 : 0, 'active', 'idle')),
+      el('td', { class: 'val', text: (w || h) ? `${w ?? '·'}×${h ?? '·'}` : '—' }),
+      el('td', boolChip(done ? 1 : 0, 'done', '—')));
+  }
+  function render() {
+    const region = store.val('STcfe') === 1;
+    const done = store.val('STcdo') === 1;
+    const busy = store.val('STcen') === 1;
+    const srcMax = store.byMnem.get('STcso')?.max ?? 31;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Still capture' }),
+        el('span', { class: 'hint', text: 'Grab a frame from a live source into the still library' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Source & region'),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'Source', sourceSelect('STcso', [], srcMax)),
+            el('label', { class: 'field' }, 'Area',
+              el('div', { class: 'seg' },
+                el('button', { class: !region ? 'on take' : '', onclick: () => { store.set('STcfe', [], 0); store.notify(); } }, 'Full frame'),
+                el('button', { class: region ? 'on recall' : '', onclick: () => { store.set('STcfe', [], 1); store.notify(); } }, 'Region')))),
+          region ? el('div', { class: 'row cap-presets' },
+            ...PRESETS.map(([label, fn]) => el('button', { class: 'btn ghost', onclick: () => setRegion(...fn(...frame())) }, label))) : null,
+          region ? el('div', { class: 'row' },
+            bind('X', 'STcpx', [], 0, frame()[0]), bind('Y', 'STcpy', [], 0, frame()[1])) : null,
+          region ? el('div', { class: 'row' },
+            bind('Width', 'STcwi', [], 16, frame()[0]), bind('Height', 'STche', [], 16, frame()[1])) : null,
+          el('div', { class: 'row' },
+            el('button', { class: 'btn big ' + (busy ? 'ghost' : 'take'), disabled: busy || false, onclick: () => { store.set('STcen', [], 1); store.get('STcdo'); store.notify(); } }, busy ? 'Capturing…' : 'Capture'),
+            el('div', { class: 'spacer' }),
+            el('span', { class: 'hint', text: 'Result' }), boolChip(done ? 1 : 0, 'captured', 'idle'))),
+        el('div', { class: 'panel' }, el('h2', region ? 'Region' : 'Frame'),
+          preview(region),
+          el('div', { class: 'hint', style: 'margin-top:8px', text: region ? 'Click the frame to recentre the region' : 'Whole source frame will be captured' }))),
+      el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'Capture slots'),
+        el('table', { class: 'grid' },
+          el('thead', el('tr', ...['Slot', 'Status', 'Size', 'Done'].map(h => el('th', { text: h })))),
+          el('tbody', ...Array.from({ length: NSLOT }, (_, i) => slotRow(i))))));
   }
   return { enter, render };
 })();
