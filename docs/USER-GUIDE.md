@@ -47,6 +47,24 @@ choose what a slot tap does:
 Saved slots light up, driven by the device's own validity flags, so the grid
 always reflects what is actually stored on the hardware.
 
+## Cues
+
+![Cue list](screenshots/cues.png)
+
+Turn your memories into a show script. Each cue recalls a master or screen
+memory and takes it; **GO NEXT** runs the list step by step. Preview or Go any
+cue directly, reorder and rename, and the current cue is highlighted. Cues are
+saved in the browser, so your running order survives a reload.
+
+## Keys
+
+![User keys](screenshots/keys.png)
+
+Programmable one-tap buttons. A key runs a sequence of actions — recall a
+memory (with take), take a screen or all screens, freeze an input, black an
+output, master-fade — so a whole cue-to-air, a panic black, or a freeze is a
+single press. Tap **Edit** to build them; they persist in the browser.
+
 ## Live
 
 ![Live take](screenshots/live.png)

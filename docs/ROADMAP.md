@@ -2,20 +2,22 @@
 
 Where openrcs is, and where it could go. The second half sketches features drawn
 from other professional multi-screen control systems — Barco **Event Master**,
-Analog Way's own **LivePremier RCS**, and canvas/pixel-space tools in the vein of
-**Pixelflow** — noting for each whether the LiveCore/Midra protocol already
-exposes what it needs.
+Analog Way's own **LivePremier RCS**, and PixelHue's **Pixel Flow** — noting for
+each whether the LiveCore/Midra protocol already exposes what it needs.
 
 ## Shipped
 
+- **Stage** — an all-screens overview: every active screen with its layers, in
+  one canvas, click-through to editing.
 - **Memories** — master and screen memory grids (recall / load+take / save).
-- **Live** — preview→program take with a transition time.
+- **Cues** — a show script over the memories: an ordered cue list with GO NEXT.
+- **Keys** — programmable one-tap macros (recall + take, freeze, black, fade…).
+- **Live** — preview→program take with a transition time, and master fade.
 - **Layers** — a graphical arrangement canvas (drag/resize, snap presets) plus a
   full property editor: source, opacity, position, size, border, crop, and
   per-layer opening/closing transitions.
-- **Stage** — an all-screens overview: every active screen with its layers, in
-  one canvas, click-through to editing.
-- **Setup** — Inputs, Outputs, Screens, Stills.
+- **Setup** — Inputs; Outputs with format, HDCP and output processing
+  (brightness/contrast/gamma/gain); Screens; Stills.
 - **System** — identity, network, health, front-panel.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
@@ -60,16 +62,14 @@ overlaps between adjacent screens. **Feasible on current data.**
 across several screens as one destination. A "destinations" bar that takes a
 whole group at once. **Feasible.**
 
-### Cue list / show timeline — *LivePremier*
-`SEQ_TAKE` gives sequenced takes; memories give the content. A cue list —
-ordered steps of "recall memory N, take, wait" with a big **TAKE NEXT** — turns
-the memory grid into a show script. Autofollow and per-cue notes on top.
-**Feasible; sequencing logic lives in the client.**
+### Cue list / show timeline — *LivePremier* — **shipped, v1**
+The Cues view is the first cut: an ordered list of memory recalls with GO NEXT.
+Next: autofollow/hold timing, per-cue notes, and hooking `SEQ_TAKE` for the
+device's own sequences.
 
-### User keys / macros — *Event Master*
-One tap that does several protocol actions (recall + take, source + take,
-freeze all, black). Stored in the browser, or mapped to the device's own shotbox
-keys where present. A programmable button wall. **Feasible; client-side.**
+### User keys / macros — *Event Master, Pixel Flow* — **shipped, v1**
+The Keys view runs multi-action macros on one tap. Next: colour/label per key,
+and mapping to the device's own shotbox keys where present.
 
 ### Multiviewer designer — *LivePremier, Event Master*
 `MONITORING_LAYOUT` / `MONITORING__OUTPUTS` control the multiviewer. A drag-drop
@@ -96,12 +96,11 @@ bridge.**
 
 ## A note on the inspirations
 
-Event Master and LivePremier RCS are directly comparable — multi-screen event
-switchers whose control software defines the category (destinations, presets,
-aux, multiviewer, user keys). "Pixelflow" is taken here as the canvas/pixel-space
-paradigm — a single stage you compose across, outputs mapped in as viewports —
-which is the model the Stage view is growing toward. If a specific product is
-meant by it, point me at it and I'll draw from the real thing.
+All three are multi-screen presentation switchers whose control software defines
+the category — Barco's **Event Master** (destinations, presets, aux, user keys),
+Analog Way's **LivePremier RCS** (scenes, multiviewer, image library), and
+PixelHue's **Pixel Flow** (a layer-based canvas with a clean touch UI). openrcs
+borrows the ideas that its LiveCore/Midra targets can actually execute.
 
 Everything above is gated on hardware access for the features that touch signal
 paths (thumbnails, capture, EDID) and on confirming the enum meanings the
