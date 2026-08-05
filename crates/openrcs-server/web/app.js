@@ -114,7 +114,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -155,7 +155,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['live', 'Live'], ['layers', 'Layers'],
+  ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['system', 'System'],
@@ -457,6 +457,115 @@ VIEWS.cues = (() => {
   }
   return { render };
 })();
+
+// ---------- Keys (programmable macro buttons) ----------
+VIEWS.keys = (() => {
+  const KEY = 'openrcs.keys';
+  let keys = [];      // { id, name, colour, actions:[{type,...}] }
+  let editing = false;
+  let openKey = null; // id being edited
+  try { keys = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { /* first run */ }
+  const persist = () => localStorage.setItem(KEY, JSON.stringify(keys));
+
+  const ACTION_TYPES = {
+    master: { label: 'Recall master memory', fields: ['slot', 'take'], desc: a => `Master mem ${a.slot + 1}${a.take ? ' + take' : ''}` },
+    screen: { label: 'Recall screen memory', fields: ['screen', 'slot', 'take'], desc: a => `Screen ${a.screen + 1} mem ${a.slot + 1}${a.take ? ' + take' : ''}` },
+    take:   { label: 'Take', fields: ['screenAll'], desc: a => a.screen < 0 ? 'Take all screens' : `Take screen ${a.screen + 1}` },
+    freeze: { label: 'Freeze input', fields: ['input', 'on'], desc: a => `${a.on ? 'Freeze' : 'Unfreeze'} IN ${a.input + 1}` },
+    black:  { label: 'Output black', fields: ['output', 'on'], desc: a => `${a.on ? 'Black' : 'Unblack'} OUT ${a.output + 1}` },
+    ftb:    { label: 'Master fade', fields: ['screen', 'dir'], desc: a => `${a.dir === 1 ? 'Fade to black' : 'Fade up'} screen ${a.screen + 1}` },
+  };
+
+  function runAction(a) {
+    switch (a.type) {
+      case 'master': store.set('PSmet', [], a.slot); store.set(a.take ? 'PSlot' : 'PSloa', [], 1); break;
+      case 'screen': store.set('PMscf', [], a.screen); store.set('PMmet', [], a.slot); store.set(a.take ? 'PMlot' : 'PMloa', [], 1); break;
+      case 'take': if (a.screen < 0) { for (let s = 0; s < 8; s++) store.set('GCtku', [s], 1); } else store.set('GCtku', [a.screen], 1); break;
+      case 'freeze': store.set('INfrz', [a.input], a.on ? 1 : 0); break;
+      case 'black': store.set('OUbla', [a.output], a.on ? 1 : 0); break;
+      case 'ftb': store.set('MAmfa', [a.screen], a.dir); break;
+    }
+  }
+  const runKey = (k) => k.actions.forEach(runAction);
+
+  // draft for the add-action form (per open key)
+  let dType = 'master', dSlot = 0, dScreen = 0, dInput = 0, dOutput = 0, dTake = true, dOn = true, dDir = 1;
+  function addAction(k) {
+    const a = { type: dType };
+    if (dType === 'master') { a.slot = dSlot; a.take = dTake; }
+    else if (dType === 'screen') { a.screen = dScreen; a.slot = dSlot; a.take = dTake; }
+    else if (dType === 'take') { a.screen = dScreen; }         // dScreen -1 = all
+    else if (dType === 'freeze') { a.input = dInput; a.on = dOn; }
+    else if (dType === 'black') { a.output = dOutput; a.on = dOn; }
+    else if (dType === 'ftb') { a.screen = dScreen; a.dir = dDir; }
+    k.actions.push(a); persist(); store.notify();
+  }
+
+  function newKey() { const k = { id: Date.now(), name: 'Key ' + (keys.length + 1), actions: [] }; keys.push(k); openKey = k.id; persist(); store.notify(); }
+  function delKey(id) { keys = keys.filter(k => k.id !== id); if (openKey === id) openKey = null; persist(); store.notify(); }
+
+  function actionForm(k) {
+    const t = ACTION_TYPES[dType];
+    const f = (name) => t.fields.includes(name);
+    return el('div', { class: 'row', style: 'flex-wrap:wrap' },
+      el('label', { class: 'field' }, 'Action', enumSelect2(dType, Object.entries(ACTION_TYPES).map(([v, o]) => [v, o.label]), v => { dType = v; store.notify(); })),
+      f('screen') ? el('label', { class: 'field' }, 'Screen', screenSelect(dScreen, v => { dScreen = v; store.notify(); })) : null,
+      f('screenAll') ? el('label', { class: 'field' }, 'Screen', el('select', { onchange: e => { dScreen = +e.target.value; } },
+        el('option', { value: -1 }, 'All screens'), ...[0, 1, 2, 3, 4, 5, 6, 7].map(s => el('option', { value: s, selected: dScreen === s || undefined }, 'Screen ' + (s + 1)))) ) : null,
+      f('slot') ? el('label', { class: 'field' }, 'Slot', el('input', { type: 'number', min: 1, max: 144, value: dSlot + 1, style: 'width:70px', oninput: e => dSlot = Math.max(0, (+e.target.value || 1) - 1) })) : null,
+      f('input') ? el('label', { class: 'field' }, 'Input', el('input', { type: 'number', min: 1, max: 24, value: dInput + 1, style: 'width:70px', oninput: e => dInput = Math.max(0, (+e.target.value || 1) - 1) })) : null,
+      f('output') ? el('label', { class: 'field' }, 'Output', el('input', { type: 'number', min: 1, max: 8, value: dOutput + 1, style: 'width:70px', oninput: e => dOutput = Math.max(0, (+e.target.value || 1) - 1) })) : null,
+      f('take') ? el('label', { class: 'field' }, 'Then take', checkbox(dTake, v => { dTake = v; store.notify(); })) : null,
+      f('on') ? el('label', { class: 'field' }, 'On', checkbox(dOn, v => { dOn = v; store.notify(); })) : null,
+      f('dir') ? el('label', { class: 'field' }, 'Direction', el('select', { onchange: e => dDir = +e.target.value }, el('option', { value: 1, selected: dDir === 1 || undefined }, 'To black'), el('option', { value: 2, selected: dDir === 2 || undefined }, 'Up'))) : null,
+      el('button', { class: 'btn', onclick: () => addAction(k) }, 'Add action'));
+  }
+
+  function keyEditor(k) {
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Name', el('input', { type: 'text', value: k.name, style: 'width:220px', oninput: e => { k.name = e.target.value; persist(); } })),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ghost', onclick: () => { openKey = null; store.notify(); } }, 'Close'),
+        el('button', { class: 'btn ghost', onclick: () => delKey(k.id) }, 'Delete key')),
+      el('div', { class: 'action-list' }, ...k.actions.map((a, ai) =>
+        el('div', { class: 'action-item' },
+          el('span', { class: 'action-n', text: ai + 1 }),
+          el('span', { class: 'action-desc', text: ACTION_TYPES[a.type].desc(a) }),
+          el('button', { class: 'btn ghost', onclick: () => { k.actions.splice(ai, 1); persist(); store.notify(); } }, '✕')))),
+      k.actions.length === 0 ? el('div', { class: 'empty-state', text: 'No actions yet — add one below.' }) : null,
+      el('div', { class: 'sub-head' }, 'Add action'),
+      actionForm(k));
+  }
+
+  function render() {
+    const open = keys.find(k => k.id === openKey);
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Keys' }),
+        el('span', { class: 'hint', text: editing ? 'Editing — tap a key to program it' : 'Tap a key to run its actions' }),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ' + (editing ? 'pgm' : 'ghost'), onclick: () => { editing = !editing; openKey = null; store.notify(); } }, editing ? 'Done' : 'Edit')),
+      el('div', { class: 'panel' },
+        el('div', { class: 'key-grid' },
+          ...keys.map(k => el('button', { class: 'user-key', onclick: () => editing ? (openKey = k.id, store.notify()) : runKey(k) },
+            el('span', { class: 'user-key-name', text: k.name }),
+            el('span', { class: 'user-key-sub', text: k.actions.length + ' action' + (k.actions.length === 1 ? '' : 's') }))),
+          editing ? el('button', { class: 'user-key add', onclick: newKey }, el('span', { class: 'user-key-name', text: '+ New key' })) : null),
+        keys.length === 0 && !editing ? el('div', { class: 'empty-state', text: 'No keys yet. Tap Edit to program one — recall a memory, take, freeze a source, and more, in one press.' }) : null),
+      open ? keyEditor(open) : null);
+  }
+  return { render };
+})();
+
+// small helpers used by Keys
+function enumSelect2(cur, pairs, onchange) {
+  const s = el('select', { onchange: e => onchange(e.target.value) });
+  for (const [v, label] of pairs) s.append(el('option', { value: v, selected: v === cur || undefined }, label));
+  return s;
+}
+function checkbox(on, onchange) {
+  return el('input', { type: 'checkbox', checked: on || undefined, onchange: e => onchange(e.target.checked) });
+}
 
 // ---------- Live ----------
 VIEWS.live = (() => {
