@@ -114,7 +114,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -157,7 +157,7 @@ const NAV = [
   { section: 'Program' },
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
-  ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
+  ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
@@ -653,9 +653,21 @@ VIEWS.layers = (() => {
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
+    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) store.get(m, [screen, ctx]);
     const n = count();
     for (let l = 0; l < n; l++)
       for (const m of LAYER_VARS) store.get(m, [screen, ctx, l]);
+  }
+
+  function background() {
+    const i = [screen, ctx];
+    const src = store.val('PNinp', ...i);
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Source',
+          enumSelect('PNinp', i, ['Colour', ...Array.from({ length: 8 }, (_, k) => 'BG set ' + (k + 1))])),
+        el('label', { class: 'field' }, 'Colour', colorPicker('PNbcr', 'PNbcg', 'PNbcb', i))),
+      bind('Opacity', 'PNalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'));
   }
 
   // device layer -> {left,top,w,h} in device pixels
@@ -812,6 +824,7 @@ VIEWS.layers = (() => {
         el('div', { class: 'panel' }, el('h2', 'Arrangement'), canvas()),
         el('div', {},
           el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
+          el('div', { class: 'panel' }, el('h2', 'Background'), background()),
           el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor()))));
   }
   return { enter, render, focus(s, c) { screen = s; if (c != null) ctx = c; sel = 0; } };
@@ -913,6 +926,30 @@ const fmt = (v) => v == null ? '·' : String(v);
 const nz = (v) => v == null ? null : v !== 0;
 // card temperature in 0.1 °C units; 0 and 0xFFFF mean "no sensor"
 const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 10).toFixed(1) + ' °C';
+
+// ---------- Tally (live on-air indicators) ----------
+VIEWS.tally = (() => {
+  const N = 42;   // sources: inputs, stills and internal generators
+  function enter() { store.scan('TAopr'); store.scan('TAopw'); store.scan('INava'); }
+  function tile(i) {
+    const pgm = store.val('TAopr', i) === 1;
+    const pvw = store.val('TAopw', i) === 1;
+    const cls = 'tally-tile' + (pgm ? ' pgm' : pvw ? ' pvw' : '');
+    return el('div', { class: cls },
+      el('span', { class: 'tally-src', text: 'IN ' + (i + 1) }),
+      el('span', { class: 'tally-state', text: pgm ? 'PGM' : pvw ? 'PVW' : '' }));
+  }
+  function render() {
+    const onPgm = Array.from({ length: N }, (_, i) => store.val('TAopr', i)).filter(v => v === 1).length;
+    const onPvw = Array.from({ length: N }, (_, i) => store.val('TAopw', i)).filter(v => v === 1).length;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Tally' }),
+        el('span', { class: 'hint', text: `${onPgm} on program · ${onPvw} on preview` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'tally-grid' }, ...Array.from({ length: N }, (_, i) => tile(i)))));
+  }
+  return { enter, render };
+})();
 
 // ---------- Inputs ----------
 VIEWS.inputs = (() => {
