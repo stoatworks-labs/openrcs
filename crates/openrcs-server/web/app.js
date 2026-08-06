@@ -221,15 +221,74 @@ VIEWS.memories = (() => {
   let screen = 0;
   let selected = null;
 
+  const fetched = new Set();     // screen-memory slots whose contents we've pulled
+
   function enter() {
     store.scan('PSval');         // master validity
     store.scan('PMscw');         // screen-memory content width (>0 = present)
+    store.scan('PMsch');         // stored screen height
     store.scan('PMmly');         // stored layer count
     store.scan('SCmly');         // per-screen max layers
   }
 
+  // pull the stored per-layer content of one screen-memory slot (once)
+  function ensureContent(slot) {
+    if (fetched.has(slot)) return;
+    fetched.add(slot);
+    store.get('PMscw', [slot]); store.get('PMsch', [slot]); store.get('PMmly', [slot]);
+    const mly = store.val('PMmly', slot) || 24;
+    for (let l = 0; l < mly; l++)
+      for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv', 'PMalp']) store.get(m, [slot, l]);
+  }
+
+  // a scaled thumbnail of a stored memory's layer arrangement
+  function memThumb(slot) {
+    const B = 32768;
+    const sw = store.val('PMscw', slot) || 1920, sh = store.val('PMsch', slot) || 1080;
+    const CW = 300, scale = CW / sw;
+    const cv = el('div', { class: 'screen-canvas mem-thumb', style: `width:${CW}px;height:${Math.round(sh * scale)}px` });
+    const mly = store.val('PMmly', slot) || 0;
+    let drawn = 0;
+    for (let l = 0; l < mly; l++) {
+      const src = store.val('PMinp', slot, l);
+      if (!src) continue;
+      const w = store.val('PMsih', slot, l) || 0, h = store.val('PMsiv', slot, l) || 0;
+      const cx = (store.val('PMpoh', slot, l) ?? B) - B, cy = (store.val('PMpov', slot, l) ?? B) - B;
+      const alp = store.val('PMalp', slot, l);
+      cv.append(el('div', { class: 'lrect', style:
+        `left:${(cx - w / 2) * scale}px;top:${(cy - h / 2) * scale}px;width:${w * scale}px;height:${h * scale}px;`
+        + `background:${srcColor(src)};opacity:${alp == null ? 1 : (alp / 256).toFixed(2)};z-index:${l + 1}` },
+        el('span', { class: 'lrect-tag', text: sourceName(src) })));
+      drawn++;
+    }
+    if (!drawn) cv.append(el('span', { class: 'se-mid', text: 'empty' }));
+    return cv;
+  }
+
+  // a per-layer table of the stored memory contents
+  function memList(slot) {
+    const B = 32768, mly = store.val('PMmly', slot) || 0;
+    const rows = [];
+    for (let l = 0; l < mly; l++) {
+      const src = store.val('PMinp', slot, l);
+      const w = store.val('PMsih', slot, l), h = store.val('PMsiv', slot, l);
+      const cx = store.val('PMpoh', slot, l), cy = store.val('PMpov', slot, l);
+      const alp = store.val('PMalp', slot, l);
+      rows.push(el('tr', { class: src ? '' : 'dim' },
+        el('td', { text: 'L' + (l + 1) }),
+        el('td', {}, src ? el('span', { class: 'swatch-dot', style: `background:${srcColor(src)}` }) : null, ' ' + sourceName(src)),
+        el('td', { class: 'val', text: (w != null && h != null) ? `${w}×${h}` : '·' }),
+        el('td', { class: 'val', text: (cx != null && cy != null) ? `${cx - B},${cy - B}` : '·' }),
+        el('td', { class: 'val', text: alp == null ? '·' : Math.round(alp / 256 * 100) + '%' })));
+    }
+    return el('table', { class: 'grid', style: 'flex:1' },
+      el('thead', el('tr', ...['Layer', 'Source', 'Size', 'Centre', 'Opacity'].map(h => el('th', { text: h })))),
+      el('tbody', ...rows));
+  }
+
   function slotTap(n) {
     selected = n;
+    if (mode === 'inspect') { if (scope === 'screen') ensureContent(n); store.notify(); return; }
     if (scope === 'master') {
       store.set('PSmet', [], n);                       // target slot
       if (mode === 'recall') store.set('PSloa', [], 1);
@@ -240,7 +299,8 @@ VIEWS.memories = (() => {
       store.set('PMmet', [], n);
       if (mode === 'recall') store.set('PMloa', [], 1);
       else if (mode === 'take') store.set('PMlot', [], 1);
-      else if (mode === 'save') { store.set('PMprf', [], 0); store.set('PMsav', [], 1); store.scan('PMscw'); }
+      else if (mode === 'save') { store.set('PMprf', [], 0); store.set('PMsav', [], 1); store.scan('PMscw'); fetched.delete(n); ensureContent(n); }
+      else if (scope === 'screen') ensureContent(n);
     }
     store.notify();
   }
@@ -269,7 +329,7 @@ VIEWS.memories = (() => {
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Memories' }),
-        el('span', { class: 'hint', text: `${validCount} saved · tap a slot to ${mode === 'save' ? 'save into' : mode === 'take' ? 'load + take' : 'recall to preview'}` })),
+        el('span', { class: 'hint', text: `${validCount} saved · tap a slot to ${mode === 'save' ? 'save into' : mode === 'take' ? 'load + take' : mode === 'inspect' ? 'preview its contents' : 'recall to preview'}` })),
 
       el('div', { class: 'panel' },
         el('div', { class: 'row' },
@@ -282,7 +342,20 @@ VIEWS.memories = (() => {
           el('div', { class: 'seg' },
             el('button', { class: 'recall ' + (mode === 'recall' ? 'on' : ''), onclick: () => { mode = 'recall'; render2(); } }, 'Recall'),
             el('button', { class: 'take ' + (mode === 'take' ? 'on' : ''), onclick: () => { mode = 'take'; render2(); } }, 'Load + Take'),
-            el('button', { class: 'save ' + (mode === 'save' ? 'on' : ''), onclick: () => { mode = 'save'; render2(); } }, 'Save')))),
+            el('button', { class: 'save ' + (mode === 'save' ? 'on' : ''), onclick: () => { mode = 'save'; render2(); } }, 'Save'),
+            el('button', { class: (mode === 'inspect' ? 'on' : ''), onclick: () => { mode = 'inspect'; render2(); } }, 'Inspect')))),
+
+      // stored-content preview for the selected screen memory
+      scope === 'screen' && selected != null && (store.val('PMscw', selected) || 0) > 0
+        ? el('div', { class: 'panel' },
+          el('div', { class: 'row' },
+            el('h2', `Memory ${selected + 1} contents`),
+            el('div', { class: 'spacer' }),
+            el('span', { class: 'hint', text: `${store.val('PMscw', selected)}×${store.val('PMsch', selected) || '·'} · ${store.val('PMmly', selected) ?? 0} layers` })),
+          el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
+            memThumb(selected),
+            memList(selected)))
+        : null,
 
       el('div', { class: 'panel' }, grid()));
   }

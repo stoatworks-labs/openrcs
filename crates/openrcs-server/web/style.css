@@ -361,4 +361,8 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
   color: var(--text); font: 600 13px var(--mono); padding: 4px 6px; }
 .num-in:focus { outline: none; border-color: var(--accent); }
 
+/* ---- memory content preview ---- */
+.mem-thumb { flex: 0 0 auto; }
+.swatch-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
