@@ -61,8 +61,11 @@
   const CSS = `
 .demo-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  height: var(--demo-banner-h);
-  padding: 0 16px;
+  /* Height is measured, not declared — see trackBannerHeight(). The banner
+     wraps on a narrow screen, and a fixed height let the wrapped text overlap
+     the app header underneath it. */
+  min-height: var(--demo-banner-h);
+  padding: 4px 16px;
   background: #2a1f0a;
   border-bottom: 1px solid #4a3a12;
   color: #f0c469;
@@ -153,6 +156,25 @@
     return wrap;
   }
 
+  /**
+   * Publish the banner's real height as --demo-banner-h.
+   *
+   * The app below is a 100vh grid sized with calc(100vh - banner). The banner's
+   * content wraps at narrow widths, so its height depends on the viewport and
+   * cannot be written as a constant: hardcoding one made the wrapped text
+   * overlap the app header on a phone. Measure it, and re-measure whenever it
+   * changes — rotation, a resized window, a font that loads late.
+   */
+  function trackBannerHeight(bar) {
+    const apply = () => {
+      const h = Math.ceil(bar.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--demo-banner-h', h + 'px');
+    };
+    apply();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(apply).observe(bar);
+    else addEventListener('resize', apply);
+  }
+
   function mount() {
     if (document.querySelector('.demo-limits')) return;
     const style = document.createElement('style');
@@ -160,7 +182,9 @@
     document.head.append(style);
 
     const footer = limits();
-    document.body.prepend(banner(footer));
+    const bar = banner(footer);
+    document.body.prepend(bar);
+    trackBannerHeight(bar);
     // after the app, before the shared support footer
     const support = document.querySelector('.sw-support');
     if (support) support.before(footer);

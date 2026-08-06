@@ -26,7 +26,14 @@ done
 # A stable stamp so the CDN can actually cache the assets. The server build
 # uses Date.now() to defeat caching while the UI is iterated live; a published
 # demo wants the opposite.
-stamp="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || date +%Y%m%d)"
+#
+# Hash the content rather than naming a commit: a build cannot know the sha of
+# the commit that will contain it, so a `git rev-parse HEAD` stamp is always one
+# commit stale. A content hash changes exactly when the assets change, which is
+# the only thing the query string is for.
+stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
+              "$here/demo-footer.js" "$here/support-footer.js" "$here/fixtures.json" \
+         | shasum -a 256 | cut -c1-8)"
 
 rm -rf "$dist"
 mkdir -p "$dist"

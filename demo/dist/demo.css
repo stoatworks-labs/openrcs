@@ -29,7 +29,10 @@ html, body {
   --sw-support-accent: var(--accent);
 }
 
+/* The banner wraps on a narrow screen, so its height is NOT a constant — a
+   fixed value here let the wrapped text overlap the app header. demo-footer.js
+   measures the banner and writes the real height into --demo-banner-h; the
+   value above is only the pre-measurement default. */
 @media (max-width: 720px) {
-  :root { --demo-banner-h: 52px; }
-  .demo-banner { align-content: center; padding: 6px 12px; }
+  .demo-banner { padding: 6px 12px; }
 }
