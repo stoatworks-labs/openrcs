@@ -50,6 +50,8 @@ function deviceModel() {
 const screenCount = () => store.byMnem.get('SCmly')?.dims[0] || store.byMnem.get('PRinp')?.dims[0] || 8;
 const layerSlots = () => { const d = store.byMnem.get('PRinp')?.dims; return (d && d[d.length - 1]) || 24; };
 const srcMaxOf = () => store.byMnem.get('PRinp')?.max ?? 41;
+const inputCount = () => store.byMnem.get('INava')?.dims[0] || 24;
+const outputCount = () => store.byMnem.get('OUava')?.dims[0] || 8;
 const hasPRlay = () => store.byMnem.has('PRlay');
 // whether a layer should read as "shown": PRlay on LiveCore, source-present on Midra
 const layerShown = (s, ctx, l) => hasPRlay() ? store.val('PRlay', s, ctx, l) === 1 : (store.val('PRinp', s, ctx, l) || 0) > 0;
@@ -1065,8 +1067,9 @@ const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 100).toF
 
 // ---------- Tally (live on-air indicators) ----------
 VIEWS.tally = (() => {
-  const N = 42;   // sources: inputs, stills and internal generators
-  function enter() { store.scan('TAopr'); store.scan('TAopw'); store.scan('INava'); }
+  const N = () => store.byMnem.get('TAopr')?.dims[0] || 42;   // sources: inputs, stills, generators
+  const hasTally = () => store.byMnem.has('TAopr');
+  function enter() { if (hasTally()) { store.scan('TAopr'); store.scan('TAopw'); } store.scan('INava'); }
   function tile(i) {
     const pgm = store.val('TAopr', i) === 1;
     const pvw = store.val('TAopw', i) === 1;
@@ -1076,23 +1079,28 @@ VIEWS.tally = (() => {
       el('span', { class: 'tally-state', text: pgm ? 'PGM' : pvw ? 'PVW' : '' }));
   }
   function render() {
-    const onPgm = Array.from({ length: N }, (_, i) => store.val('TAopr', i)).filter(v => v === 1).length;
-    const onPvw = Array.from({ length: N }, (_, i) => store.val('TAopw', i)).filter(v => v === 1).length;
+    if (!hasTally())
+      return el('div', {},
+        el('div', { class: 'view-head' }, el('h1', { text: 'Tally' })),
+        el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'This device does not report a tally bus.' })));
+    const n = N();
+    const onPgm = Array.from({ length: n }, (_, i) => store.val('TAopr', i)).filter(v => v === 1).length;
+    const onPvw = Array.from({ length: n }, (_, i) => store.val('TAopw', i)).filter(v => v === 1).length;
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Tally' }),
         el('span', { class: 'hint', text: `${onPgm} on program · ${onPvw} on preview` })),
       el('div', { class: 'panel' },
-        el('div', { class: 'tally-grid' }, ...Array.from({ length: N }, (_, i) => tile(i)))));
+        el('div', { class: 'tally-grid' }, ...Array.from({ length: n }, (_, i) => tile(i)))));
   }
   return { enter, render };
 })();
 
 // ---------- Inputs ----------
 VIEWS.inputs = (() => {
-  const N = 24;
+  const N = () => inputCount();
   function enter() {
-    for (const m of ['INava', 'INplg', 'INfrz', 'INffz', 'INbla', 'INpat']) store.scan(m);
-    for (const m of ['ISspr', 'ISsva', 'IScfo', 'ISswi', 'ISshe']) store.scan(m);
+    for (const m of ['INava', 'INplg', 'INfrz', 'INffz', 'INbla', 'INpat']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['ISspr', 'ISsva', 'IScfo', 'ISswi', 'ISshe']) if (store.byMnem.has(m)) store.scan(m);
   }
   function row(i) {
     const avail = store.val('INava', i) === 1;
@@ -1113,10 +1121,11 @@ VIEWS.inputs = (() => {
         el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: () => store.set('INbla', [i], black ? 0 : 1) }, 'Black')));
   }
   function render() {
-    const ready = Array.from({ length: N }, (_, i) => store.val('INava', i)).filter(v => v === 1).length;
-    const rows = Array.from({ length: N }, (_, i) => row(i));
+    const n = N();
+    const ready = Array.from({ length: n }, (_, i) => store.val('INava', i)).filter(v => v === 1).length;
+    const rows = Array.from({ length: n }, (_, i) => row(i));
     return el('div', {},
-      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }), el('span', { class: 'hint', text: `${ready} of ${N} ready` })),
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }), el('span', { class: 'hint', text: `${ready} of ${n} ready` })),
       el('div', { class: 'panel', style: 'overflow:auto' },
         el('table', { class: 'grid' },
           el('thead', {}, el('tr', {}, ...['Input', 'State', 'Plug', 'Signal', 'Size', ''].map(h => el('th', { text: h })))),
@@ -1127,12 +1136,12 @@ VIEWS.inputs = (() => {
 
 // ---------- Outputs ----------
 VIEWS.outputs = (() => {
-  const N = 8;
+  const N = () => outputCount();
   let sel = 0;
   const FORMATS = Array.from({ length: 55 }, (_, i) => i === 0 ? 'Auto' : `Format ${i}`);
   function enter() {
     for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
-      'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl']) store.scan(m);
+      'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl']) if (store.byMnem.has(m)) store.scan(m);
   }
   function row(i) {
     const avail = store.val('OUava', i) === 1;
@@ -1167,7 +1176,7 @@ VIEWS.outputs = (() => {
         bind('Gain B', 'OCgbl', i, 0, 255, 1)));
   }
   function render() {
-    const rows = Array.from({ length: N }, (_, i) => row(i));
+    const rows = Array.from({ length: N() }, (_, i) => row(i));
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }), el('span', { class: 'hint', text: 'Physical outputs, formats and processing' })),
       el('div', { class: 'split' },
