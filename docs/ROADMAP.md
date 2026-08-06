@@ -21,7 +21,8 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   a source frame — full or a graphical region — into the still library);
   **Multiviewer** (a drag/resize layout designer for the monitoring outputs, with
   layout memories); **Soft edge** (a graphical per-edge blend editor for
-  multi-output screens); GPIO.
+  multi-output screens); **EDID** (per-input preferred formats + store/factory,
+  and the EDID a connected display reports); GPIO.
 - **System** — identity, network, health, front-panel.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
@@ -29,7 +30,6 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 
 Concrete device capabilities not yet given a dedicated surface:
 
-- **EDID** management (`EDID_IN`, `EDID_OUT`, `EDID_LIB`) — the last big Setup gap.
 - **Screen mapping** — place each screen at its real output position for the Stage
   canvas, and the two monitor outputs in a monitoring screen (`MONITORING_SCREEN`).
 

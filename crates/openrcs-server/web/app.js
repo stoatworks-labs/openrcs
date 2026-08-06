@@ -119,7 +119,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -163,7 +163,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['gpio', 'GPIO'], ['system', 'System'],
+  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -1359,6 +1359,76 @@ VIEWS.multiview = (() => {
             canvas()),
           el('div', { class: 'panel' }, widgetEditor(), el('div', { class: 'sub-head' }, 'Widgets'), list())),
       el('div', { class: 'panel' }, el('h2', 'Layout memories'), memories()));
+  }
+  return { enter, render };
+})();
+
+// ---------- EDID management ----------
+VIEWS.edid = (() => {
+  const NIN = 16, NOUT = 8;           // rendered rows (device carries up to 24/8)
+  let inPlug = 0, outPlug = 0;
+  function enter() {
+    for (const m of ['EIava', 'EIspf', 'EIhcd']) store.scan(m);
+    for (const m of ['EOava', 'EOval', 'EOhcd']) store.scan(m);
+  }
+  function numField(mnem, idx, max) {
+    const cur = store.val(mnem, ...idx);
+    return el('input', {
+      type: 'number', class: 'num-in', min: 0, max, value: cur ?? 0,
+      onchange: (e) => { const v = Math.max(0, Math.min(max, +e.target.value | 0)); store.set(mnem, idx, v); },
+    });
+  }
+  function inRow(i) {
+    const idx = [i, inPlug], avail = store.val('EIava', ...idx) === 1;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'IN ' + (i + 1) }),
+      el('td', boolChip(avail ? 1 : 0, 'present', '—')),
+      el('td', { class: 'val', text: fmt(store.val('EIhcd', ...idx)) }),
+      el('td', numField('EIspf', idx, 146)),
+      el('td',
+        el('button', { class: 'btn ghost', onclick: () => store.set('EIstr', idx, 1) }, 'Store'),
+        el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: () => store.set('Edpsf', idx, 1) }, 'Factory')));
+  }
+  function outRow(i) {
+    const idx = [i, outPlug], avail = store.val('EOava', ...idx) === 1, valid = store.val('EOval', ...idx) === 1;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'OUT ' + (i + 1) }),
+      el('td', boolChip(avail ? 1 : 0, 'present', '—')),
+      el('td', boolChip(valid ? 1 : 0, 'valid', '—')),
+      el('td', { class: 'val', text: fmt(store.val('EOhcd', ...idx)) }),
+      el('td', el('button', { class: 'btn ghost', onclick: () => { store.set('EOred', idx, 1); store.scan('EOhcd'); store.scan('EOval'); } }, 'Read EDID')));
+  }
+  function plugSeg(cur, set, n) {
+    const s = el('div', { class: 'seg' });
+    for (let p = 0; p < n; p++) s.append(el('button', { class: p === cur ? 'on take' : '', onclick: () => { set(p); store.notify(); } }, 'Plug ' + (p + 1)));
+    return s;
+  }
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'EDID' }),
+        el('span', { class: 'hint', text: 'Preferred formats on inputs, and the EDID reported by attached displays' })),
+      el('div', { class: 'panel' }, el('h2', 'Inputs'),
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Connector', plugSeg(inPlug, p => inPlug = p, 6)),
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'hint', text: 'Set a preferred format, Store to apply, Factory to revert' })),
+        el('div', { style: 'overflow:auto' },
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['Input', 'EDID', 'Hashcode', 'Pref format', 'Actions'].map(h => el('th', { text: h })))),
+            el('tbody', ...Array.from({ length: NIN }, (_, i) => inRow(i)))))),
+      el('div', { class: 'panel' }, el('h2', 'Outputs'),
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Connector', plugSeg(outPlug, p => outPlug = p, 4)),
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'hint', text: 'Read the EDID a connected display advertises' })),
+        el('div', { style: 'overflow:auto' },
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['Output', 'Display', 'EDID', 'Hashcode', ''].map(h => el('th', { text: h })))),
+            el('tbody', ...Array.from({ length: NOUT }, (_, i) => outRow(i)))))),
+      el('div', { class: 'panel' }, el('h2', 'EDID library'),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn ghost', onclick: () => store.set('EdIsf', [], 1) }, 'Reset inputs to factory'),
+          el('button', { class: 'btn ghost', onclick: () => { if (confirm('Reset the entire EDID library to factory?')) store.set('PCelr', [], 1); } }, 'Reset EDID library'))));
   }
   return { enter, render };
 })();
