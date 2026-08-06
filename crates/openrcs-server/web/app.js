@@ -158,7 +158,7 @@ const store = new Store();
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
 const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
-let currentView = viewFromHash() || 'memories';
+let currentView = viewFromHash() || 'stage';
 const VIEWS = {};
 
 function switchView(id) {
@@ -204,11 +204,23 @@ const NAV = [
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
 
+// a view is shown only when the device advertises the variable it needs
+// (until meta arrives, show everything so the nav doesn't flicker empty)
+const VIEW_REQUIRES = {
+  memories: 'PSmet', cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
+  stills: 'Slval', capture: 'STcen', multiview: 'MLcen',
+  softedge: 'SEcen', edid: 'EIspf', gpio: 'GPoav',
+};
+const viewSupported = (id) => { const req = VIEW_REQUIRES[id]; return !req || !store.meta || store.byMnem.has(req); };
+
 function nav() {
   const n = el('nav', { class: 'nav' });
+  let section = null, sectionShown = false;
   for (const item of NAV) {
-    if (item.section) { n.append(el('div', { class: 'nav-sec', text: item.section })); continue; }
+    if (item.section) { section = item.section; sectionShown = false; continue; }
     const [id, label] = item;
+    if (!viewSupported(id)) continue;
+    if (section && !sectionShown) { n.append(el('div', { class: 'nav-sec', text: section })); sectionShown = true; }
     n.append(el('button', {
       class: id === currentView ? 'active' : '',
       onclick: () => switchView(id),
@@ -691,7 +703,9 @@ VIEWS.live = (() => {
     store.scan('SCmly');
     for (let l = 0; l < layerSlots(); l++) { store.get('PRinp', [screen, 0, l]); if (hasPRlay()) store.get('PRlay', [screen, 0, l]); }
     if (store.byMnem.has('GCtup')) store.get('GCtup', [screen]);
-    store.get('MAsna', [screen]); store.get('MAfat', []);
+    if (store.byMnem.has('MAfat')) { store.get('MAsna', [screen]); store.get('MAfat', []); }
+    if (store.byMnem.has('GCfsc')) store.get('GCfsc', [screen]);
+    if (store.byMnem.has('GCfra')) store.get('GCfra', []);
   }
 
   function take() { doTake(screen, ttime); }
@@ -733,13 +747,22 @@ VIEWS.live = (() => {
                 oninput: (e) => { ttime = +e.target.value; e.target.parentNode.querySelector('.sv').textContent = (ttime / 1000).toFixed(1) + 's'; } }))),
           el('button', { class: 'btn pvw take-btn', onclick: cut }, 'CUT'),
           el('button', { class: 'btn pgm take-btn', onclick: take }, 'TAKE'))),
-      el('div', { class: 'panel' },
-        el('h2', 'Master fade'),
-        el('div', { class: 'row' },
-          bind('Fade time', 'MAfat', [], 0, 100, 1, v => (v / 10).toFixed(1) + 's'),
-          el('div', { class: 'spacer' }),
-          el('button', { class: 'btn', onclick: fadeUp }, 'Fade Up'),
-          el('button', { class: 'btn pgm', onclick: fadeToBlack }, 'Fade to Black'))),
+      store.byMnem.has('MAmfa')
+        ? el('div', { class: 'panel' },
+          el('h2', 'Master fade'),
+          el('div', { class: 'row' },
+            bind('Fade time', 'MAfat', [], 0, 100, 1, v => (v / 10).toFixed(1) + 's'),
+            el('div', { class: 'spacer' }),
+            el('button', { class: 'btn', onclick: fadeUp }, 'Fade Up'),
+            el('button', { class: 'btn pgm', onclick: fadeToBlack }, 'Fade to Black')))
+        : store.byMnem.has('GCfsc')
+        ? el('div', { class: 'panel' },
+          el('h2', 'Freeze'),
+          el('div', { class: 'row' },
+            toggleBtn(`Freeze screen ${screen + 1}`, 'GCfsc', [screen], 'pgm'),
+            el('div', { class: 'spacer' }),
+            store.byMnem.has('GCfra') ? toggleBtn('Freeze all screens', 'GCfra', [], 'pgm') : null))
+        : null,
       el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers`), layers()));
   }
   return { enter, render };
