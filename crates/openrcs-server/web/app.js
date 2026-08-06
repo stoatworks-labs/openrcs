@@ -119,6 +119,8 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
+// debug handle: the same data path the UI uses, for scripting/inspection
+window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
 const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
