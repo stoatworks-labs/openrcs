@@ -119,7 +119,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 
 // ---------- app shell ----------
 const store = new Store();
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'memories';
 const VIEWS = {};
@@ -163,7 +163,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['gpio', 'GPIO'], ['system', 'System'],
+  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -1359,6 +1359,62 @@ VIEWS.multiview = (() => {
             canvas()),
           el('div', { class: 'panel' }, widgetEditor(), el('div', { class: 'sub-head' }, 'Widgets'), list())),
       el('div', { class: 'panel' }, el('h2', 'Layout memories'), memories()));
+  }
+  return { enter, render };
+})();
+
+// ---------- Soft edge (edge blending for multi-output screens) ----------
+VIEWS.softedge = (() => {
+  let screen = 0, edge = 0;              // edge 0..3
+  const EDGES = ['Left', 'Right', 'Top', 'Bottom'];   // order GUESSED
+  function enter() {
+    store.scan('SCmly');
+    for (let e = 0; e < 4; e++) for (const m of ['SEcen', 'SEadv', 'SEapc', 'SEbof']) store.get(m, [screen, e]);
+    for (const m of ['SEbrl', 'SEblg', 'SEbbl']) store.get(m, [screen, 0]);
+  }
+  function edgeMap() {
+    const box = el('div', { class: 'se-screen' });
+    for (let e = 0; e < 4; e++) {
+      const on = store.val('SEcen', screen, e) === 1;
+      box.append(el('div', {
+        class: `se-edge ${EDGES[e].toLowerCase()}` + (on ? ' on' : '') + (e === edge ? ' sel' : ''),
+        onclick: () => { edge = e; store.notify(); },
+      }, el('span', { class: 'se-lbl', text: EDGES[e] })));
+    }
+    box.append(el('span', { class: 'se-mid', text: `Screen ${screen + 1}` }));
+    return el('div', { class: 'canvas-wrap' }, box);
+  }
+  function edgeEditor() {
+    const i = [screen, edge], on = store.val('SEcen', ...i) === 1, adv = store.val('SEadv', ...i) === 1;
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('span', { class: 'hint', text: EDGES[edge] + ' edge' }), el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ' + (on ? 'pgm' : 'ghost'), onclick: () => { store.set('SEcen', i, on ? 0 : 1); store.notify(); } }, on ? 'Blend on' : 'Blend off')),
+      bind('Black offset', 'SEbof', i, 0, 1023, 1),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Curve',
+          el('div', { class: 'seg' },
+            el('button', { class: !adv ? 'on recall' : '', onclick: () => { store.set('SEadv', i, 0); store.notify(); } }, 'Simple'),
+            el('button', { class: adv ? 'on take' : '', onclick: () => { store.set('SEadv', i, 1); store.notify(); } }, 'Advanced'))),
+        adv ? bind('Points', 'SEapc', i, 0, 10, 1) : null));
+  }
+  function render() {
+    const configured = (store.val('SCmly', screen) || 0) > 0;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Soft edge' }),
+        el('span', { class: 'hint', text: `Screen ${screen + 1} · click an edge to blend it into its neighbour` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Screen', screenSelect(screen, v => { screen = v; edge = 0; enter(); store.notify(); })),
+          configured ? null : el('span', { class: 'hint', text: 'screen not configured' }))),
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' }, edgeMap()),
+        el('div', { class: 'panel' }, edgeEditor(),
+          el('div', { class: 'sub-head' }, 'Black level (screen)'),
+          el('div', { class: 'grid2' },
+            bind('Red', 'SEbrl', [screen, 0], 0, 127, 1),
+            bind('Green', 'SEblg', [screen, 0], 0, 127, 1),
+            bind('Blue', 'SEbbl', [screen, 0], 0, 127, 1)))));
   }
   return { enter, render };
 })();
