@@ -24,11 +24,23 @@ function el(tag, props = {}, ...kids) {
 const keyOf = (m, idx) => m + '|' + idx.join(',');
 
 // ---------- known LiveCore device models (by DEV_PLATFORM id) ----------
+// LiveCore resolves its model from PDEV; Midra has no PDEV and instead
+// reports a device code via DEV (259 = Pulse2, confirmed on hardware).
 const MODELS = {
   97: 'NeXtage 16', 96: 'NeXtage 08',
   98: 'Ascender 16', 99: 'Ascender 32', 100: 'Ascender 48',
   101: 'SmartMatriX Ultra', 112: 'VIO 4K',
 };
+const MIDRA_MODELS = {
+  259: 'Pulse2',
+};
+function deviceModel() {
+  const pdev = store.val('PDEV');
+  if (pdev != null) return MODELS[pdev] || `device ${pdev}`;
+  const dev = store.val('DEV');
+  if (dev != null) return MIDRA_MODELS[dev] || `Midra device ${dev}`;
+  return '—';
+}
 
 // ---------- store ----------
 class Store {
@@ -144,8 +156,7 @@ function onReady() {
 }
 
 function header() {
-  const dev = store.val('PDEV');
-  const model = dev != null ? (MODELS[dev] || `device ${dev}`) : '—';
+  const model = deviceModel();
   const plat = store.meta ? store.meta.platform : '';
   return el('header', { class: 'head' },
     el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
@@ -1618,6 +1629,8 @@ VIEWS.system = (() => {
     for (let k = 0; k < 4; k++) { store.get('ITlip', [0, k]); store.get('ITlnk', [0, k]); store.get('ITlgw', [0, k]); }
     store.get('TEcar', [0, 0]); store.get('VEmic', [0, 0]);
   }
+  // read a var at its natural zero-index (scalar on Midra, [0] on LiveCore)
+  const idv = (m) => { const d = store.byMnem.get(m); return d ? store.val(m, ...d.dims.map(() => 0)) : null; };
   function kv(label, value) {
     return el('div', { class: 'kv' }, el('span', { class: 'k', text: label }), el('span', { class: 'v val', text: value }));
   }
@@ -1628,10 +1641,10 @@ VIEWS.system = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'System' }), el('span', { class: 'hint', text: 'Device, network and status' })),
       el('div', { class: 'split' },
         el('div', { class: 'panel' }, el('h2', 'Device'),
-          kv('Model', MODELS[store.val('PDEV')] || `dev ${store.val('PDEV') ?? '·'}`),
-          kv('Serial', fmt(store.val('DIdsn', 0))),
-          kv('Reference', fmt(store.val('DIdre', 0))),
-          kv('Firmware var', fmt(store.val('VEvar', 0))),
+          kv('Model', deviceModel()),
+          kv('Serial', fmt(idv('DIdsn'))),
+          kv('Reference', fmt(idv('DIdre'))),
+          kv('Firmware var', fmt(idv('VEvar'))),
           kv('Micro ver', fmt(store.val('VEmic', 0, 0)))),
         el('div', { class: 'panel' }, el('h2', 'Network'),
           kv('IP address', fmtIP(0)),
