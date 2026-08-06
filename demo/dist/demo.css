@@ -1,0 +1,35 @@
+/* Demo-only layout changes.
+ *
+ * The control surface is a 100vh grid with `body { overflow: hidden }` — right
+ * for a desk in a live room, wrong for a page that has to carry a banner and a
+ * footer. This lets the page scroll and gives the app the viewport minus the
+ * banner, so the app still fills the first screenful exactly as it does when
+ * served by the bridge server, and the footer sits below it. */
+
+:root { --demo-banner-h: 34px; }
+
+html, body {
+  height: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app { height: calc(100vh - var(--demo-banner-h)); }
+
+/* The nav column is taller than its grid row on a short viewport. The server
+   build hides that behind `body { overflow: hidden }`; once the page scrolls,
+   the overflow spills over the footer instead, so give the nav its own scroll. */
+.nav { overflow-y: auto; }
+
+/* The shared support footer draws from `currentColor`; give it the app's own
+   panel background so it reads as part of the page rather than a pale strip. */
+.sw-support {
+  background: var(--bg);
+  border-top: 0;
+  --sw-support-accent: var(--accent);
+}
+
+@media (max-width: 720px) {
+  :root { --demo-banner-h: 52px; }
+  .demo-banner { align-content: center; padding: 6px 12px; }
+}

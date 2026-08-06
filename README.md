@@ -17,6 +17,12 @@ software is long out of date.
 
 ![The graphical layer arrangement editor — arrange sources live](docs/screenshots/layer-editor.gif)
 
+**[Try the control surface in your browser →](https://openrcs-demo.stoatworks-labs.com)**
+— the real UI, unmodified, running against a simulated device. No processor is
+involved and nothing can reach hardware: a browser has no raw TCP socket, so the
+demo replaces the transport and keeps the app. See [demo/](demo/) for how it
+works and what it can't show.
+
 Not affiliated with or endorsed by Analog Way. Product names are used only to
 describe compatibility.
 
