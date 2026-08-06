@@ -951,8 +951,9 @@ VIEWS.screens = (() => {
 const fmt = (v) => v == null ? '·' : String(v);
 // alarm truthiness: null stays null, else nonzero = fault
 const nz = (v) => v == null ? null : v !== 0;
-// card temperature in 0.1 °C units; 0 and 0xFFFF mean "no sensor"
-const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 10).toFixed(1) + ' °C';
+// card temperature in 0.01 °C units (hundredths); 0 and 0xFFFF mean "no sensor"
+// (verified on real NeXtage hardware: 3100 -> 31.0 °C)
+const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 100).toFixed(1) + ' °C';
 
 // ---------- Tally (live on-air indicators) ----------
 VIEWS.tally = (() => {
