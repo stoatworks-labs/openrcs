@@ -13,9 +13,9 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 - **Cues** — a show script over the memories: an ordered cue list with GO NEXT.
 - **Keys** — programmable one-tap macros (recall + take, freeze, black, fade…).
 - **Live** — preview→program take with a transition time, and master fade.
-- **Layers** — a graphical arrangement canvas (drag/resize, snap presets) plus a
-  full property editor: source, opacity, position, size, border, crop, per-layer
-  opening/closing transitions, and the screen's native background.
+- **Layers** — a graphical arrangement canvas (drag/resize, snap presets, raise/
+  lower z-order) plus a full property editor: source, opacity, position, size,
+  border, crop, per-layer opening/closing transitions, and the native background.
 - **Setup** — a live **Tally** grid; Inputs; Outputs with format, HDCP and output
   processing (brightness/contrast/gamma/gain); Screens; Stills; **Capture** (grab
   a source frame — full or a graphical region — into the still library);
@@ -31,7 +31,6 @@ Concrete device capabilities not yet given a dedicated surface:
 - **EDID** management (`EDID_IN`, `EDID_OUT`, `EDID_LIB`) — the last big Setup gap.
 - **Soft edge** (`SOFTEDGE`) and **screen mapping** for blended/multi-output
   screens.
-- **Layer swap** (`LAYER_SWAP`) — swap two layers' sources/geometry.
 
 ## Beyond the stock control software
 

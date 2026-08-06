@@ -758,6 +758,13 @@ VIEWS.layers = (() => {
     const s = screenPx(), w = s.w / 2, h = s.h / 2;
     setGeom(sel, { left: (ix % 2) * w, top: (ix < 2 ? 0 : 1) * h, w, h }); store.notify();
   }
+  // reorder the selected layer in the screen's z-stack (LAYER_SWAP)
+  function reorder(dir) {
+    store.set('LSscr', [], screen);
+    store.set('LSprs', [], ctx);       // preset = program/preview context (GUESSED)
+    store.set('LSlay', [], sel);
+    store.set(dir === 'up' ? 'LSrai' : 'LSlow', [], 1);
+  }
 
   function stack() {
     const n = count();
@@ -783,7 +790,11 @@ VIEWS.layers = (() => {
       el('div', { class: 'row' },
         el('span', { class: 'hint', text: 'Snap:' }),
         el('button', { class: 'btn ghost', onclick: fit }, 'Full'),
-        ...['◰', '◳', '◱', '◲'].map((g, k) => el('button', { class: 'btn ghost', onclick: () => quad(k) }, g))),
+        ...['◰', '◳', '◱', '◲'].map((g, k) => el('button', { class: 'btn ghost', onclick: () => quad(k) }, g)),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: 'Order:' }),
+        el('button', { class: 'btn ghost', title: 'Bring forward', onclick: () => reorder('up') }, '▲'),
+        el('button', { class: 'btn ghost', title: 'Send back', onclick: () => reorder('down') }, '▼')),
       el('div', { class: 'grid2' },
         bind('Opacity', 'PRalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'),
         bind('Position H', 'PRpoh', i, 0, 131072, 16),
