@@ -42,6 +42,27 @@ function deviceModel() {
   return '—';
 }
 
+// ---------- platform capabilities (LiveCore vs Midra) ----------
+// Derived from the variable table the device advertised, so the same UI drives
+// both platforms. LiveCore takes with GCtku/GCtfr on a group index; Midra takes
+// with GCtak per screen. Midra has no PRlay (layer-select) and its source
+// assignment is device-managed (a direct PRinp write reverts).
+const screenCount = () => store.byMnem.get('SCmly')?.dims[0] || store.byMnem.get('PRinp')?.dims[0] || 8;
+const layerSlots = () => { const d = store.byMnem.get('PRinp')?.dims; return (d && d[d.length - 1]) || 24; };
+const srcMaxOf = () => store.byMnem.get('PRinp')?.max ?? 41;
+const hasPRlay = () => store.byMnem.has('PRlay');
+// whether a layer should read as "shown": PRlay on LiveCore, source-present on Midra
+const layerShown = (s, ctx, l) => hasPRlay() ? store.val('PRlay', s, ctx, l) === 1 : (store.val('PRinp', s, ctx, l) || 0) > 0;
+const takeMnem = () => store.byMnem.has('GCtku') ? 'GCtku' : 'GCtak';
+function doTake(screen, ttime) {
+  if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
+  store.set(takeMnem(), [screen], 1);
+}
+function doCut(screen) {
+  if (store.byMnem.has('GCtfr')) store.set('GCtfr', [screen], 1);
+  else store.set(takeMnem(), [screen], 1);
+}
+
 // ---------- store ----------
 class Store {
   constructor() {
@@ -377,7 +398,7 @@ VIEWS.memories = (() => {
 
 function screenSelect(val, onchange) {
   const s = el('select', { onchange: (e) => onchange(+e.target.value) });
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < screenCount(); i++) {
     const opt = el('option', { value: i, text: `Screen ${i + 1}` });
     if (i === val) opt.selected = true;
     s.append(opt);
@@ -397,7 +418,8 @@ function throttledSet(m, idx, v) {
 
 function sourceName(n) { return n == null ? '·' : n === 0 ? '— none —' : 'IN ' + n; }
 
-function sourceSelect(mnem, idx, max = 41) {
+function sourceSelect(mnem, idx, max) {
+  if (max == null) max = srcMaxOf();
   const cur = store.val(mnem, ...idx);
   const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
   for (let i = 0; i <= max; i++) {
@@ -571,7 +593,7 @@ VIEWS.keys = (() => {
     switch (a.type) {
       case 'master': store.set('PSmet', [], a.slot); store.set(a.take ? 'PSlot' : 'PSloa', [], 1); break;
       case 'screen': store.set('PMscf', [], a.screen); store.set('PMmet', [], a.slot); store.set(a.take ? 'PMlot' : 'PMloa', [], 1); break;
-      case 'take': if (a.screen < 0) { for (let s = 0; s < 8; s++) store.set('GCtku', [s], 1); } else store.set('GCtku', [a.screen], 1); break;
+      case 'take': if (a.screen < 0) { for (let s = 0; s < screenCount(); s++) doTake(s); } else doTake(a.screen); break;
       case 'freeze': store.set('INfrz', [a.input], a.on ? 1 : 0); break;
       case 'black': store.set('OUbla', [a.output], a.on ? 1 : 0); break;
       case 'ftb': store.set('MAmfa', [a.screen], a.dir); break;
@@ -665,12 +687,13 @@ VIEWS.live = (() => {
 
   function enter() {
     store.scan('SCmly');
-    for (let l = 0; l < 24; l++) { store.get('PRinp', [screen, 0, l]); store.get('PRlay', [screen, 0, l]); }
-    store.get('GCtup', [screen]); store.get('MAsna', [screen]); store.get('MAfat', []);
+    for (let l = 0; l < layerSlots(); l++) { store.get('PRinp', [screen, 0, l]); if (hasPRlay()) store.get('PRlay', [screen, 0, l]); }
+    if (store.byMnem.has('GCtup')) store.get('GCtup', [screen]);
+    store.get('MAsna', [screen]); store.get('MAfat', []);
   }
 
-  function take() { store.set('GCtup', [screen], ttime); store.set('GCtku', [screen], 1); }
-  function cut() { store.set('GCtfr', [screen], 1); }
+  function take() { doTake(screen, ttime); }
+  function cut() { doCut(screen); }
   // MAmfa (master fade auto): 1 = fade to black, 2 = fade up. Best-effort mapping.
   function fadeToBlack() { store.set('MAmfa', [screen], 1); }
   function fadeUp() { store.set('MAmfa', [screen], 2); }
@@ -681,11 +704,11 @@ VIEWS.live = (() => {
     const wrap = el('div', { class: 'layers' });
     for (let l = 0; l < max; l++) {
       const src = store.val('PRinp', screen, 0, l);
-      const on = store.val('PRlay', screen, 0, l) === 1;
+      const on = layerShown(screen, 0, l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') },
         el('span', { class: 'tag', text: 'L' + (l + 1) }),
         el('span', { class: 'src', text: src != null ? (src === 0 ? '— none —' : 'IN ' + src) : '·' }),
-        el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, 0, l], on ? 0 : 1) }, on ? 'Hide' : 'Show')));
+        hasPRlay() ? el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, 0, l], store.val('PRlay', screen, 0, l) === 1 ? 0 : 1) }, on ? 'Hide' : 'Show') : null));
     }
     return wrap;
   }
@@ -747,7 +770,7 @@ VIEWS.layers = (() => {
     for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) store.get(m, [screen, ctx]);
     const n = count();
     for (let l = 0; l < n; l++)
-      for (const m of LAYER_VARS) store.get(m, [screen, ctx, l]);
+      for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [screen, ctx, l]);
   }
 
   function background() {
@@ -782,7 +805,7 @@ VIEWS.layers = (() => {
     const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
     const n = count();
     for (let l = 0; l < n; l++) {
-      const on = store.val('PRlay', screen, ctx, l) === 1;
+      const on = layerShown(screen, ctx, l);
       const src = store.val('PRinp', screen, ctx, l);
       // don't clutter the canvas with empty, hidden layers
       if (!src && !on && l !== sel) continue;
@@ -857,11 +880,11 @@ VIEWS.layers = (() => {
     const wrap = el('div', { class: 'layers' });
     for (let l = n - 1; l >= 0; l--) {
       const src = store.val('PRinp', screen, ctx, l);
-      const on = store.val('PRlay', screen, ctx, l) === 1;
+      const on = layerShown(screen, ctx, l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
         el('span', { class: 'tag', text: 'L' + (l + 1) }),
         el('span', { class: 'src', text: sourceName(src) }),
-        el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], on ? 0 : 1); } }, on ? 'Hide' : 'Show')));
+        hasPRlay() ? el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], store.val('PRlay', screen, ctx, l) === 1 ? 0 : 1); } }, on ? 'Hide' : 'Show') : null));
     }
     return wrap;
   }
@@ -871,8 +894,8 @@ VIEWS.layers = (() => {
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
         el('label', { class: 'field' }, 'Source', sourceSelect('PRinp', i)),
-        el('button', { class: 'btn ' + (store.val('PRlay', ...i) === 1 ? 'pgm' : 'ghost'), onclick: () => store.set('PRlay', i, store.val('PRlay', ...i) === 1 ? 0 : 1) },
-          store.val('PRlay', ...i) === 1 ? 'Visible' : 'Hidden')),
+        hasPRlay() ? el('button', { class: 'btn ' + (store.val('PRlay', ...i) === 1 ? 'pgm' : 'ghost'), onclick: () => store.set('PRlay', i, store.val('PRlay', ...i) === 1 ? 0 : 1) },
+          store.val('PRlay', ...i) === 1 ? 'Visible' : 'Hidden') : null),
       el('div', { class: 'row' },
         el('span', { class: 'hint', text: 'Snap:' }),
         el('button', { class: 'btn ghost', onclick: fit }, 'Full'),
@@ -951,16 +974,15 @@ function srcColor(n) {
 VIEWS.stage = (() => {
   let ctx = 0;   // 0 = program (what's on air), 1 = preview
   let ttime = 1000;
-  const NL = 24;
-  const active = () => [0, 1, 2, 3, 4, 5, 6, 7].filter(s => (store.val('SCssh', s) || 0) > 0);
-  function takeAll() { for (const s of active()) { store.set('GCtup', [s], ttime); store.set('GCtku', [s], 1); } }
-  function cutAll() { for (const s of active()) store.set('GCtfr', [s], 1); }
+  const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
+  function takeAll() { for (const s of active()) doTake(s, ttime); }
+  function cutAll() { for (const s of active()) doCut(s); }
 
   function enter() {
     for (const m of ['SCssh', 'SCssv', 'SCmly']) store.scan(m);
-    for (const s of [0, 1, 2, 3, 4, 5, 6, 7])
-      for (let l = 0; l < NL; l++)
-        for (const m of ['PRinp', 'PRlay', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
+    for (let s = 0; s < screenCount(); s++)
+      for (let l = 0; l < layerSlots(); l++)
+        for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
           store.get(m, [s, ctx, l]);
   }
 
@@ -970,7 +992,7 @@ VIEWS.stage = (() => {
     const cv = el('div', { class: 'stage-screen', style: `width:${CW}px;height:${CH}px` });
     const max = store.val('SCmly', s) || 0;
     for (let l = 0; l < max; l++) {
-      if (store.val('PRlay', s, ctx, l) !== 1) continue;
+      if (!(store.val('PRinp', s, ctx, l) || 0)) continue;   // draw layers that have a source
       const src = store.val('PRinp', s, ctx, l);
       const r = layerRectPx(s, ctx, l);
       cv.append(el('div', {
@@ -1016,7 +1038,7 @@ VIEWS.screens = (() => {
   function enter() { store.scan('SCmly'); store.scan('OSsou'); store.scan('SCsih'); store.scan('SCsiv'); }
   function render() {
     const rows = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < screenCount(); i++) {
       const max = store.val('SCmly', i);
       rows.push(el('tr', {},
         el('td', { text: 'Screen ' + (i + 1) }),
