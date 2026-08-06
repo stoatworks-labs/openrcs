@@ -209,9 +209,16 @@ const NAV = [
 const VIEW_REQUIRES = {
   memories: 'PSmet', cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
   stills: 'Slval', capture: 'STcen', multiview: 'MLcen',
-  softedge: 'SEcen', edid: 'EIspf', gpio: 'GPoav',
+  // the soft-edge view models LiveCore's per-edge SEcen[screen,edge]; Midra's
+  // soft edge is a different (scalar) model, so gate on an indexed SEcen
+  softedge: () => (store.byMnem.get('SEcen')?.dims.length || 0) > 0,
+  edid: 'EIspf', gpio: 'GPoav',
 };
-const viewSupported = (id) => { const req = VIEW_REQUIRES[id]; return !req || !store.meta || store.byMnem.has(req); };
+const viewSupported = (id) => {
+  const req = VIEW_REQUIRES[id];
+  if (!req || !store.meta) return true;
+  return typeof req === 'function' ? req() : store.byMnem.has(req);
+};
 
 function nav() {
   const n = el('nav', { class: 'nav' });
@@ -1506,7 +1513,12 @@ VIEWS.multiview = (() => {
 
 // ---------- EDID management ----------
 VIEWS.edid = (() => {
-  const NIN = 16, NOUT = 8;           // rendered rows (device carries up to 24/8)
+  // counts derived from the table: LiveCore EIava[24,6]/EOava[8,4],
+  // Midra EIava[10,5]/EOava[2,8]
+  const NIN = () => store.byMnem.get('EIava')?.dims[0] || 24;
+  const inPlugs = () => store.byMnem.get('EIava')?.dims[1] || 6;
+  const NOUT = () => store.byMnem.get('EOava')?.dims[0] || 8;
+  const outPlugs = () => store.byMnem.get('EOava')?.dims[1] || 4;
   let inPlug = 0, outPlug = 0;
   function enter() {
     for (const m of ['EIava', 'EIspf', 'EIhcd']) store.scan(m);
@@ -1550,22 +1562,22 @@ VIEWS.edid = (() => {
         el('span', { class: 'hint', text: 'Preferred formats on inputs, and the EDID reported by attached displays' })),
       el('div', { class: 'panel' }, el('h2', 'Inputs'),
         el('div', { class: 'row' },
-          el('label', { class: 'field' }, 'Connector', plugSeg(inPlug, p => inPlug = p, 6)),
+          el('label', { class: 'field' }, 'Connector', plugSeg(inPlug, p => inPlug = p, inPlugs())),
           el('div', { class: 'spacer' }),
           el('span', { class: 'hint', text: 'Set a preferred format, Store to apply, Factory to revert' })),
         el('div', { style: 'overflow:auto' },
           el('table', { class: 'grid' },
             el('thead', el('tr', ...['Input', 'EDID', 'Hashcode', 'Pref format', 'Actions'].map(h => el('th', { text: h })))),
-            el('tbody', ...Array.from({ length: NIN }, (_, i) => inRow(i)))))),
+            el('tbody', ...Array.from({ length: NIN() }, (_, i) => inRow(i)))))),
       el('div', { class: 'panel' }, el('h2', 'Outputs'),
         el('div', { class: 'row' },
-          el('label', { class: 'field' }, 'Connector', plugSeg(outPlug, p => outPlug = p, 4)),
+          el('label', { class: 'field' }, 'Connector', plugSeg(outPlug, p => outPlug = p, outPlugs())),
           el('div', { class: 'spacer' }),
           el('span', { class: 'hint', text: 'Read the EDID a connected display advertises' })),
         el('div', { style: 'overflow:auto' },
           el('table', { class: 'grid' },
             el('thead', el('tr', ...['Output', 'Display', 'EDID', 'Hashcode', ''].map(h => el('th', { text: h })))),
-            el('tbody', ...Array.from({ length: NOUT }, (_, i) => outRow(i)))))),
+            el('tbody', ...Array.from({ length: NOUT() }, (_, i) => outRow(i)))))),
       el('div', { class: 'panel' }, el('h2', 'EDID library'),
         el('div', { class: 'row' },
           el('button', { class: 'btn ghost', onclick: () => store.set('EdIsf', [], 1) }, 'Reset inputs to factory'),
