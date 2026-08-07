@@ -405,8 +405,15 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
    height:100% resolves against .main (whose grid row is minmax(0,1fr), so it's clamped to
    the pane, not content) — which is also correct under the demo's shorter, bannered app */
 .ws-page { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; gap: 12px; }
-.ws-bar { margin: 0; padding: 9px 12px; display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.ws-bar { margin: 0; padding: 9px 12px; display: flex; align-items: center; gap: 14px; flex: 0 0 auto; flex-wrap: wrap; }
 .ws-armed { font-size: 12px; }
+.ws-toggles { display: flex; align-items: center; gap: 6px; }
+.ws-bar-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); font-weight: 600; }
+.ws-tog { padding: 6px 11px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 600; }
+.ws-tog:hover { border-color: var(--line-hi); color: var(--text); }
+.ws-tog.on { color: var(--text); border-color: var(--accent); background: var(--accent-dim); }
+.ws-tog.pgm.on { border-color: var(--pgm); background: color-mix(in srgb, var(--pgm) 20%, var(--panel)); }
+.ws-tog.pvw.on { border-color: var(--pvw); background: color-mix(in srgb, var(--pvw) 20%, var(--panel)); }
 
 .ws-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(160px, 200px) 1fr; gap: 14px; }
 
@@ -418,13 +425,22 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .src-tile.armed { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
 .src-sw { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,.3); }
 
-.ws-screens { min-width: 0; min-height: 0; display: flex; gap: 14px; }
+.ws-screens { min-width: 0; min-height: 0; display: flex; gap: 14px; overflow: auto; }
 .ws-screen { flex: 1 1 0; min-width: 0; min-height: 0; margin: 0; padding: 12px; display: flex; flex-direction: column; }
 .ws-screen-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex: 0 0 auto; }
 .ws-screen-head h2 { margin: 0; }
+/* each shown context (program / preview) is a column inside the screen card */
+.ws-ctxs { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; gap: 12px; }
+.ws-ctx { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.ws-ctx-head { flex: 0 0 auto; margin-bottom: 6px; }
+.ws-ctx-tag { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .7px; padding: 2px 8px; border-radius: 100px; }
+.ws-ctx-tag.pgm { color: var(--pgm); background: color-mix(in srgb, var(--pgm) 16%, transparent); }
+.ws-ctx-tag.pvw { color: var(--pvw); background: color-mix(in srgb, var(--pvw) 16%, transparent); }
 /* scope the fill-to-fit behaviour to the workspace so the Layers editor is untouched */
-.ws-screen .canvas-wrap { flex: 1 1 auto; min-height: 0; align-items: center; }
+.ws-screen .canvas-wrap { flex: 1 1 auto; min-height: 120px; align-items: center; }
 .ws-screen .screen-canvas { box-shadow: inset 0 0 0 1px #000, 0 6px 22px #0006; }
+.ws-cv-pgm { border-color: color-mix(in srgb, var(--pgm) 55%, var(--line-hi)); }
+.ws-cv-pvw { border-color: color-mix(in srgb, var(--pvw) 55%, var(--line-hi)); }
 .ws-slots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; flex: 0 0 auto; }
 .ws-slot { position: relative; padding: 5px 10px 5px 12px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--bg); color: var(--muted); font: 600 11px var(--mono); overflow: hidden; }

@@ -1952,11 +1952,14 @@ VIEWS.softedge = (() => {
 
 // ---------- Workspace (a working page: sources + multi-screen editing + memories) ----------
 VIEWS.workspace = (() => {
-  let ctx = 0;             // 0 = program, 1 = preview
-  let sel = null;          // { s, l } selected layer
+  let showPgm = true, showPvw = false;   // which contexts are displayed (independent toggles)
+  let sel = null;          // { s, c, l } selected layer (c = context)
   let armed = null;        // armed source number, null = nothing armed
+  let hidden = new Set();  // screen indices hidden from the workspace
   let ctxInit = false;
   const B = POS_BIAS;
+  const shownCtx = () => [0, 1].filter(c => (c === 0 ? showPgm : showPvw));
+  const CTXN = (c) => (c === 0 ? 'Program' : 'Preview');
 
   const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
   const maxLayers = (s) => store.val('SCmly', s) || 4;
@@ -1978,24 +1981,25 @@ VIEWS.workspace = (() => {
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
 
   function enter() {
-    // Midra protects the program preset — default to editing preview, then take.
-    if (!ctxInit) { ctxInit = true; if (store.meta?.platform === 'midra') ctx = 1; }
+    // Midra protects the program preset — default to showing/editing preview, then take.
+    if (!ctxInit) { ctxInit = true; if (store.meta?.platform === 'midra') { showPgm = false; showPvw = true; } }
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava']) store.scan(m);
     for (let s = 0; s < screenCount(); s++)
       for (let l = 0; l < layerSlots(); l++)
-        for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv']) store.get(m, [s, ctx, l]);
+        for (const c of [0, 1])
+          for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv']) store.get(m, [s, c, l]);
     if (store.byMnem.has('PSval')) store.scan('PSval');
     if (store.byMnem.has('PMpst')) store.scan('PMpst');
   }
 
-  function assign(s, l, src) { store.set('PRinp', [s, ctx, l], src); sel = { s, l }; store.notify(); }
+  function assign(s, c, l, src) { store.set('PRinp', [s, c, l], src); sel = { s, c, l }; store.notify(); }
 
-  const setGeom = (s, l, r) => {
-    throttledSet('PRsih', [s, ctx, l], Math.round(r.w));
-    throttledSet('PRsiv', [s, ctx, l], Math.round(r.h));
-    throttledSet('PRpoh', [s, ctx, l], Math.round(r.left + r.w / 2 + B));
-    throttledSet('PRpov', [s, ctx, l], Math.round(r.top + r.h / 2 + B));
+  const setGeom = (s, c, l, r) => {
+    throttledSet('PRsih', [s, c, l], Math.round(r.w));
+    throttledSet('PRsiv', [s, c, l], Math.round(r.h));
+    throttledSet('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
+    throttledSet('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
   };
   // scale (device px per rendered px) read live from the canvas, so drag works at any size
   const scaleOf = (cv, sw, sh) => ({ x: cv.clientWidth / sw || 1, y: cv.clientHeight / sh || 1 });
@@ -2006,21 +2010,21 @@ VIEWS.workspace = (() => {
   };
 
   // one-shot geometry: presets set several layers at once, then a single notify
-  const setGeomNow = (s, l, r) => {
-    store.set('PRsih', [s, ctx, l], Math.round(r.w));
-    store.set('PRsiv', [s, ctx, l], Math.round(r.h));
-    store.set('PRpoh', [s, ctx, l], Math.round(r.left + r.w / 2 + B));
-    store.set('PRpov', [s, ctx, l], Math.round(r.top + r.h / 2 + B));
+  const setGeomNow = (s, c, l, r) => {
+    store.set('PRsih', [s, c, l], Math.round(r.w));
+    store.set('PRsiv', [s, c, l], Math.round(r.h));
+    store.set('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
+    store.set('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
   };
-  const assignedLayers = (s) => { const o = []; for (let l = 0; l < maxLayers(s); l++) if (store.val('PRinp', s, ctx, l)) o.push(l); return o; };
+  const assignedLayers = (s, c) => { const o = []; for (let l = 0; l < maxLayers(s); l++) if (store.val('PRinp', s, c, l)) o.push(l); return o; };
   const LAYOUTS = [['full', 'Fill', 'Fill the screen'], ['2up', '2-up', 'Two sources side by side'], ['quad', 'Quad', 'Four sources, quadrants'], ['pip', 'PiP', 'Full source with an inset']];
   // arrange the screen's assigned sources into a common look
-  function arrange(s, kind) {
+  function arrange(s, c, kind) {
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
-    const ls = assignedLayers(s); if (!ls.length) return;
-    const put = (l, x, y, w, h) => setGeomNow(s, l, { left: x, top: y, w, h });
+    const ls = assignedLayers(s, c); if (!ls.length) return;
+    const put = (l, x, y, w, h) => setGeomNow(s, c, l, { left: x, top: y, w, h });
     if (kind === 'full') {
-      const t = (sel && sel.s === s && store.val('PRinp', s, ctx, sel.l)) ? sel.l : ls[0];
+      const t = (sel && sel.s === s && sel.c === c && store.val('PRinp', s, c, sel.l)) ? sel.l : ls[0];
       put(t, 0, 0, sw, sh);
     } else if (kind === '2up') {
       const w = sw / 2; ls.slice(0, 2).forEach((l, i) => put(l, i * w, 0, w, sh));
@@ -2032,19 +2036,19 @@ VIEWS.workspace = (() => {
     }
     store.notify();
   }
-  function dragMove(e, s, l, cv, sw, sh) {
-    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, l };
-    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l), k = scaleOf(cv, sw, sh);
+  function dragMove(e, s, c, l, cv, sw, sh) {
+    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, c, l };
+    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh);
     const move = (ev) => {
       const r = { ...r0, left: r0.left + (ev.clientX - sx) / k.x, top: r0.top + (ev.clientY - sy) / k.y };
-      asPct(box, r, sw, sh); setGeom(s, l, r);
+      asPct(box, r, sw, sh); setGeom(s, c, l, r);
     };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, s, l, cv, sw, sh, corner) {
-    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, l };
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l), k = scaleOf(cv, sw, sh);
+  function dragResize(e, s, c, l, cv, sw, sh, corner) {
+    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, c, l };
+    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
       const dx = (ev.clientX - sx) / k.x, dy = (ev.clientY - sy) / k.y;
@@ -2052,7 +2056,7 @@ VIEWS.workspace = (() => {
       if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
       if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
       const r = { left, top, w: right - left, h: bot - top };
-      asPct(box, r, sw, sh); setGeom(s, l, r);
+      asPct(box, r, sw, sh); setGeom(s, c, l, r);
     };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -2069,59 +2073,68 @@ VIEWS.workspace = (() => {
       el('div', { class: 'src-list' }, ...tiles));
   }
 
-  function screenCard(s) {
+  // one context (program or preview) of one screen: its canvas + slot/preset row
+  function contextCol(s, c) {
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
     const n = maxLayers(s);
-    const cv = el('div', { class: 'screen-canvas' });
+    const cv = el('div', { class: 'screen-canvas ws-cv-' + (c === 0 ? 'pgm' : 'pvw') });
     cv.dataset.ar = String(sw / sh);
     for (let l = 0; l < n; l++) {
-      const src = store.val('PRinp', s, ctx, l);
-      const isSel = sel && sel.s === s && sel.l === l;
+      const src = store.val('PRinp', s, c, l);
+      const isSel = sel && sel.s === s && sel.c === c && sel.l === l;
       if (!src && !isSel) continue;
-      const r = layerRectPx(s, ctx, l);
+      const r = layerRectPx(s, c, l);
       const box = el('div', {
         class: 'lrect' + (isSel ? ' sel' : ''),
         style: `background:${srcColor(src)};z-index:${l + 1}`,
-        onpointerdown: (e) => { if (armed != null) { e.stopPropagation(); assign(s, l, armed); } else dragMove(e, s, l, cv, sw, sh); },
+        onpointerdown: (e) => { if (armed != null) { e.stopPropagation(); assign(s, c, l, armed); } else dragMove(e, s, c, l, cv, sw, sh); },
       },
         el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, s, l, cv, sw, sh, c) })));
+        ...['nw', 'ne', 'sw', 'se'].map(cn => el('div', { class: 'handle ' + cn, onpointerdown: (e) => dragResize(e, s, c, l, cv, sw, sh, cn) })));
       asPct(box, r, sw, sh);
       cv.append(box);
     }
     const slots = el('div', { class: 'ws-slots' });
     for (let l = 0; l < n; l++) {
-      const src = store.val('PRinp', s, ctx, l), isSel = sel && sel.s === s && sel.l === l;
+      const src = store.val('PRinp', s, c, l), isSel = sel && sel.s === s && sel.c === c && sel.l === l;
       slots.append(el('button', {
         class: 'ws-slot' + (isSel ? ' sel' : '') + (src ? ' filled' : ''),
         style: src ? `--c:${srcColor(src)}` : '',
         title: src ? sourceName(src) : 'empty',
-        onclick: () => { if (armed != null) assign(s, l, armed); else { sel = { s, l }; store.notify(); } },
+        onclick: () => { if (armed != null) assign(s, c, l, armed); else { sel = { s, c, l }; store.notify(); } },
       }, `L${l + 1}`));
     }
     // quick layout presets, right-aligned in the same row as the layer slots
     slots.append(el('div', { class: 'spacer' }));
     for (const [k, label, t] of LAYOUTS)
-      slots.append(el('button', { class: 'ws-lay', title: t, onclick: () => arrange(s, k) }, label));
-    return el('div', { class: 'panel ws-screen' },
-      el('div', { class: 'ws-screen-head' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
-        el('button', { class: 'btn ghost', onclick: () => doTake(s) }, 'Take')),
+      slots.append(el('button', { class: 'ws-lay', title: t, onclick: () => arrange(s, c, k) }, label));
+    return el('div', { class: 'ws-ctx' },
+      el('div', { class: 'ws-ctx-head' }, el('span', { class: 'ws-ctx-tag ' + (c === 0 ? 'pgm' : 'pvw') }, CTXN(c))),
       el('div', { class: 'canvas-wrap' }, cv),
       slots);
+  }
+
+  function screenCard(s) {
+    const cols = shownCtx().map(c => contextCol(s, c));
+    return el('div', { class: 'panel ws-screen' + (cols.length > 1 ? ' ws-dual' : '') },
+      el('div', { class: 'ws-screen-head' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ghost', onclick: () => doTake(s) }, 'Take')),
+      el('div', { class: 'ws-ctxs' }, ...cols));
   }
 
   // recall a whole-device look: LiveCore master memories; Midra re-applies a stored preset
   function recallMem(i) {
     if (store.byMnem.has('PSmet')) { store.set('PSmet', [], i); store.set('PSlot', [], 1); return; }
     if (store.byMnem.has('PMpst')) {
+      const c = 1;   // Midra edits preview
       if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
       for (let s = 0; s < screenCount(); s++)
         for (let l = 0; l < layerSlots(); l++) {
-          store.set('PRsih', [s, ctx, l], store.val('PMsih', i, s, l) || 0);
-          store.set('PRsiv', [s, ctx, l], store.val('PMsiv', i, s, l) || 0);
-          store.set('PRpoh', [s, ctx, l], store.val('PMpoh', i, s, l) ?? B);
-          store.set('PRpov', [s, ctx, l], store.val('PMpov', i, s, l) ?? B);
-          store.set('PRinp', [s, ctx, l], store.val('PMinp', i, s, l) || 0);
+          store.set('PRsih', [s, c, l], store.val('PMsih', i, s, l) || 0);
+          store.set('PRsiv', [s, c, l], store.val('PMsiv', i, s, l) || 0);
+          store.set('PRpoh', [s, c, l], store.val('PMpoh', i, s, l) ?? B);
+          store.set('PRpov', [s, c, l], store.val('PMpov', i, s, l) ?? B);
+          store.set('PRinp', [s, c, l], store.val('PMinp', i, s, l) || 0);
         }
       store.notify();
     }
@@ -2147,25 +2160,36 @@ VIEWS.workspace = (() => {
     return el('div', { class: 'panel ws-membar' },
       el('div', { class: 'ws-membar-label' },
         el('h2', midra ? 'Presets' : 'Master memories'),
-        el('span', { class: 'hint', text: midra ? 'recall to the current context' : 'recall + take a look' })),
+        el('span', { class: 'hint', text: midra ? 'recall to preview' : 'recall + take a look' })),
       grid);
   }
 
   function render() {
-    const screens = active();
+    const all = active();
+    const screens = all.filter(s => !hidden.has(s));
     requestAnimationFrame(fitCanvases);   // size the previews once this tree is on the page
+    const togglePgm = () => { const next = !showPgm; if (!next && !showPvw) return; showPgm = next; store.notify(); };
+    const togglePvw = () => { const next = !showPvw; if (!next && !showPgm) return; showPvw = next; store.notify(); };
     return el('div', { class: 'ws-page' },
       el('div', { class: 'panel ws-bar' },
-        el('div', { class: 'seg' },
-          el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
-          el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+        el('div', { class: 'ws-toggles' },
+          el('span', { class: 'ws-bar-lbl', text: 'Show' }),
+          el('button', { class: 'ws-tog pgm' + (showPgm ? ' on' : ''), onclick: togglePgm }, 'Program'),
+          el('button', { class: 'ws-tog pvw' + (showPvw ? ' on' : ''), onclick: togglePvw }, 'Preview')),
+        all.length > 1 ? el('div', { class: 'ws-toggles' },
+          el('span', { class: 'ws-bar-lbl', text: 'Screens' }),
+          ...all.map(s => el('button', {
+            class: 'ws-tog' + (!hidden.has(s) ? ' on' : ''),
+            title: (hidden.has(s) ? 'Show' : 'Hide') + ` Screen ${s + 1}`,
+            onclick: () => { if (hidden.has(s)) hidden.delete(s); else if (screens.length > 1) hidden.add(s); store.notify(); },
+          }, `${s + 1}`))) : null,
         el('span', { class: 'ws-armed hint', text: armed != null ? `${sourceName(armed)} armed — click a layer or slot` : 'Arm a source, then place it on any screen' }),
         el('div', { class: 'spacer' }),
-        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s)) }, 'Take all screens')),
+        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s)) }, 'Take all')),
       el('div', { class: 'ws-body' },
         sourceRail(),
         el('div', { class: 'ws-screens' },
-          ...(screens.length ? screens.map(screenCard) : [el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured.' }))]))),
+          ...(screens.length ? screens.map(screenCard) : [el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens selected.' }))]))),
       memoryStrip());
   }
   return { enter, render };
