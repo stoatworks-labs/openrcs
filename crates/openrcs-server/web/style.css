@@ -370,4 +370,14 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
   border-radius: var(--r); font: 12px/1.5 var(--mono); color: var(--muted); overflow-x: auto;
   letter-spacing: .5px; white-space: pre; }
 
+/* ---- Midra still/logo store ---- */
+.still-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.still-cell { border: 1px solid var(--line); border-radius: var(--r); padding: 10px; background: var(--bg);
+  display: flex; flex-direction: column; gap: 4px; min-height: 54px; }
+.still-cell.valid { border-color: var(--accent-dim); background: var(--panel-2); }
+.still-cell .num { font: 600 12px var(--mono); color: var(--muted); }
+.still-cell.valid .num { color: var(--accent); }
+.still-cell .still-meta { font: 11px var(--mono); color: var(--muted); }
+@media (max-width: 720px) { .still-grid { grid-template-columns: repeat(2, 1fr); } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

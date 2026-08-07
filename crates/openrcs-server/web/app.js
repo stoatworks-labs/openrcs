@@ -209,7 +209,8 @@ const NAV = [
 const VIEW_REQUIRES = {
   memories: () => store.byMnem.has('PSmet') || store.byMnem.has('PMpst'),  // LiveCore or Midra
   cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
-  stills: 'Slval', capture: 'STcen', multiview: 'MLcen',
+  stills: () => store.byMnem.has('Slval') || store.byMnem.has('PSfrv'),  // LiveCore or Midra
+  capture: 'STcen', multiview: 'MLcen',
   // the soft-edge view models LiveCore's per-edge SEcen[screen,edge]; Midra's
   // soft edge is a different (scalar) model, so gate on an indexed SEcen
   softedge: () => (store.byMnem.get('SEcen')?.dims.length || 0) > 0,
@@ -1318,8 +1319,53 @@ VIEWS.outputs = (() => {
 VIEWS.stills = (() => {
   const N = 101;
   let sel = null;
-  function enter() { for (const m of ['Slval', 'SLusd', 'SLiwd', 'SLihe']) store.scan(m); }
+
+  // Midra frame store: 8 frames (PSfrv + size). The logo vars (PSlov…) are in the
+  // table but some models' firmware rejects them (E10), so probe once and only
+  // show logos where supported.
+  const mid = (() => {
+    let logos = null;   // null = unprobed, true/false = supported
+    function enter() {
+      for (const m of ['PSfrv', 'PSfsh', 'PSfsv', 'PSsta', 'PSprg']) store.scan(m);
+      if (logos === null) {   // one-shot capability probe
+        const mark = store.log.length;
+        store.get('PSlov', [0]);
+        setTimeout(() => {
+          const failed = store.log.slice(mark).some(e => e.dir === 'er');
+          logos = !failed;
+          if (logos) for (const m of ['PSlov', 'PSlsh', 'PSlsv']) store.scan(m);
+          store.notify();
+        }, 400);
+      }
+    }
+    function cell(kind, i, validM, hM, vM) {
+      const valid = store.val(validM, i) === 1;
+      const w = store.val(hM, i), h = store.val(vM, i);
+      return el('div', { class: 'still-cell' + (valid ? ' valid' : '') },
+        el('span', { class: 'num', text: kind + ' ' + (i + 1) }),
+        el('span', { class: 'still-meta', text: valid ? `${w ?? '·'}×${h ?? '·'}` : 'empty' }));
+    }
+    function render() {
+      const frames = Array.from({ length: 8 }, (_, i) => store.val('PSfrv', i)).filter(v => v === 1).length;
+      const logoCount = logos ? Array.from({ length: 16 }, (_, i) => store.val('PSlov', i)).filter(v => v === 1).length : 0;
+      const status = store.val('PSsta'), prog = store.val('PSprg');
+      return el('div', {},
+        el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }),
+          el('span', { class: 'hint', text: `${frames} frames${logos ? ` · ${logoCount} logos` : ''}${status ? ` · capture ${prog ?? 0}%` : ''}` })),
+        el('div', { class: 'panel' }, el('h2', 'Frames'),
+          el('div', { class: 'still-grid' }, ...Array.from({ length: 8 }, (_, i) => cell('Frame', i, 'PSfrv', 'PSfsh', 'PSfsv')))),
+        logos ? el('div', { class: 'panel' }, el('h2', 'Logos'),
+          el('div', { class: 'still-grid' }, ...Array.from({ length: 16 }, (_, i) => cell('Logo', i, 'PSlov', 'PSlsh', 'PSlsv')))) : null);
+    }
+    return { enter, render };
+  })();
+
+  function enter() {
+    if (store.meta?.platform === 'midra') return mid.enter();
+    for (const m of ['Slval', 'SLusd', 'SLiwd', 'SLihe']) store.scan(m);
+  }
   function render() {
+    if (store.meta?.platform === 'midra') return mid.render();
     const used = Array.from({ length: N }, (_, i) => store.val('Slval', i)).filter(v => (v || 0) > 0).length;
     const g = el('div', { class: 'mem-grid' });
     for (let i = 0; i < N; i++) {
