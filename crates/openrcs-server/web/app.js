@@ -1511,6 +1511,58 @@ VIEWS.multiview = (() => {
   return { enter, render };
 })();
 
+// ---------- EDID generator (CVT-RB timing → EDID 1.4 base block) ----------
+function cvtRB(H, V, R) {
+  const CLK_STEP = 0.25, MIN_VBLANK = 460, HSYNC = 32, HBLANK = 160, VFPORCH = 3;
+  const hActive = Math.floor(H / 8) * 8, ar = H / V, near = (a, b) => Math.abs(a - b) < 0.03;
+  const vSync = near(ar, 4 / 3) ? 4 : near(ar, 16 / 9) ? 5 : near(ar, 16 / 10) ? 6
+    : near(ar, 5 / 4) ? 7 : near(ar, 15 / 9) ? 7 : 10;
+  const hPeriod = (1e6 / R - MIN_VBLANK) / (V + VFPORCH);
+  let vBlank = Math.ceil(MIN_VBLANK / hPeriod);
+  if (vBlank < vSync + VFPORCH + 6) vBlank = vSync + VFPORCH + 6;
+  const pclk = Math.floor(((hActive + HBLANK) / hPeriod) / CLK_STEP) * CLK_STEP;
+  return { pclkHz: Math.round(pclk * 1e6), hActive, hBlank: HBLANK, hFront: 48, hSync: HSYNC, vActive: V, vBlank, vFront: VFPORCH, vSync };
+}
+function edidDTD(b, off, t) {
+  const pc = Math.round(t.pclkHz / 10000);
+  b[off] = pc & 0xFF; b[off + 1] = (pc >> 8) & 0xFF;
+  b[off + 2] = t.hActive & 0xFF; b[off + 3] = t.hBlank & 0xFF;
+  b[off + 4] = ((t.hActive >> 8) << 4) | ((t.hBlank >> 8) & 0x0F);
+  b[off + 5] = t.vActive & 0xFF; b[off + 6] = t.vBlank & 0xFF;
+  b[off + 7] = ((t.vActive >> 8) << 4) | ((t.vBlank >> 8) & 0x0F);
+  b[off + 8] = t.hFront & 0xFF; b[off + 9] = t.hSync & 0xFF;
+  b[off + 10] = ((t.vFront & 0x0F) << 4) | (t.vSync & 0x0F);
+  b[off + 11] = ((t.hFront >> 8) << 6) | (((t.hSync >> 8) & 3) << 4) | (((t.vFront >> 4) & 3) << 2) | ((t.vSync >> 4) & 3);
+  b[off + 17] = 0x1E;
+}
+function edidText(b, off, tag, str) {
+  b[off + 3] = tag;
+  const s = (str || '').slice(0, 13);
+  for (let i = 0; i < 13; i++) b[off + 5 + i] = i < s.length ? s.charCodeAt(i) : (i === s.length ? 0x0A : 0x20);
+}
+function edidRange(b, off, minV, maxV, maxClk) {
+  b[off + 3] = 0xFD;
+  b[off + 5] = minV; b[off + 6] = maxV; b[off + 7] = 15; b[off + 8] = 160;
+  b[off + 9] = Math.round(maxClk / 10);
+  for (let i = 11; i < 18; i++) b[off + i] = (i === 11 ? 0x0A : 0x20);
+}
+function buildEdid({ H, V, R, name = 'openrcs', mfr = 'AWY', year = 2026 }) {
+  const t = cvtRB(H, V, R), b = new Uint8Array(256);
+  b.set([0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00], 0);
+  const c = (i) => mfr.toUpperCase().charCodeAt(i) - 64, m = (c(0) << 10) | (c(1) << 5) | c(2);
+  b[8] = (m >> 8) & 0xFF; b[9] = m & 0xFF; b[10] = 1; b[17] = (year - 1990) & 0xFF;
+  b[18] = 1; b[19] = 4; b[20] = 0x80 | (0b010 << 4) | 0b0010; b[23] = 0x78; b[24] = 0x0A;
+  b.set([0xEE, 0x91, 0xA3, 0x54, 0x4C, 0x99, 0x26, 0x0F, 0x50, 0x54], 25);
+  for (let i = 38; i < 54; i++) b[i] = 0x01;
+  edidDTD(b, 54, t);
+  edidRange(b, 72, 23, Math.max(61, R + 1), t.pclkHz / 1e6 + 10);
+  edidText(b, 90, 0xFC, name);
+  edidText(b, 108, 0xFE, `${H}x${V}@${R}`);
+  let sum = 0; for (let i = 0; i < 127; i++) sum += b[i];
+  b[127] = (256 - (sum % 256)) % 256;
+  return { bytes: b, timing: t };
+}
+
 // ---------- EDID management ----------
 VIEWS.edid = (() => {
   // counts derived from the table: LiveCore EIava[24,6]/EOava[8,4],
@@ -1520,9 +1572,68 @@ VIEWS.edid = (() => {
   const NOUT = () => store.byMnem.get('EOava')?.dims[0] || 8;
   const outPlugs = () => store.byMnem.get('EOava')?.dims[1] || 4;
   let inPlug = 0, outPlug = 0;
+  // custom-EDID writer state
+  const EDID_PRESETS = [
+    ['1920×1080', 1920, 1080], ['1280×720', 1280, 720], ['3840×2160', 3840, 2160],
+    ['2560×1440', 2560, 1440], ['1920×1200', 1920, 1200], ['1600×900', 1600, 900],
+    ['1280×1024', 1280, 1024], ['1024×768', 1024, 768], ['Custom', 0, 0],
+  ];
+  let cIn = 0, cPlug = 0, cPreset = 0, cW = 1920, cH = 1080, cR = 60, cName = 'openrcs';
+  let gen = null, writeStatus = '';
   function enter() {
     for (const m of ['EIava', 'EIspf', 'EIhcd']) store.scan(m);
     for (const m of ['EOava', 'EOval', 'EOhcd']) store.scan(m);
+  }
+  function generate() {
+    const p = EDID_PRESETS[cPreset];
+    const H = cPreset === EDID_PRESETS.length - 1 ? cW : p[1];
+    const V = cPreset === EDID_PRESETS.length - 1 ? cH : p[2];
+    if (!(H >= 640 && H <= 4096 && V >= 480 && V <= 2160)) { writeStatus = 'resolution out of range'; store.notify(); return; }
+    gen = { ...buildEdid({ H, V, R: cR, name: cName }), H, V, R: cR };
+    writeStatus = ''; store.notify();
+  }
+  function writeEdid() {
+    if (!gen) return;
+    if (!confirm(`Write a custom ${gen.H}×${gen.V}@${gen.R} EDID to IN ${cIn + 1} · plug ${cPlug + 1}?\nThis overwrites that input's stored EDID.`)) return;
+    for (let i = 0; i < 256; i++) store.set('EIdat', [cIn, cPlug, i], gen.bytes[i]);
+    store.set('EIstr', [cIn, cPlug], 1);
+    writeStatus = 'written — 256 bytes sent + stored';
+    store.notify();
+  }
+  const optSel = (cur, opts, onchange) => {
+    const s = el('select', { onchange: (e) => onchange(e.target.value) });
+    for (const [val, label] of opts) { const o = el('option', { value: val, text: label }); if ('' + val === '' + cur) o.selected = true; s.append(o); }
+    return s;
+  };
+  const numInput = (val, onchange) => el('input', { type: 'number', class: 'num-in', value: val, oninput: (e) => onchange(+e.target.value | 0) });
+  function customPanel() {
+    const isCustom = cPreset === EDID_PRESETS.length - 1;
+    const inputs = Array.from({ length: NIN() }, (_, i) => [i, 'IN ' + (i + 1)]);
+    const plugs = Array.from({ length: inPlugs() }, (_, i) => [i, 'Plug ' + (i + 1)]);
+    const presets = EDID_PRESETS.map(([l], i) => [i, l]);
+    const refreshes = [24, 25, 30, 50, 60].map(r => [r, r + ' Hz']);
+    const preview = gen ? (() => {
+      const t = gen.timing, hex = [];
+      for (let r = 0; r < 8; r++) hex.push([...gen.bytes.slice(r * 16, r * 16 + 16)].map(x => x.toString(16).padStart(2, '0')).join(' '));
+      return el('div', {},
+        el('div', { class: 'row', style: 'margin-top:10px' },
+          el('span', { class: 'hint', text: `${gen.H}×${gen.V}@${gen.R} · pixel clock ${(t.pclkHz / 1e6).toFixed(2)} MHz · ${gen.H + t.hBlank}×${gen.V + t.vBlank} total · checksum OK` }),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn take', onclick: writeEdid }, `Write to IN ${cIn + 1}`)),
+        el('pre', { class: 'edid-hex', text: hex.join('\n') }));
+    })() : el('div', { class: 'hint', style: 'margin-top:8px', text: 'Choose a resolution and Generate to preview the EDID, then write it to an input.' });
+    return el('div', { class: 'panel' }, el('h2', 'Custom EDID writer'),
+      el('div', { class: 'row', style: 'flex-wrap:wrap;gap:10px' },
+        el('label', { class: 'field' }, 'Target input', optSel(cIn, inputs, v => { cIn = +v; store.notify(); })),
+        el('label', { class: 'field' }, 'Plug', optSel(cPlug, plugs, v => { cPlug = +v; store.notify(); })),
+        el('label', { class: 'field' }, 'Resolution', optSel(cPreset, presets, v => { cPreset = +v; store.notify(); })),
+        isCustom ? el('label', { class: 'field' }, 'Width', numInput(cW, v => cW = v)) : null,
+        isCustom ? el('label', { class: 'field' }, 'Height', numInput(cH, v => cH = v)) : null,
+        el('label', { class: 'field' }, 'Refresh', optSel(cR, refreshes, v => { cR = +v; store.notify(); })),
+        el('label', { class: 'field' }, 'Monitor name', el('input', { type: 'text', class: 'num-in', style: 'width:130px', value: cName, maxlength: 13, oninput: (e) => cName = e.target.value })),
+        el('button', { class: 'btn', onclick: generate }, 'Generate')),
+      writeStatus ? el('div', { class: 'hint', style: 'margin-top:6px', text: writeStatus }) : null,
+      preview);
   }
   function numField(mnem, idx, max) {
     const cur = store.val(mnem, ...idx);
@@ -1578,10 +1689,13 @@ VIEWS.edid = (() => {
           el('table', { class: 'grid' },
             el('thead', el('tr', ...['Output', 'Display', 'EDID', 'Hashcode', ''].map(h => el('th', { text: h })))),
             el('tbody', ...Array.from({ length: NOUT() }, (_, i) => outRow(i)))))),
-      el('div', { class: 'panel' }, el('h2', 'EDID library'),
-        el('div', { class: 'row' },
-          el('button', { class: 'btn ghost', onclick: () => store.set('EdIsf', [], 1) }, 'Reset inputs to factory'),
-          el('button', { class: 'btn ghost', onclick: () => { if (confirm('Reset the entire EDID library to factory?')) store.set('PCelr', [], 1); } }, 'Reset EDID library'))));
+      customPanel(),
+      store.byMnem.has('EdIsf')
+        ? el('div', { class: 'panel' }, el('h2', 'EDID library'),
+          el('div', { class: 'row' },
+            el('button', { class: 'btn ghost', onclick: () => store.set('EdIsf', [], 1) }, 'Reset inputs to factory'),
+            store.byMnem.has('PCelr') ? el('button', { class: 'btn ghost', onclick: () => { if (confirm('Reset the entire EDID library to factory?')) store.set('PCelr', [], 1); } }, 'Reset EDID library') : null))
+        : null);
   }
   return { enter, render };
 })();
