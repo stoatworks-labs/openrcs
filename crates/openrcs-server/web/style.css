@@ -401,10 +401,10 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 @media (max-width: 720px) { .still-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---- Workspace (working page) ---- */
-/* the whole page fills the viewport: bar on top, screens grow to fill, memories pinned below.
-   height is pinned to the viewport (header 48 + main padding 2*16) rather than 100% so the
-   flex column can't grow to content and push the memory strip off screen */
-.ws-page { display: flex; flex-direction: column; height: calc(100vh - 48px - 32px); min-height: 0; overflow: hidden; gap: 12px; }
+/* the whole page fills its pane: bar on top, screens grow to fill, memories pinned below.
+   height:100% resolves against .main (whose grid row is minmax(0,1fr), so it's clamped to
+   the pane, not content) — which is also correct under the demo's shorter, bannered app */
+.ws-page { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; gap: 12px; }
 .ws-bar { margin: 0; padding: 9px 12px; display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .ws-armed { font-size: 12px; }
 
