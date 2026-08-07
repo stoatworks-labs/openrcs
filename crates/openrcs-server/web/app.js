@@ -156,7 +156,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 const VIEWS = {};
@@ -199,7 +199,7 @@ const NAV = [
   ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
-  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['gpio', 'GPIO'], ['system', 'System'],
+  ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['inspector', 'Inspector'], ['console', 'Console'],
 ];
@@ -214,7 +214,7 @@ const VIEW_REQUIRES = {
   // the soft-edge view models LiveCore's per-edge SEcen[screen,edge]; Midra's
   // soft edge is a different (scalar) model, so gate on an indexed SEcen
   softedge: () => (store.byMnem.get('SEcen')?.dims.length || 0) > 0,
-  edid: 'EIspf', gpio: 'GPoav',
+  edid: 'EIspf', audio: 'AUile', gpio: 'GPoav',
 };
 const viewSupported = (id) => {
   const req = VIEW_REQUIRES[id];
@@ -1291,10 +1291,16 @@ VIEWS.inputs = (() => {
 VIEWS.outputs = (() => {
   const N = () => outputCount();
   let sel = 0;
-  const FORMATS = Array.from({ length: 55 }, (_, i) => i === 0 ? 'Auto' : `Format ${i}`);
   function enter() {
-    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
       'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl']) if (store.byMnem.has(m)) store.scan(m);
+  }
+  // set the output format (and, on Midra, fire the update trigger to apply it)
+  function formatSelect() {
+    const cur = store.val('OUfor', sel) ?? 0, max = store.byMnem.get('OUfor')?.max ?? 54;
+    const s = el('select', { onchange: (e) => { store.set('OUfor', [sel], +e.target.value); if (store.byMnem.has('OUfru')) store.set('OUfru', [sel], 1); } });
+    for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: i === 0 ? 'Auto' : 'Format ' + i }); if (i === cur) o.selected = true; s.append(o); }
+    return s;
   }
   function row(i) {
     const avail = store.val('OUava', i) === 1;
@@ -1316,7 +1322,8 @@ VIEWS.outputs = (() => {
     const i = [sel];
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
-        el('label', { class: 'field' }, 'Format', enumSelect('OUfor', i, FORMATS)),
+        el('label', { class: 'field' }, 'Format', formatSelect()),
+        store.byMnem.has('OUrat') ? bind('Rate', 'OUrat', i, 0, store.byMnem.get('OUrat').max) : null,
         toggleBtn('HDCP', 'OUhdc', i),
         toggleBtn('Black', 'OUbla', i, 'pgm')),
       el('div', { class: 'sub-head' }, 'Output processing'),
@@ -1810,16 +1817,28 @@ VIEWS.edid = (() => {
       onchange: (e) => { const v = Math.max(0, Math.min(max, +e.target.value | 0)); store.set(mnem, idx, v); },
     });
   }
+  // decode the current preferred-format NAME (EIpfn is 16 chars per input/plug),
+  // fetched lazily so we only pull names for the plug on screen
+  const pfFetched = new Set();
+  function pfName(i, p) {
+    const key = i + ',' + p;
+    if (!pfFetched.has(key)) { pfFetched.add(key); for (let c = 0; c < 16; c++) store.get('EIpfn', [i, p, c]); }
+    let s = '';
+    for (let c = 0; c < 16; c++) { const v = store.val('EIpfn', i, p, c); if (v == null || v === 0) break; s += String.fromCharCode(v); }
+    return s.trim();
+  }
   function inRow(i) {
     const idx = [i, inPlug], avail = store.val('EIava', ...idx) === 1;
+    const spfMax = store.byMnem.get('EIspf')?.max ?? 146;
     return el('tr', { class: avail ? '' : 'dim' },
       el('td', { text: 'IN ' + (i + 1) }),
       el('td', boolChip(avail ? 1 : 0, 'present', '—')),
       el('td', { class: 'val', text: fmt(store.val('EIhcd', ...idx)) }),
-      el('td', numField('EIspf', idx, 146)),
+      el('td', numField('EIspf', idx, spfMax),
+        avail ? el('span', { class: 'hint', style: 'margin-left:8px', text: pfName(i, inPlug) }) : null),
       el('td',
         el('button', { class: 'btn ghost', onclick: () => store.set('EIstr', idx, 1) }, 'Store'),
-        el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: () => store.set('Edpsf', idx, 1) }, 'Factory')));
+        store.byMnem.has('Edpsf') ? el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: () => store.set('Edpsf', idx, 1) }, 'Factory') : null));
   }
   function outRow(i) {
     const idx = [i, outPlug], avail = store.val('EOava', ...idx) === 1, valid = store.val('EOval', ...idx) === 1;
@@ -1920,6 +1939,65 @@ VIEWS.softedge = (() => {
             bind('Red', 'SEbrl', [screen, 0], 0, 127, 1),
             bind('Green', 'SEblg', [screen, 0], 0, 127, 1),
             bind('Blue', 'SEbbl', [screen, 0], 0, 127, 1)))));
+  }
+  return { enter, render };
+})();
+
+// ---------- Audio (Midra) ----------
+VIEWS.audio = (() => {
+  const NIN = 25, NOUT = 2;
+  let inputs = null;   // per-input audio channel control: null=unprobed, true/false (some models omit it)
+  function enter() {
+    for (const m of ['AUomv', 'AUoba', 'AUomu', 'AUoim', 'AUode', 'AUoci']) if (store.byMnem.has(m)) store.scan(m);
+    if (inputs === null) {
+      const mark = store.log.length;
+      store.get('AUile', [0]);
+      setTimeout(() => {
+        inputs = !store.log.slice(mark).some(e => e.dir === 'er');
+        if (inputs) for (const m of ['AUaia', 'AUile', 'AUiba', 'AUiim', 'AUimu']) store.scan(m);
+        store.notify();
+      }, 400);
+    } else if (inputs) {
+      for (const m of ['AUaia', 'AUile', 'AUiba', 'AUiim', 'AUimu']) store.scan(m);
+    }
+  }
+  function outCard(o) {
+    const inp = store.val('AUoci', o);
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', `Output ${o + 1}`), el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: inp ? `from input ${inp}` : 'no input' }),
+        toggleBtn('Mute', 'AUomu', [o], 'pgm')),
+      bind('Master volume', 'AUomv', [o], 0, 192, 1, v => Math.round(v / 192 * 100) + '%'),
+      el('div', { class: 'grid2' },
+        bind('Balance', 'AUoba', [o], 0, 90, 1, v => v === 45 ? 'C' : (v < 45 ? 'L' + (45 - v) : 'R' + (v - 45))),
+        bind('Delay', 'AUode', [o], 0, 80, 1, v => v + ' ms')),
+      el('label', { class: 'field' }, 'Mono', checkbox(store.val('AUoim', o) === 1, v => store.set('AUoim', [o], v ? 1 : 0))));
+  }
+  function inRow(i) {
+    const avail = store.val('AUaia', i) === 1;
+    const bal = store.val('AUiba', i) ?? 45;
+    return el('tr', { class: avail ? '' : 'dim' },
+      el('td', { text: 'IN ' + (i + 1) }),
+      el('td', boolChip(avail ? 1 : 0, 'present', '—')),
+      el('td', { style: 'min-width:200px' }, bind('', 'AUile', [i], 0, 255, 1, v => Math.round(v / 255 * 100) + '%')),
+      el('td', { class: 'val', text: bal === 45 ? 'C' : (bal < 45 ? 'L' + (45 - bal) : 'R' + (bal - 45)) }),
+      el('td', boolChip(store.val('AUiim', i) === 1 ? 1 : 0, 'mono', 'st')),
+      el('td', toggleBtn('Mute', 'AUimu', [i], 'pgm')));
+  }
+  function render() {
+    const shown = inputs ? Array.from({ length: NIN }, (_, i) => i).filter(i => store.val('AUaia', i) === 1) : [];
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Audio' }),
+        el('span', { class: 'hint', text: `${NOUT} outputs${inputs ? ` · ${shown.length} input channels` : ''}` })),
+      el('div', { class: 'split-wide' }, ...Array.from({ length: NOUT }, (_, o) => outCard(o))),
+      inputs
+        ? el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'Input channels'),
+          el('table', { class: 'grid' },
+            el('thead', el('tr', ...['Input', 'Signal', 'Level', 'Balance', 'Mode', ''].map(h => el('th', { text: h })))),
+            el('tbody', ...(shown.length ? shown : []).map(inRow))))
+        : inputs === false
+        ? el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'This unit exposes audio-output control only.' }))
+        : null);
   }
   return { enter, render };
 })();
