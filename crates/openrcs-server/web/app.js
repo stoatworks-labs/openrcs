@@ -526,7 +526,13 @@ function throttledSet(m, idx, v) {
   else { clearTimeout(_throttle.get(k + ':t')); _throttle.set(k + ':t', setTimeout(() => store.set(m, idx, v), 45)); }
 }
 
-function sourceName(n) { return n == null ? '·' : n === 0 ? '— none —' : 'IN ' + n; }
+// LiveCore layer sources: 1–24 inputs, 25–40 stills (still N = source 24+N), 41 pattern
+function sourceName(n) {
+  if (n == null) return '·';
+  if (n === 0) return '— none —';
+  if (store.meta?.platform === 'livecore' && n >= 25 && n <= 40) return 'Still ' + (n - 24);
+  return 'IN ' + n;
+}
 
 function sourceSelect(mnem, idx, max) {
   if (max == null) max = srcMaxOf();
@@ -1956,6 +1962,7 @@ VIEWS.workspace = (() => {
   let sel = null;          // { s, c, l } selected layer (c = context)
   let armed = null;        // armed source number, null = nothing armed
   let hidden = new Set();  // screen indices hidden from the workspace
+  let srcTab = 'inputs';   // source rail tab: 'inputs' | 'stills'
   let ctxInit = false;
   const B = POS_BIAS;
   const shownCtx = () => [0, 1].filter(c => (c === 0 ? showPgm : showPvw));
@@ -1985,6 +1992,7 @@ VIEWS.workspace = (() => {
     if (!ctxInit) { ctxInit = true; if (store.meta?.platform === 'midra') { showPgm = false; showPvw = true; } }
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava']) store.scan(m);
+    if (store.meta?.platform === 'livecore') for (const m of ['LSval', 'RSava']) if (store.byMnem.has(m)) store.scan(m);
     for (let s = 0; s < screenCount(); s++)
       for (let l = 0; l < layerSlots(); l++)
         for (const c of [0, 1])
@@ -2062,15 +2070,40 @@ VIEWS.workspace = (() => {
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
 
+  const srcTile = (n) => el('button', { class: 'src-tile' + (armed === n ? ' armed' : ''), onclick: () => { armed = armed === n ? null : n; store.notify(); } },
+    el('span', { class: 'src-sw', style: `background:${n === 0 ? 'var(--line-hi)' : srcColor(n)}` }), sourceName(n));
+  // LiveCore has 24 input slots; show the ones the device reports available (fall back to a sane range)
+  function inputNums() {
+    if (store.byMnem.has('INava')) { const o = []; for (let i = 0; i < 24; i++) if (store.val('INava', i)) o.push(i + 1); if (o.length) return o; }
+    const max = store.meta?.platform === 'livecore' ? Math.min(srcMaxOf(), 24) : srcMaxOf();
+    return Array.from({ length: max }, (_, i) => i + 1);
+  }
+  // stills sit at sources 25–40 (still N = 24+N); the frame store is the 8 large stills at 25–32
+  function loadedStills() {
+    const out = [];
+    for (let i = 1; i <= 8; i++) if (store.val('LSval', i - 1) === 1) out.push(24 + i);
+    return out;
+  }
   function sourceRail() {
-    const max = srcMaxOf();
-    const tiles = [el('button', { class: 'src-tile' + (armed === 0 ? ' armed' : ''), onclick: () => { armed = armed === 0 ? null : 0; store.notify(); } },
-      el('span', { class: 'src-sw', style: 'background:var(--line-hi)' }), '— none —')];
-    for (let n = 1; n <= max; n++)
-      tiles.push(el('button', { class: 'src-tile' + (armed === n ? ' armed' : ''), onclick: () => { armed = armed === n ? null : n; store.notify(); } },
-        el('span', { class: 'src-sw', style: `background:${srcColor(n)}` }), sourceName(n)));
-    return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
-      el('div', { class: 'src-list' }, ...tiles));
+    const live = store.meta?.platform === 'livecore';
+    if (!live) {
+      const max = srcMaxOf();
+      return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
+        el('div', { class: 'src-list' }, srcTile(0), ...Array.from({ length: max }, (_, i) => srcTile(i + 1))));
+    }
+    const tab = (id, label) => el('button', { class: 'src-tab' + (srcTab === id ? ' on' : ''), onclick: () => { srcTab = id; store.notify(); } }, label);
+    let list;
+    if (srcTab === 'stills') {
+      const stills = loadedStills();
+      list = el('div', { class: 'src-list' }, srcTile(0),
+        ...(stills.length ? stills.map(srcTile)
+          : [el('div', { class: 'hint', style: 'padding:10px 8px', text: 'No stills loaded — capture or load frames in the Stills view.' })]));
+    } else {
+      list = el('div', { class: 'src-list' }, srcTile(0), ...inputNums().map(srcTile));
+    }
+    return el('div', { class: 'panel ws-rail' },
+      el('div', { class: 'src-tabs' }, tab('inputs', 'Inputs'), tab('stills', 'Stills')),
+      list);
   }
 
   // one context (program or preview) of one screen: its canvas + slot/preset row
