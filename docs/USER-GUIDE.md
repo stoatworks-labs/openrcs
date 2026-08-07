@@ -40,11 +40,15 @@ single shape.
 One page that mirrors how you actually drive a show, with everything in reach:
 the **source palette** down the left, **every active screen** laid out and
 editable side by side in the middle, and the **memory strip** along the bottom.
+The page fits the window — the previews grow to fill the space and the memory
+strip stays in view, so nothing is a scroll away. Collapse the main menu with the
+button top-left (it stays collapsed) when you want the screens even larger.
 
 - **Arm a source**, then click a screen's layer slot — or click straight onto the
   canvas — to drop it in. Arm **— none —** to clear a layer.
 - **Drag and resize** layers directly on each screen, exactly as in the Layers
-  editor, with every screen live at once.
+  editor, with every screen live at once. One screen fills the width; two or more
+  share it side by side.
 - Each screen has its own **Take**; **Take all screens** cuts the lot.
 - The **Program / Preview** toggle chooses which context you're editing. On a
   Midra unit the program preset is protected, so the page edits preview and you
