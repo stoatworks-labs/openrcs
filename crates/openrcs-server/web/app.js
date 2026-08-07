@@ -159,6 +159,7 @@ window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return cur
 const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
+let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
 const VIEWS = {};
 
 function switchView(id) {
@@ -182,6 +183,11 @@ function header() {
   const model = deviceModel();
   const plat = store.meta ? store.meta.platform : '';
   return el('header', { class: 'head' },
+    el('button', {
+      class: 'nav-toggle', title: navCollapsed ? 'Show menu' : 'Hide menu',
+      'aria-label': navCollapsed ? 'Show menu' : 'Hide menu',
+      onclick: () => { navCollapsed = !navCollapsed; try { localStorage.setItem('orcs.nav', navCollapsed ? '1' : '0'); } catch { /* private mode */ } render(); },
+    }, el('span', { class: 'burger' })),
     el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
     el('div', { class: 'dev-id' },
       el('div', { class: 'model', text: model }),
@@ -248,6 +254,7 @@ function render() {
   const selS = fid ? act.selectionStart : null;
   const selE = fid ? act.selectionEnd : null;
 
+  root.classList.toggle('nav-hidden', navCollapsed);
   root.replaceChildren(
     header(),
     nav(),
@@ -1954,6 +1961,22 @@ VIEWS.workspace = (() => {
   const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
   const maxLayers = (s) => store.val('SCmly', s) || 4;
 
+  // size every screen canvas to the largest box that fits its slot, keeping aspect ratio,
+  // so the previews grow to fill the window and the memory strip stays in view without scrolling
+  function fitCanvases() {
+    document.querySelectorAll('.ws-screen .canvas-wrap').forEach(wrap => {
+      const cv = wrap.querySelector('.screen-canvas'); if (!cv) return;
+      const ar = parseFloat(cv.dataset.ar) || (16 / 9);
+      const availW = wrap.clientWidth, availH = wrap.clientHeight;
+      if (!availW || !availH) return;
+      let w = availW, h = w / ar;
+      if (h > availH) { h = availH; w = h * ar; }
+      cv.style.width = Math.round(w) + 'px';
+      cv.style.height = Math.round(h) + 'px';
+    });
+  }
+  window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
+
   function enter() {
     // Midra protects the program preset — default to editing preview, then take.
     if (!ctxInit) { ctxInit = true; if (store.meta?.platform === 'midra') ctx = 1; }
@@ -1974,28 +1997,34 @@ VIEWS.workspace = (() => {
     throttledSet('PRpoh', [s, ctx, l], Math.round(r.left + r.w / 2 + B));
     throttledSet('PRpov', [s, ctx, l], Math.round(r.top + r.h / 2 + B));
   };
-  function dragMove(e, s, l, scale) {
+  // scale (device px per rendered px) read live from the canvas, so drag works at any size
+  const scaleOf = (cv, sw, sh) => ({ x: cv.clientWidth / sw || 1, y: cv.clientHeight / sh || 1 });
+  // layers are positioned as a % of the screen, so they track the canvas as it resizes
+  const asPct = (box, r, sw, sh) => {
+    box.style.left = (r.left / sw * 100) + '%'; box.style.top = (r.top / sh * 100) + '%';
+    box.style.width = (r.w / sw * 100) + '%'; box.style.height = (r.h / sh * 100) + '%';
+  };
+  function dragMove(e, s, l, cv, sw, sh) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, l };
-    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l);
+    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l), k = scaleOf(cv, sw, sh);
     const move = (ev) => {
-      const r = { ...r0, left: r0.left + (ev.clientX - sx) / scale, top: r0.top + (ev.clientY - sy) / scale };
-      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px'; setGeom(s, l, r);
+      const r = { ...r0, left: r0.left + (ev.clientX - sx) / k.x, top: r0.top + (ev.clientY - sy) / k.y };
+      asPct(box, r, sw, sh); setGeom(s, l, r);
     };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, s, l, scale, corner) {
+  function dragResize(e, s, l, cv, sw, sh, corner) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, l };
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l);
+    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l), k = scaleOf(cv, sw, sh);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
-      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      const dx = (ev.clientX - sx) / k.x, dy = (ev.clientY - sy) / k.y;
       let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
       if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
       if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
       const r = { left, top, w: right - left, h: bot - top };
-      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
-      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px'; setGeom(s, l, r);
+      asPct(box, r, sw, sh); setGeom(s, l, r);
     };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -2009,27 +2038,28 @@ VIEWS.workspace = (() => {
       tiles.push(el('button', { class: 'src-tile' + (armed === n ? ' armed' : ''), onclick: () => { armed = armed === n ? null : n; store.notify(); } },
         el('span', { class: 'src-sw', style: `background:${srcColor(n)}` }), sourceName(n)));
     return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
-      el('div', { class: 'hint', text: armed != null ? `${sourceName(armed)} armed — click a layer or slot` : 'Click a source, then a layer' }),
       el('div', { class: 'src-list' }, ...tiles));
   }
 
   function screenCard(s) {
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
-    const CW = 320, scale = CW / sw;
     const n = maxLayers(s);
-    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(sh * scale)}px` });
+    const cv = el('div', { class: 'screen-canvas' });
+    cv.dataset.ar = String(sw / sh);
     for (let l = 0; l < n; l++) {
       const src = store.val('PRinp', s, ctx, l);
       const isSel = sel && sel.s === s && sel.l === l;
       if (!src && !isSel) continue;
       const r = layerRectPx(s, ctx, l);
-      cv.append(el('div', {
+      const box = el('div', {
         class: 'lrect' + (isSel ? ' sel' : ''),
-        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;background:${srcColor(src)};z-index:${l + 1}`,
-        onpointerdown: (e) => { if (armed != null) { e.stopPropagation(); assign(s, l, armed); } else dragMove(e, s, l, scale); },
+        style: `background:${srcColor(src)};z-index:${l + 1}`,
+        onpointerdown: (e) => { if (armed != null) { e.stopPropagation(); assign(s, l, armed); } else dragMove(e, s, l, cv, sw, sh); },
       },
         el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, s, l, scale, c) }))));
+        ...['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, s, l, cv, sw, sh, c) })));
+      asPct(box, r, sw, sh);
+      cv.append(box);
     }
     const slots = el('div', { class: 'ws-slots' });
     for (let l = 0; l < n; l++) {
@@ -2042,7 +2072,7 @@ VIEWS.workspace = (() => {
       }, `L${l + 1}`));
     }
     return el('div', { class: 'panel ws-screen' },
-      el('div', { class: 'row' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
+      el('div', { class: 'ws-screen-head' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
         el('button', { class: 'btn ghost', onclick: () => doTake(s) }, 'Take')),
       el('div', { class: 'canvas-wrap' }, cv),
       slots);
@@ -2078,27 +2108,29 @@ VIEWS.workspace = (() => {
     for (let i = 0; i < N; i++) {
       const v = used(i);
       grid.append(el('button', { class: 'ws-mslot' + (v ? ' valid' : ''),
+        title: (midra ? 'Preset ' : 'Memory ') + (i + 1) + (v ? '' : ' — empty'),
         onclick: () => { if (midra) { ensureMidraSlot(i); setTimeout(() => recallMem(i), 500); } else recallMem(i); } },
         el('span', { class: 'num', text: i + 1 })));
     }
-    return el('div', { class: 'panel' },
-      el('div', { class: 'row' }, el('h2', midra ? 'Presets' : 'Master memories'),
-        el('span', { class: 'hint', text: midra ? 'click to recall a stored preset to the current context' : 'click to recall + take a whole-device look' })),
+    return el('div', { class: 'panel ws-membar' },
+      el('div', { class: 'ws-membar-label' },
+        el('h2', midra ? 'Presets' : 'Master memories'),
+        el('span', { class: 'hint', text: midra ? 'recall to the current context' : 'recall + take a look' })),
       grid);
   }
 
   function render() {
     const screens = active();
-    return el('div', {},
-      el('div', { class: 'view-head' }, el('h1', { text: 'Workspace' }),
-        el('span', { class: 'hint', text: 'Sources, live screens and memories on one page — arm a source, place it on any screen' })),
-      el('div', { class: 'panel' }, el('div', { class: 'row' },
+    requestAnimationFrame(fitCanvases);   // size the previews once this tree is on the page
+    return el('div', { class: 'ws-page' },
+      el('div', { class: 'panel ws-bar' },
         el('div', { class: 'seg' },
           el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
           el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+        el('span', { class: 'ws-armed hint', text: armed != null ? `${sourceName(armed)} armed — click a layer or slot` : 'Arm a source, then place it on any screen' }),
         el('div', { class: 'spacer' }),
-        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s)) }, 'Take all screens'))),
-      el('div', { class: 'ws-grid' },
+        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s)) }, 'Take all screens')),
+      el('div', { class: 'ws-body' },
         sourceRail(),
         el('div', { class: 'ws-screens' },
           ...(screens.length ? screens.map(screenCard) : [el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured.' }))]))),
