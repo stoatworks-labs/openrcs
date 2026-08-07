@@ -45,7 +45,9 @@ strip stays in view, so nothing is a scroll away. Collapse the main menu with th
 button top-left (it stays collapsed) when you want the screens even larger.
 
 - **Arm a source**, then click a screen's layer slot — or click straight onto the
-  canvas — to drop it in. Arm **— none —** to clear a layer.
+  canvas — to drop it in. Arm **— none —** to clear a layer. The source palette
+  has **Inputs** and **Stills** tabs (LiveCore) — the Stills tab lists the loaded
+  frame-store images, so you can place a still just like a live input.
 - **Drag and resize** layers directly on each screen, exactly as in the Layers
   editor, with every screen live at once. One screen fills the width; two or more
   share it side by side.
