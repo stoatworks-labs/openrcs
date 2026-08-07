@@ -44,11 +44,29 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 
 .app {
   display: grid;
-  grid-template-rows: 48px 1fr;
+  /* minmax(0,1fr) forces the row min to 0 so it clamps to the viewport instead of
+     growing to content — lets a full-height view pin its own footer on screen */
+  grid-template-rows: 48px minmax(0, 1fr);
   grid-template-columns: 188px 1fr;
   grid-template-areas: "head head" "nav main";
   height: 100vh;
 }
+.app.nav-hidden { grid-template-columns: 0 1fr; }
+.app.nav-hidden .nav { display: none; }
+
+/* menu collapse toggle */
+.nav-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin-left: -4px;
+  background: none; border: 1px solid transparent; border-radius: var(--r); color: var(--muted);
+}
+.nav-toggle:hover { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+.nav-toggle .burger { position: relative; width: 16px; height: 2px; background: currentColor; border-radius: 2px; }
+.nav-toggle .burger::before, .nav-toggle .burger::after {
+  content: ''; position: absolute; left: 0; width: 16px; height: 2px; background: currentColor; border-radius: 2px;
+}
+.nav-toggle .burger::before { top: -5px; }
+.nav-toggle .burger::after  { top: 5px; }
 
 /* ---- header ---- */
 .head {
@@ -113,7 +131,9 @@ table.grid tbody tr { cursor: pointer; }
 table.grid tbody tr.sel-row { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
 
 /* ---- main ---- */
-.main { grid-area: main; overflow: auto; padding: 16px; }
+/* min-height:0 lets the 1fr grid row clamp to the viewport instead of growing to
+   content, so a full-height view (Workspace) can pin its own footer on screen */
+.main { grid-area: main; overflow: auto; padding: 16px; min-height: 0; }
 .view-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
 .view-head h1 { font-size: 18px; margin: 0; font-weight: 650; }
 .view-head .hint { color: var(--muted); font-size: 12px; }
@@ -381,27 +401,45 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 @media (max-width: 720px) { .still-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---- Workspace (working page) ---- */
-.ws-grid { display: grid; grid-template-columns: minmax(190px, 230px) 1fr; gap: 16px; align-items: start; }
-.ws-rail { position: sticky; top: 0; }
-.src-list { display: flex; flex-direction: column; gap: 5px; max-height: 70vh; overflow-y: auto; margin-top: 8px; }
+/* the whole page fills its pane: bar on top, screens grow to fill, memories pinned below.
+   height:100% resolves against .main (whose grid row is minmax(0,1fr), so it's clamped to
+   the pane, not content) — which is also correct under the demo's shorter, bannered app */
+.ws-page { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; gap: 12px; }
+.ws-bar { margin: 0; padding: 9px 12px; display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.ws-armed { font-size: 12px; }
+
+.ws-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(160px, 200px) 1fr; gap: 14px; }
+
+.ws-rail { margin: 0; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
+.src-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .src-tile { display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 8px; border: 1px solid var(--line);
-  border-radius: var(--r); background: var(--bg); color: var(--text); font-size: 12px; }
+  border-radius: var(--r); background: var(--bg); color: var(--text); font-size: 12px; flex: 0 0 auto; }
 .src-tile:hover { border-color: var(--line-hi); }
 .src-tile.armed { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
 .src-sw { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,.3); }
-.ws-screens { display: flex; flex-wrap: wrap; gap: 16px; align-content: start; }
-.ws-screen { flex: 0 0 auto; }
-.ws-slots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+
+.ws-screens { min-width: 0; min-height: 0; display: flex; gap: 14px; }
+.ws-screen { flex: 1 1 0; min-width: 0; min-height: 0; margin: 0; padding: 12px; display: flex; flex-direction: column; }
+.ws-screen-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex: 0 0 auto; }
+.ws-screen-head h2 { margin: 0; }
+/* scope the fill-to-fit behaviour to the workspace so the Layers editor is untouched */
+.ws-screen .canvas-wrap { flex: 1 1 auto; min-height: 0; align-items: center; }
+.ws-screen .screen-canvas { box-shadow: inset 0 0 0 1px #000, 0 6px 22px #0006; }
+.ws-slots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; flex: 0 0 auto; }
 .ws-slot { position: relative; padding: 5px 10px 5px 12px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--bg); color: var(--muted); font: 600 11px var(--mono); overflow: hidden; }
 .ws-slot.filled { color: var(--text); }
 .ws-slot.filled::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
 .ws-slot.sel { border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
-.ws-mem { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; margin-top: 8px; }
-.ws-mslot { aspect-ratio: 1; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg);
+
+.ws-membar { margin: 0; padding: 10px 12px; flex: 0 0 auto; display: flex; align-items: center; gap: 16px; }
+.ws-membar-label { display: flex; flex-direction: column; gap: 1px; flex: 0 0 auto; }
+.ws-membar-label h2 { margin: 0; }
+.ws-mem { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; max-height: 82px; overflow-y: auto; }
+.ws-mslot { flex: 0 0 auto; width: 42px; height: 34px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg);
   color: var(--muted); display: flex; align-items: center; justify-content: center; font: 600 12px var(--mono); }
 .ws-mslot.valid { border-color: var(--accent-dim); background: var(--panel-2); color: var(--accent); }
 .ws-mslot:hover { border-color: var(--accent); }
-@media (max-width: 900px) { .ws-grid { grid-template-columns: 1fr; } .ws-rail { position: static; } }
+@media (max-width: 820px) { .ws-body { grid-template-columns: 1fr; } .ws-screens { flex-wrap: wrap; } }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
