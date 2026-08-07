@@ -48,6 +48,10 @@ ESP32) between the processor and its clients. The protocol engine is
 TCP connection to the device, caches state, and relays a small JSON protocol
 over a websocket to any number of browsers.
 
+Grab a prebuilt binary from the [latest release](https://github.com/stoatworks-labs/openrcs/releases/latest)
+(macOS, Linux and Windows; the UI is embedded, so it's a single self-contained
+file), or run it from source:
+
 ```bash
 cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 # ...or --platform midra ; then open http://127.0.0.1:8730/
