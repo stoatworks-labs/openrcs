@@ -2,10 +2,10 @@
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The protocol was
-> reverse-engineered rather than taken from a published specification: the codec
-> is confirmed against LiveCore device behaviour, but the Midra table has never
-> been exercised against a device. Check its output against your own processor
-> before a show — see [Status](#status).
+> reverse-engineered rather than taken from a published specification. Both the
+> LiveCore and Midra sides have since been validated against real hardware, but
+> device behaviour varies with model, firmware and signal state — check against
+> your own processor before a show. See [Status](#status).
 
 A Rust library for controlling **Analog Way Midra and LiveCore series** video
 processors over their native TCP control protocol.
@@ -30,9 +30,12 @@ describe compatibility.
 
 `openrcs-proto`, the protocol engine, is implemented and tested. The LiveCore
 command table (1014 variables) and the Midra table (562) are complete with
-per-variable dimensions, ranges, and read-only flags. The codec is confirmed
-against LiveCore device behaviour; the Midra table has not yet been exercised
-against a device.
+per-variable dimensions, ranges, and read-only flags. Both have been validated
+against real hardware — a **NeXtage 16** (LiveCore) and a **Pulse2** (Midra):
+device identity, framing, live layer control and takes, memories, EDID and the
+per-platform quirks are all confirmed on the wire. Per-variable ranges are still
+strong guidance rather than a guarantee, and a few behaviours depend on model,
+firmware or a live input signal.
 
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
@@ -47,14 +50,18 @@ over a websocket to any number of browsers.
 
 ```bash
 cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
-# then open http://127.0.0.1:8730/
+# ...or --platform midra ; then open http://127.0.0.1:8730/
 ```
 
-The UI covers **Memories** (master and per-screen memory grids — recall, load +
-take, save), **Live** (preview→program take with a transition time),
-**Screens** (output/layer overview), an **Inspector** over every one of the
-device's variables, and a raw-protocol **Console**. It's a dependency-free
-vanilla ES-module app served by the server — no build step.
+The UI is **platform-aware** — it reads the variable table the device advertises
+and shows only the views that processor supports. It covers a **Stage** overview,
+a graphical **Layers** editor (drag/resize, source, opacity, border, crop, layer
+transitions, built-in layouts), **Memories**, **Live** (take, master fade or
+freeze), **Inputs**, **Outputs**, **Screens**, **Stills**, a live **Tally**,
+**Multiviewer** and **Soft edge** designers, **EDID** management with a
+custom-EDID writer, **GPIO**, **System**, an **Inspector** over every device
+variable, and a raw-protocol **Console**. It's a dependency-free vanilla
+ES-module app served by the server — no build step.
 
 ## Using the crate
 

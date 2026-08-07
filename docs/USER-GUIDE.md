@@ -23,6 +23,14 @@ The interface is a single dark theme, chosen deliberately for the blacked-out
 environments these processors live in. The left nav is grouped into **Program**
 (the things you touch during a show), **Setup** (configuration), and **Tools**.
 
+**It adapts to the device.** openrcs reads the variable table the processor
+advertises and shows only the views that hardware actually supports — so a
+LiveCore unit exposes the full set below, while a Midra unit shows the subset it
+implements (and swaps in its own equivalents, e.g. a per-screen **Freeze** where
+LiveCore offers a master fade). The two families model some things differently
+— memories especially — and the UI follows each one's model rather than forcing a
+single shape.
+
 ## Stage
 
 ![All screens at a glance](screenshots/stage.png)
@@ -45,7 +53,11 @@ choose what a slot tap does:
 - **Save** — store the current state into the slot you tap.
 
 Saved slots light up, driven by the device's own validity flags, so the grid
-always reflects what is actually stored on the hardware.
+always reflects what is actually stored on the hardware. **Inspect** mode shows a
+scaled thumbnail of a stored memory's layout — source, size and position of every
+layer — without recalling it. On **Midra**, memories follow that family's model
+instead: eight preset slots, each captured from the live program, with the same
+inspect-thumbnail, recall and erase.
 
 ## Cues
 
@@ -79,19 +91,41 @@ with **TAKE**, or switch instantly with **CUT**.
 Arrange sources on the screen visually. Each layer is a rectangle on a canvas
 that represents the output: **drag to move, drag the corners to resize**, and use
 the snap presets to fill the screen or drop a layer into a quadrant. The layer
-stack on the right mirrors the canvas — assign a source, toggle visibility, and
-fine-tune position, size and opacity with the sliders. A **Program / Preview**
-toggle chooses which buffer you are editing.
+stack on the right mirrors the canvas — assign a source and fine-tune position,
+size, opacity, border, crop and per-layer transitions, and raise or lower a
+layer in the stack. A **Program / Preview** toggle chooses which buffer you are
+editing, and each screen has a native **Background** (colour or a background set).
 
-## Setup — Inputs, Outputs, Screens, Stills
+On **Midra**, a **Layout** picker offers the processor's built-in arrangements —
+choose one and the device lays the layers out for you, ready for sources.
+
+## Setup
 
 ![Inputs](screenshots/inputs.png)
 
-- **Inputs** — every input with its availability, active plug, live signal
-  status and detected size, plus freeze and black.
-- **Outputs** — the physical outputs, their connected displays, format and size.
+The Setup views cover configuration and monitoring. Which ones appear depends on
+the device:
+
+- **Tally** — a live on-air grid: each source lights red on program, green on
+  preview, straight from the device's own tally bus.
+- **Inputs** — every input with its availability, active plug, live signal status
+  and detected size, plus freeze and black.
+- **Outputs** — the physical outputs, their connected displays, format, size,
+  HDCP and output processing (brightness, contrast, gamma, gain).
 - **Screens** — the output screens and their layer capacity.
-- **Stills** — the still and logo library as a grid, with erase.
+- **Stills** — the still/logo library as a grid (LiveCore), or the frame store
+  (Midra), showing what's stored and its size.
+- **Capture** — grab a frame from a live source into the still library: pick a
+  source and capture the full frame or a graphical region.
+- **Multiviewer** — a drag-and-resize layout designer for the monitoring outputs:
+  place up to twelve widgets, pick each one's source, and store layout memories.
+- **Soft edge** — a per-edge blend editor for multi-output screens: click an edge
+  to feather it into its neighbour and set the black level.
+- **EDID** — set an input's preferred format and read the EDID a connected display
+  advertises. The **custom-EDID writer** builds a valid EDID for any resolution
+  and refresh rate and writes it to an input, so a source outputs exactly what you
+  want.
+- **GPIO** — trigger inputs and tally/relay outputs.
 
 ## System
 
@@ -113,9 +147,11 @@ bookmark or link straight to the panel you want.
 
 ## Notes
 
-The LiveCore side is exercised against device behaviour; the Midra side is
-complete in the protocol tables but has had less time on hardware. Per-variable
-ranges are the device's declarations — the hardware is always the final
-authority. The full protocol is documented in the
+Both families have been driven against real hardware — a NeXtage 16 (LiveCore)
+and a Pulse2 (Midra). A few behaviours still depend on the device: assigning a
+live input needs a signal present on it, and some capabilities vary by model and
+firmware (openrcs hides what a given unit doesn't implement). Per-variable ranges
+are the device's declarations — the hardware is always the final authority. The
+full protocol is documented in the
 [openrcs-protocol](https://github.com/stoatworks-labs/openrcs-protocol)
 reference.
