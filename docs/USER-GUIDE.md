@@ -31,6 +31,8 @@ LiveCore offers a master fade). The two families model some things differently
 — memories especially — and the UI follows each one's model rather than forcing a
 single shape.
 
+![openrcs driving a Pulse2 (Midra) — the nav shows only the views this unit supports, and Live offers a per-screen Freeze instead of a master fade](screenshots/midra.png)
+
 ## Stage
 
 ![All screens at a glance](screenshots/stage.png)
@@ -126,6 +128,10 @@ the device:
   and refresh rate and writes it to an input, so a source outputs exactly what you
   want.
 - **GPIO** — trigger inputs and tally/relay outputs.
+
+![The multiviewer designer — drag widgets onto the monitoring output and store layout memories](screenshots/multiviewer.png)
+
+![The custom-EDID writer — generate a valid EDID for any resolution and write it to an input](screenshots/edid-writer.png)
 
 ## System
 
