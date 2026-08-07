@@ -2004,6 +2004,34 @@ VIEWS.workspace = (() => {
     box.style.left = (r.left / sw * 100) + '%'; box.style.top = (r.top / sh * 100) + '%';
     box.style.width = (r.w / sw * 100) + '%'; box.style.height = (r.h / sh * 100) + '%';
   };
+
+  // one-shot geometry: presets set several layers at once, then a single notify
+  const setGeomNow = (s, l, r) => {
+    store.set('PRsih', [s, ctx, l], Math.round(r.w));
+    store.set('PRsiv', [s, ctx, l], Math.round(r.h));
+    store.set('PRpoh', [s, ctx, l], Math.round(r.left + r.w / 2 + B));
+    store.set('PRpov', [s, ctx, l], Math.round(r.top + r.h / 2 + B));
+  };
+  const assignedLayers = (s) => { const o = []; for (let l = 0; l < maxLayers(s); l++) if (store.val('PRinp', s, ctx, l)) o.push(l); return o; };
+  const LAYOUTS = [['full', 'Fill', 'Fill the screen'], ['2up', '2-up', 'Two sources side by side'], ['quad', 'Quad', 'Four sources, quadrants'], ['pip', 'PiP', 'Full source with an inset']];
+  // arrange the screen's assigned sources into a common look
+  function arrange(s, kind) {
+    const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
+    const ls = assignedLayers(s); if (!ls.length) return;
+    const put = (l, x, y, w, h) => setGeomNow(s, l, { left: x, top: y, w, h });
+    if (kind === 'full') {
+      const t = (sel && sel.s === s && store.val('PRinp', s, ctx, sel.l)) ? sel.l : ls[0];
+      put(t, 0, 0, sw, sh);
+    } else if (kind === '2up') {
+      const w = sw / 2; ls.slice(0, 2).forEach((l, i) => put(l, i * w, 0, w, sh));
+    } else if (kind === 'quad') {
+      const w = sw / 2, h = sh / 2; ls.slice(0, 4).forEach((l, i) => put(l, (i % 2) * w, (i < 2 ? 0 : 1) * h, w, h));
+    } else if (kind === 'pip') {
+      put(ls[0], 0, 0, sw, sh);
+      if (ls[1]) { const w = Math.round(sw / 3), h = Math.round(sh / 3), m = Math.round(sw * 0.03); put(ls[1], sw - w - m, sh - h - m, w, h); }
+    }
+    store.notify();
+  }
   function dragMove(e, s, l, cv, sw, sh) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, l };
     const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, ctx, l), k = scaleOf(cv, sw, sh);
@@ -2071,6 +2099,10 @@ VIEWS.workspace = (() => {
         onclick: () => { if (armed != null) assign(s, l, armed); else { sel = { s, l }; store.notify(); } },
       }, `L${l + 1}`));
     }
+    // quick layout presets, right-aligned in the same row as the layer slots
+    slots.append(el('div', { class: 'spacer' }));
+    for (const [k, label, t] of LAYOUTS)
+      slots.append(el('button', { class: 'ws-lay', title: t, onclick: () => arrange(s, k) }, label));
     return el('div', { class: 'panel ws-screen' },
       el('div', { class: 'ws-screen-head' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
         el('button', { class: 'btn ghost', onclick: () => doTake(s) }, 'Take')),

@@ -49,6 +49,8 @@ button top-left (it stays collapsed) when you want the screens even larger.
 - **Drag and resize** layers directly on each screen, exactly as in the Layers
   editor, with every screen live at once. One screen fills the width; two or more
   share it side by side.
+- **Layout presets** on each screen — **Fill**, **2-up**, **Quad**, **PiP** —
+  arrange that screen's assigned sources into a common look in one click.
 - Each screen has its own **Take**; **Take all screens** cuts the lot.
 - The **Program / Preview** toggle chooses which context you're editing. On a
   Midra unit the program preset is protected, so the page edits preview and you
