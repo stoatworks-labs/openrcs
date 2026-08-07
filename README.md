@@ -15,7 +15,7 @@ QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra) — a modern, dependency-light control surface for hardware whose original
 software is long out of date.
 
-![The graphical layer arrangement editor — arrange sources live](docs/screenshots/layer-editor.gif)
+![The openrcs Workspace — the source palette, every screen editable side by side in program and preview, and memories, on one page](docs/screenshots/workspace.png)
 
 **[Try the control surface in your browser →](https://openrcs-demo.stoatworks-labs.com)**
 — the real UI, unmodified, running against a simulated device. No processor is
@@ -48,7 +48,14 @@ ESP32) between the processor and its clients. The protocol engine is
 TCP connection to the device, caches state, and relays a small JSON protocol
 over a websocket to any number of browsers.
 
-Grab a prebuilt binary from the [latest release](https://github.com/stoatworks-labs/openrcs/releases/latest)
+**Prefer not to touch the command line?** Grab the
+**[tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)**
+(macOS, Windows, Linux) — a menu-bar app that bundles the server: enter the
+switcher's IP, pick the model, click **Start**, then **Open**. The macOS builds
+are signed and notarized.
+
+Otherwise grab a prebuilt `openrcs-server` binary from the
+[latest release](https://github.com/stoatworks-labs/openrcs/releases/latest)
 (macOS, Linux and Windows; the UI is embedded, so it's a single self-contained
 file), or run it from source:
 

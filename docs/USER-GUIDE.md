@@ -19,6 +19,10 @@ Use `--platform midra` for the Midra family. The header shows the device model,
 platform and a connection indicator; every view updates live as the device — or
 another operator — changes state.
 
+**No command line?** The [tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)
+(macOS, Windows, Linux) bundles the server in a menu-bar app: enter the switcher's
+IP, pick the model, click **Start**, then **Open**. Nothing else to install.
+
 The interface is a single dark theme, chosen deliberately for the blacked-out
 environments these processors live in. The left nav is grouped into **Program**
 (the things you touch during a show), **Setup** (configuration), and **Tools**.
