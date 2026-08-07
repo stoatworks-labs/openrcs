@@ -207,7 +207,8 @@ const NAV = [
 // a view is shown only when the device advertises the variable it needs
 // (until meta arrives, show everything so the nav doesn't flicker empty)
 const VIEW_REQUIRES = {
-  memories: 'PSmet', cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
+  memories: () => store.byMnem.has('PSmet') || store.byMnem.has('PMpst'),  // LiveCore or Midra
+  cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
   stills: 'Slval', capture: 'STcen', multiview: 'MLcen',
   // the soft-edge view models LiveCore's per-edge SEcen[screen,edge]; Midra's
   // soft edge is a different (scalar) model, so gate on an indexed SEcen
@@ -276,7 +277,86 @@ VIEWS.memories = (() => {
 
   const fetched = new Set();     // screen-memory slots whose contents we've pulled
 
+  // ---- Midra memory model: 8 slots, content in PMinp/geom[slot,screen,layer].
+  // Save = GCsrq (device stores the live program); reset = CTpmr. Recall is
+  // re-applied to the preview context client-side, then taken. ----
+  const mid = (() => {
+    const N = 8;
+    let sel = null;
+    const got = new Set();
+    function ensure(slot) {
+      if (got.has(slot)) return; got.add(slot);
+      for (let sc = 0; sc < screenCount(); sc++)
+        for (let l = 0; l < layerSlots(); l++)
+          for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv']) store.get(m, [slot, sc, l]);
+      store.get('PMssh', [slot, 0]); store.get('PMssv', [slot, 0]);
+    }
+    function enter() {
+      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      store.scan('PMpst'); store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
+    }
+    function save(slot) { store.set('GCsrq', [2, slot], 1); store.get('PMpst', [slot]); got.delete(slot); ensure(slot); store.notify(); }
+    function reset(slot) { store.set('CTpmr', [slot], 1); store.get('PMpst', [slot]); got.delete(slot); if (sel === slot) sel = null; store.notify(); }
+    function recall(slot) {                       // re-apply the stored preset to preview (ctx 1)
+      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      for (let sc = 0; sc < screenCount(); sc++)
+        for (let l = 0; l < layerSlots(); l++) {
+          store.set('PRsih', [sc, 1, l], store.val('PMsih', slot, sc, l) || 0);
+          store.set('PRsiv', [sc, 1, l], store.val('PMsiv', slot, sc, l) || 0);
+          store.set('PRpoh', [sc, 1, l], store.val('PMpoh', slot, sc, l) ?? POS_BIAS);
+          store.set('PRpov', [sc, 1, l], store.val('PMpov', slot, sc, l) ?? POS_BIAS);
+          store.set('PRinp', [sc, 1, l], store.val('PMinp', slot, sc, l) || 0);
+        }
+      store.notify();
+    }
+    function thumb(slot) {
+      const sw = store.val('PMssh', slot, 0) || 1920, sh = store.val('PMssv', slot, 0) || 1080;
+      const CW = 300, scale = CW / sw;
+      const cv = el('div', { class: 'screen-canvas mem-thumb', style: `width:${CW}px;height:${Math.round(sh * scale)}px` });
+      let drawn = 0;
+      for (let l = 0; l < layerSlots(); l++) {
+        const src = store.val('PMinp', slot, 0, l);
+        if (!src) continue;
+        const w = store.val('PMsih', slot, 0, l) || 0, h = store.val('PMsiv', slot, 0, l) || 0;
+        const cx = (store.val('PMpoh', slot, 0, l) ?? POS_BIAS) - POS_BIAS, cy = (store.val('PMpov', slot, 0, l) ?? POS_BIAS) - POS_BIAS;
+        cv.append(el('div', { class: 'lrect', style: `left:${(cx - w / 2) * scale}px;top:${(cy - h / 2) * scale}px;width:${w * scale}px;height:${h * scale}px;background:${srcColor(src)};z-index:${l + 1}` },
+          el('span', { class: 'lrect-tag', text: sourceName(src) })));
+        drawn++;
+      }
+      if (!drawn) cv.append(el('span', { class: 'se-mid', text: 'empty' }));
+      return cv;
+    }
+    function grid() {
+      const g = el('div', { class: 'mem-grid' });
+      for (let i = 0; i < N; i++) {
+        const used = store.val('PMpst', i) === 1;
+        g.append(el('button', { class: 'slot' + (used ? ' valid' : '') + (sel === i ? ' sel' : ''), onclick: () => { sel = i; ensure(i); store.notify(); } },
+          el('span', { class: 'num', text: i + 1 }),
+          used ? el('span', { class: 'lbl', text: 'preset' }) : null));
+      }
+      return g;
+    }
+    function render() {
+      const usedCount = Array.from({ length: N }, (_, i) => store.val('PMpst', i)).filter(v => v === 1).length;
+      const isUsed = sel != null && store.val('PMpst', sel) === 1;
+      const detail = sel != null ? el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('h2', `Memory ${sel + 1}`), el('div', { class: 'spacer' }),
+          isUsed ? el('button', { class: 'btn recall', onclick: () => recall(sel) }, 'Recall to preview') : null,
+          el('button', { class: 'btn save', onclick: () => save(sel) }, 'Save current program'),
+          isUsed ? el('button', { class: 'btn ghost', onclick: () => reset(sel) }, 'Erase') : null),
+        isUsed ? el('div', { class: 'row', style: 'align-items:flex-start' }, thumb(sel))
+          : el('div', { class: 'hint', text: 'Empty slot — “Save current program” stores the live layout here.' })) : null;
+      return el('div', {},
+        el('div', { class: 'view-head' }, el('h1', { text: 'Memories' }),
+          el('span', { class: 'hint', text: `${usedCount} of ${N} presets saved · tap a slot to inspect` })),
+        detail,
+        el('div', { class: 'panel' }, grid()));
+    }
+    return { enter, render };
+  })();
+
   function enter() {
+    if (store.meta?.platform === 'midra') return mid.enter();
     store.scan('PSval');         // master validity
     store.scan('PMscw');         // screen-memory content width (>0 = present)
     store.scan('PMsch');         // stored screen height
@@ -375,6 +455,7 @@ VIEWS.memories = (() => {
   }
 
   function render() {
+    if (store.meta?.platform === 'midra') return mid.render();
     const validCount = scope === 'master'
       ? store.arr('PSval', 144).filter(v => v === 1).length
       : store.arr('PMscw', 144).filter(v => (v || 0) > 0).length;
