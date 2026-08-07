@@ -33,6 +33,26 @@ single shape.
 
 ![openrcs driving a Pulse2 (Midra) — the nav shows only the views this unit supports, and Live offers a per-screen Freeze instead of a master fade](screenshots/midra.png)
 
+## Workspace
+
+![The working page — sources, live screens and memories on one page](screenshots/workspace.png)
+
+One page that mirrors how you actually drive a show, with everything in reach:
+the **source palette** down the left, **every active screen** laid out and
+editable side by side in the middle, and the **memory strip** along the bottom.
+
+- **Arm a source**, then click a screen's layer slot — or click straight onto the
+  canvas — to drop it in. Arm **— none —** to clear a layer.
+- **Drag and resize** layers directly on each screen, exactly as in the Layers
+  editor, with every screen live at once.
+- Each screen has its own **Take**; **Take all screens** cuts the lot.
+- The **Program / Preview** toggle chooses which context you're editing. On a
+  Midra unit the program preset is protected, so the page edits preview and you
+  take from there; a LiveCore unit edits program directly.
+- The memory strip follows each family's model — LiveCore **master memories**
+  (recall and take a whole-device look) or Midra **presets** (re-applied to the
+  context you're editing).
+
 ## Stage
 
 ![All screens at a glance](screenshots/stage.png)
