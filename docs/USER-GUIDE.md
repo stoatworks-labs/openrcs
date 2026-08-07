@@ -127,9 +127,17 @@ the device:
   advertises. The **custom-EDID writer** builds a valid EDID for any resolution
   and refresh rate and writes it to an input, so a source outputs exactly what you
   want.
+- **Audio** — output volume, balance, delay and mute, plus per-input channel
+  levels where the device provides them.
 - **GPIO** — trigger inputs and tally/relay outputs.
 
+Inputs and outputs also carry image adjustment: click an input row for
+brightness, contrast, colour, hue, RGB gain and crop; each output has its own
+processing and a format/rate selector.
+
 ![The multiviewer designer — drag widgets onto the monitoring output and store layout memories](screenshots/multiviewer.png)
+
+![Audio — per-output volume, balance, delay and mute (a Midra unit here)](screenshots/audio.png)
 
 ![The custom-EDID writer — generate a valid EDID for any resolution and write it to an input](screenshots/edid-writer.png)
 
