@@ -874,6 +874,14 @@ VIEWS.layers = (() => {
     w: store.val('SCssh', screen) || 1920,
     h: store.val('SCssv', screen) || 1080,
   });
+  // Midra built-in layouts: GCqly[screen,ctx]=N picks a preset arrangement; the
+  // device then pushes the new per-layer geometry, which our canvas reflects.
+  function layoutSelect() {
+    const cur = store.val('GCqly', screen, ctx), max = store.byMnem.get('GCqly')?.max ?? 26;
+    const s = el('select', { onchange: (e) => { store.set('GCqly', [screen, ctx], +e.target.value); setTimeout(() => { enter(); store.notify(); }, 350); } });
+    for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: 'Layout ' + (i + 1) }); if (i === cur) o.selected = true; s.append(o); }
+    return s;
+  }
 
   const LAYER_VARS = ['PRinp', 'PRlay', 'PRalp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv',
     'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
@@ -883,6 +891,7 @@ VIEWS.layers = (() => {
     // preset-update-mode on. Enabling it here lets source/geometry edits stick,
     // then a take commits them. (LiveCore edits apply directly — don't touch it.)
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
+    if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctx]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctx]);
     const n = count();
@@ -1061,6 +1070,7 @@ VIEWS.layers = (() => {
           el('div', { class: 'seg' },
             el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
             el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+          store.byMnem.has('GCqly') ? el('label', { class: 'field' }, 'Layout', layoutSelect()) : null,
           !configured ? el('span', { class: 'hint', text: '⚠ screen not configured — edits are stored but won’t display until a screen is set up' }) : null)),
       el('div', { class: 'split-wide' },
         el('div', { class: 'panel' }, el('h2', 'Arrangement'), canvas()),
