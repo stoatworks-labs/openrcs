@@ -798,8 +798,12 @@ VIEWS.layers = (() => {
     'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
+    // Midra protects the program preset; edits must go to preview (ctx 1) with
+    // preset-update-mode on. Enabling it here lets source/geometry edits stick,
+    // then a take commits them. (LiveCore edits apply directly — don't touch it.)
+    if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
-    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) store.get(m, [screen, ctx]);
+    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctx]);
     const n = count();
     for (let l = 0; l < n; l++)
       for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [screen, ctx, l]);
