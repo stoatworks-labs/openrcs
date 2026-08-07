@@ -5,3 +5,4 @@
 *.ova
 __pycache__/
 *.pyc
+/dist/
