@@ -58,10 +58,13 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 ```
 
 The UI is **platform-aware** — it reads the variable table the device advertises
-and shows only the views that processor supports. It covers a **Stage** overview,
-a graphical **Layers** editor (drag/resize, source, opacity, border, crop, layer
-transitions, built-in layouts), **Memories**, **Live** (take, master fade or
-freeze), **Inputs**, **Outputs**, **Screens**, **Stills**, a live **Tally**,
+and shows only the views that processor supports. It centres on a **Workspace**
+working page — sources (inputs and stills), every screen editable side by side
+in program, preview or both at once, one-click layout presets, and memories on a
+single window-filling page — backed by a **Stage** overview, a graphical
+**Layers** editor (drag/resize, source, opacity, border, crop, layer transitions,
+built-in layouts), **Memories**, **Live** (take, master fade or freeze),
+**Inputs**, **Outputs**, **Screens**, **Stills**, a live **Tally**,
 **Multiviewer** and **Soft edge** designers, **EDID** management with a
 custom-EDID writer, **GPIO**, **System**, an **Inspector** over every device
 variable, and a raw-protocol **Console**. It's a dependency-free vanilla
