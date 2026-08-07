@@ -108,9 +108,16 @@ async fn main() {
     let cfg = parse_args();
     let hub = Hub::start(cfg.platform, cfg.device.clone());
 
-    let app = Router::new()
-        .route("/ws", get(ws_handler))
-        .fallback_service(ServeDir::new(&cfg.web_dir))
+    // Serve the UI from disk when the source tree (or a --web dir) is present —
+    // that keeps live-editing during development — otherwise fall back to the
+    // copy embedded in the binary, so a release is a single self-contained file.
+    let from_disk = std::path::Path::new(&cfg.web_dir).is_dir();
+    let base = Router::new().route("/ws", get(ws_handler));
+    let app = if from_disk {
+        base.fallback_service(ServeDir::new(&cfg.web_dir))
+    } else {
+        base.fallback(serve_embedded)
+    }
         // the control surface is served locally and iterated live — never let a
         // browser hold a stale copy of the UI.
         .layer(SetResponseHeaderLayer::overriding(
@@ -122,7 +129,7 @@ async fn main() {
     println!("openrcs-server");
     println!("  device   {} ({:?})", cfg.device, cfg.platform);
     println!("  web UI   http://{}/", cfg.listen);
-    println!("  serving  {}", cfg.web_dir);
+    println!("  serving  {}", if from_disk { cfg.web_dir.as_str() } else { "embedded UI" });
 
     let listener = tokio::net::TcpListener::bind(cfg.listen).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -130,6 +137,42 @@ async fn main() {
 
 async fn ws_handler(ws: WebSocketUpgrade, State(hub): State<Arc<Hub>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| client(socket, hub))
+}
+
+// The web UI, baked into the binary at build time (see Cargo.toml).
+#[derive(rust_embed::RustEmbed)]
+#[folder = "web/"]
+struct WebAssets;
+
+/// Serve the embedded UI. Unknown paths fall back to index.html so the
+/// hash-routed single-page app loads from any URL.
+async fn serve_embedded(uri: axum::http::Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    let (data, mime) = match WebAssets::get(path) {
+        Some(f) => (f.data, content_type(path)),
+        None => match WebAssets::get("index.html") {
+            Some(f) => (f.data, "text/html; charset=utf-8"),
+            None => return (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
+        },
+    };
+    ([(header::CONTENT_TYPE, mime)], data.into_owned()).into_response()
+}
+
+fn content_type(path: &str) -> &'static str {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".js") {
+        "text/javascript; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else {
+        "application/octet-stream"
+    }
 }
 
 fn platform_name(p: Platform) -> &'static str {

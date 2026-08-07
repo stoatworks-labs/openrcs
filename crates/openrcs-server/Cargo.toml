@@ -14,3 +14,6 @@ tower-http = { version = "0.5", features = ["fs", "set-header"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"
+# the web UI is embedded into the binary so a release ships as a single file;
+# a --web dir (or the source tree during dev) still overrides it from disk.
+rust-embed = "8"
