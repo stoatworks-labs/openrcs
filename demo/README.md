@@ -19,7 +19,7 @@ the public internet cannot do that half:
 
 So the demo replaces the transport, not the app. `web/app.js` looks for
 `globalThis.OPENRCS_DEMO_DEVICE` and uses it in place of the WebSocket if it is
-there; `device.js` installs one. Everything above the transport — all seventeen
+there; `device.js` installs one. Everything above the transport — all nineteen
 views — is the same code the bridge server serves.
 
 ## What's here
