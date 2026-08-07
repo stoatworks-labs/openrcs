@@ -1224,9 +1224,13 @@ VIEWS.tally = (() => {
 // ---------- Inputs ----------
 VIEWS.inputs = (() => {
   const N = () => inputCount();
+  let sel = null;
+  const hasProc = () => store.byMnem.has('IEbri');   // input processing (both platforms)
+  const PROC = ['IEbri', 'IEcon', 'IEclr', 'IEhue', 'IEugr', 'IEugg', 'IEugb', 'IEchs', 'IEcvs', 'IEche', 'IEcve'];
   function enter() {
     for (const m of ['INava', 'INplg', 'INfrz', 'INffz', 'INbla', 'INpat']) if (store.byMnem.has(m)) store.scan(m);
     for (const m of ['ISspr', 'ISsva', 'IScfo', 'ISswi', 'ISshe']) if (store.byMnem.has(m)) store.scan(m);
+    if (sel != null && hasProc()) { const p = store.val('INplg', sel) ?? 0; for (const m of PROC) store.get(m, [sel, p]); }
   }
   function row(i) {
     const avail = store.val('INava', i) === 1;
@@ -1236,22 +1240,45 @@ VIEWS.inputs = (() => {
     const w = store.val('ISswi', i, plug), h = store.val('ISshe', i, plug);
     const frozen = store.val('INfrz', i) === 1;
     const black = store.val('INbla', i) === 1;
-    return el('tr', { class: avail ? '' : 'dim' },
+    return el('tr', { class: (avail ? '' : 'dim') + (sel === i ? ' sel-row' : ''), style: hasProc() ? 'cursor:pointer' : '', onclick: hasProc() ? () => { sel = i; enter(); store.notify(); } : null },
       el('td', { text: 'IN ' + (i + 1) }),
       el('td', {}, boolChip(avail ? 1 : 0, 'ready', 'unused')),
       el('td', { class: 'val', text: 'P' + (plug + 1) }),
       el('td', {}, boolChip(valid === 1 ? 1 : present === 1 ? 0 : (present == null ? null : 0), 'valid', present === 1 ? 'unstable' : 'no signal')),
       el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
       el('td', {},
-        el('button', { class: 'btn ghost' + (frozen ? ' pgm' : ''), onclick: () => store.set('INfrz', [i], frozen ? 0 : 1) }, 'Freeze'),
-        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: () => store.set('INbla', [i], black ? 0 : 1) }, 'Black')));
+        el('button', { class: 'btn ghost' + (frozen ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('INfrz', [i], frozen ? 0 : 1); } }, 'Freeze'),
+        el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: (e) => { e.stopPropagation(); store.set('INbla', [i], black ? 0 : 1); } }, 'Black')));
+  }
+  function resetProc(i, p) {
+    const d = { IEbri: 128, IEcon: 128, IEclr: 128, IEhue: 180, IEugr: 128, IEugg: 128, IEugb: 128, IEchs: 0, IEcvs: 0, IEche: 0, IEcve: 0 };
+    for (const m in d) store.set(m, [i, p], d[m]);
+    store.notify();
+  }
+  function settings() {
+    const i = sel, p = store.val('INplg', i) ?? 0, idx = [i, p];
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', `Input ${i + 1} · plug ${p + 1} adjustment`), el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ghost', onclick: () => resetProc(i, p) }, 'Reset')),
+      el('div', { class: 'grid2' },
+        bind('Brightness', 'IEbri', idx, 0, 255), bind('Contrast', 'IEcon', idx, 0, 255),
+        bind('Colour', 'IEclr', idx, 0, 255), bind('Hue', 'IEhue', idx, 0, 360, 1, v => (v - 180) + '°')),
+      el('div', { class: 'sub-head' }, 'RGB gain'),
+      el('div', { class: 'grid2' },
+        bind('Red', 'IEugr', idx, 0, 255), bind('Green', 'IEugg', idx, 0, 255), bind('Blue', 'IEugb', idx, 0, 255)),
+      el('div', { class: 'sub-head' }, 'Crop'),
+      el('div', { class: 'grid2' },
+        bind('Left', 'IEchs', idx, 0, 4095, 8), bind('Top', 'IEcvs', idx, 0, 4095, 8),
+        bind('Right', 'IEche', idx, 0, 4095, 8), bind('Bottom', 'IEcve', idx, 0, 4095, 8)));
   }
   function render() {
     const n = N();
     const ready = Array.from({ length: n }, (_, i) => store.val('INava', i)).filter(v => v === 1).length;
     const rows = Array.from({ length: n }, (_, i) => row(i));
     return el('div', {},
-      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }), el('span', { class: 'hint', text: `${ready} of ${n} ready` })),
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }),
+        el('span', { class: 'hint', text: `${ready} of ${n} ready${hasProc() ? ' · click a row to adjust it' : ''}` })),
+      sel != null && hasProc() ? settings() : null,
       el('div', { class: 'panel', style: 'overflow:auto' },
         el('table', { class: 'grid' },
           el('thead', {}, el('tr', {}, ...['Input', 'State', 'Plug', 'Signal', 'Size', ''].map(h => el('th', { text: h })))),
