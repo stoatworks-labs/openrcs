@@ -431,6 +431,8 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .ws-slot.filled { color: var(--text); }
 .ws-slot.filled::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
 .ws-slot.sel { border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.ws-lay { padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--muted); font: 600 11px var(--sans); }
+.ws-lay:hover { border-color: var(--accent); color: var(--text); }
 
 .ws-membar { margin: 0; padding: 10px 12px; flex: 0 0 auto; display: flex; align-items: center; gap: 16px; }
 .ws-membar-label { display: flex; flex-direction: column; gap: 1px; flex: 0 0 auto; }
