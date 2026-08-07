@@ -51,13 +51,17 @@ button top-left (it stays collapsed) when you want the screens even larger.
   share it side by side.
 - **Layout presets** on each screen — **Fill**, **2-up**, **Quad**, **PiP** —
   arrange that screen's assigned sources into a common look in one click.
-- Each screen has its own **Take**; **Take all screens** cuts the lot.
-- The **Program / Preview** toggle chooses which context you're editing. On a
-  Midra unit the program preset is protected, so the page edits preview and you
-  take from there; a LiveCore unit edits program directly.
+- Each screen has its own **Take**; **Take all** cuts every visible screen.
+- **Show** picks the contexts on screen — **Program**, **Preview**, or both.
+  With both on, each screen shows a program and a preview canvas side by side
+  (tagged red and green), and each edits its **own** context, so you can build
+  preview next to what's on air. On a Midra unit the program preset is
+  protected, so it defaults to preview; a LiveCore unit defaults to program.
+- **Screens** toggles pick which screens are shown — hide the ones you're not
+  touching and the rest grow to fill the space.
 - The memory strip follows each family's model — LiveCore **master memories**
-  (recall and take a whole-device look) or Midra **presets** (re-applied to the
-  context you're editing).
+  (recall and take a whole-device look) or Midra **presets** (recalled to
+  preview).
 
 ## Stage
 
