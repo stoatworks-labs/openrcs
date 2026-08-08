@@ -169,6 +169,14 @@ The full protocol reference — framing, the variable model, and every variable
 for both platforms — is a companion repository:
 **[openrcs-protocol](https://github.com/stoatworks-labs/openrcs-protocol)**.
 
+## Drive it from a control surface
+
+**[companion-module-openrcs](https://github.com/stoatworks-labs/companion-module-openrcs)**
+is a [Bitfocus Companion](https://bitfocus.io/companion) module built on the same
+protocol — take and cut screens and groups, run the T-bar, recall memories,
+freeze and black, with on-air tally — for driving the switcher from a Stream Deck
+or other control surface.
+
 <!-- attributions:start -->
 This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 <!-- attributions:end -->
