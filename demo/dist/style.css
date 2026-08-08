@@ -585,6 +585,29 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .conf-row .show-main { flex: 1; min-width: 0; }
 .conf-name { font: 600 13px var(--sans); color: var(--text); text-transform: capitalize; }
 
+/* ---------- Show mode (touch / FOH) ---------- */
+.sm-transport { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-bottom: 14px; }
+.sm-big { border: none; border-radius: 8px; font: 800 26px var(--sans); letter-spacing: .04em; color: #fff;
+  min-height: 96px; cursor: pointer; }
+.sm-big.take { background: var(--pgm); }
+.sm-big.cut { background: var(--raised); color: var(--text); border: 1px solid var(--line-hi); }
+.sm-big:active { transform: translateY(1px); }
+.sm-dests { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.sm-dest { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; min-height: 96px;
+  border: 1px solid var(--line-hi); border-radius: 8px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.sm-dest.transit { border-color: var(--armed); }
+.sm-dest-name { font: 700 17px var(--sans); }
+.sm-dest-scr { font: 600 12px var(--mono); color: var(--muted); }
+.sm-dest-go { margin-top: auto; align-self: stretch; text-align: center; font: 800 18px var(--sans); color: #fff;
+  background: var(--pgm); border-radius: 6px; padding: 8px 0; }
+.sm-section { font: 700 13px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 10px; }
+.sm-mems { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.sm-mem { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 76px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--faint); font: 700 20px var(--mono); cursor: default; }
+.sm-mem.valid { color: var(--text); border-color: var(--accent-dim); background: var(--panel-2); cursor: pointer; }
+.sm-mem.valid:active { background: var(--accent-dim); }
+.sm-mem-l { font: 500 11px var(--sans); color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ---------- Wall (screen output-position map) ---------- */
 .wall-wrap { overflow-x: auto; }
 .wall-canvas { position: relative; background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r); }

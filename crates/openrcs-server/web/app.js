@@ -300,7 +300,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -350,7 +350,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
+  ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
@@ -1572,6 +1572,61 @@ VIEWS.destinations = (() => {
           ? el('div', { class: 'dest-grid' }, ...groups.map(destCard))
           : el('div', { class: 'empty-state', text: 'No active screens.' })),
       editing ? memberEditor() : null);
+  }
+  return { render, enter };
+})();
+
+// ---------- Show mode (touch / front-of-house surface) ----------
+// A stripped, big-target operator surface: take the whole rig, take each
+// destination, and fire master memories — nothing to mis-hit under show light.
+VIEWS.showmode = (() => {
+  const SLOTS = 24;                    // master-memory tiles to show
+  let ttime = 1000;
+
+  function enter() {
+    for (const m of ['SCssh', 'GCsta', 'Plngr', 'PSval']) if (store.byMnem.has(m)) store.scan(m);
+    for (let i = 0; i < SLOTS; i++) fetchLabel('LBPSe', [i]);
+  }
+
+  const takeAll = () => { for (const s of activeScreens()) doTake(s, ttime); };
+  const cutAll = () => { for (const s of activeScreens()) doCut(s); };
+  function recallMaster(i) { store.set('PSmet', [], i); store.set('PSlot', [], 1); }
+
+  function destTile([g, screens]) {
+    const multi = screens.length > 1;
+    const st = store.val('GCsta', g);
+    const transit = st === GRP_FROM_DOWN || st === GRP_FROM_UP;
+    return el('button', { class: 'sm-dest' + (transit ? ' transit' : ''), onclick: () => groupTake(g, ttime) },
+      el('span', { class: 'sm-dest-name', text: multi ? `Group ${g + 1}` : screenLabel(screens[0]) }),
+      el('span', { class: 'sm-dest-scr', text: screens.map(s => `S${s + 1}`).join(' ') }),
+      el('span', { class: 'sm-dest-go', text: 'TAKE' }));
+  }
+
+  function memTile(i) {
+    const valid = store.val('PSval', i) === 1;
+    const label = readLabel('LBPSe', [i]);
+    return el('button', { class: 'sm-mem' + (valid ? ' valid' : ''), disabled: valid ? undefined : true, onclick: () => recallMaster(i) },
+      el('span', { class: 'sm-mem-n', text: i + 1 }),
+      label ? el('span', { class: 'sm-mem-l', text: label }) : null);
+  }
+
+  function render() {
+    const groups = hasBanks() ? activeGroups() : [];
+    return el('div', { class: 'showmode' },
+      el('div', { class: 'view-head' }, el('h1', { text: 'Show mode' }),
+        el('span', { class: 'hint', text: 'Front-of-house — big targets for running the show' }),
+        el('div', { class: 'spacer' }),
+        el('label', { class: 'field' }, 'Transition',
+          el('input', { type: 'number', min: 0, max: 3000, step: 100, value: ttime, style: 'width:80px',
+            oninput: e => ttime = Math.max(0, +e.target.value || 0) }), el('span', { class: 'hint', text: 'ms' }))),
+      el('div', { class: 'sm-transport' },
+        el('button', { class: 'sm-big cut', onclick: cutAll }, 'CUT ALL'),
+        el('button', { class: 'sm-big take', onclick: takeAll }, 'TAKE ALL')),
+      groups.length
+        ? el('div', { class: 'sm-dests' }, ...groups.map(destTile))
+        : null,
+      el('div', { class: 'sm-section', text: 'Master memories' }),
+      el('div', { class: 'sm-mems' }, ...Array.from({ length: SLOTS }, (_, i) => memTile(i))));
   }
   return { render, enter };
 })();
