@@ -80,6 +80,7 @@ const midTransition = (s) => {
 };
 /** Take: transition to whichever bank is not currently live. */
 function doTake(screen, ttime) {
+  CONFIDENCE.autoSnapshot('before take');            // opt-in undo point, no-op unless armed
   if (!hasBanks()) {                                   // Midra: one-way take per screen
     if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
     store.set('GCtak', [screen], 1);
@@ -95,6 +96,7 @@ function doTake(screen, ttime) {
 }
 /** Cut: go straight there. TAKE_FORCE completes whatever transition is running. */
 function doCut(screen) {
+  CONFIDENCE.autoSnapshot('before cut');
   if (!hasBanks()) { store.set('GCtak', [screen], 1); return; }
   doTake(screen, 0);
   setTimeout(() => store.set('GCtfr', [groupOf(screen)], 1), 60);
@@ -1110,6 +1112,67 @@ async function restoreShow(show, onProgress) {
   return vals.length;
 }
 
+// Snapshot from the client's cache without touching the device — instant, so it
+// can run before an action. Only as complete as what's been read, which is
+// exactly right for undo: the values an action is about to change were just read
+// or written, so they're in the cache and revert can put them back.
+function captureFromCache(scopeIds) {
+  const scopes = SHOW_SCOPES.filter(s => scopeIds.includes(s.id) && scopeOffered(s));
+  const seen = new Set();
+  for (const sc of scopes) for (const d of scopeVars(sc)) seen.add(d.m);
+  const values = [];
+  for (const [key, v] of store.state) {
+    const bar = key.indexOf('|');
+    const m = key.slice(0, bar);
+    if (!seen.has(m)) continue;
+    const idxStr = key.slice(bar + 1);
+    values.push([m, idxStr === '' ? [] : idxStr.split(',').map(Number), v]);
+  }
+  return {
+    format: 'openrcs-show', version: SHOW_VERSION, created: new Date().toISOString(),
+    device: { platform: store.meta?.platform || null, model: deviceModel() || null, serial: store.val('DIdsn') ?? null },
+    scopes: scopeIds.filter(id => scopes.some(s => s.id === id)), values,
+  };
+}
+
+// ---------- Confidence buffer (cheap undo) ----------
+// A ring of lightweight 'look' snapshots taken from cache. Revert pushes one
+// back through the same re-read-then-write path a show restore uses. Auto-mode
+// snapshots just before a take, throttled so a TAKE ALL is one snapshot.
+const CONFIDENCE = (() => {
+  const KEY = 'openrcs.confidence';
+  const CAP = 12;
+  let ring = [], auto = false, lastAuto = 0;
+  try { const s = JSON.parse(localStorage.getItem(KEY) || '{}'); ring = s.ring || []; auto = !!s.auto; } catch { /* first run */ }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify({ ring, auto })); } catch { /* quota/private */ } };
+
+  function snapshot(reason, opts = {}) {
+    const snap = captureFromCache(['look']);
+    if (!snap.values.length) return null;            // nothing read yet
+    snap.id = Date.now(); snap.reason = reason || 'manual'; snap.auto = !!opts.auto;
+    ring.unshift(snap);
+    if (ring.length > CAP) ring.length = CAP;
+    persist();
+    if (!opts.auto) store.notify();
+    return snap;
+  }
+  function autoSnapshot(reason) {
+    if (!auto) return;
+    const now = Date.now();
+    if (now - lastAuto < 1500) return;               // coalesce a multi-screen take
+    lastAuto = now;
+    snapshot(reason, { auto: true });
+  }
+  return {
+    snapshot, autoSnapshot,
+    list: () => ring,
+    getAuto: () => auto,
+    setAuto: (v) => { auto = v; persist(); store.notify(); },
+    remove: (id) => { ring = ring.filter(s => s.id !== id); persist(); store.notify(); },
+    clear: () => { ring = []; persist(); store.notify(); },
+  };
+})();
+
 // ---------- Shows view ----------
 VIEWS.shows = (() => {
   const KEY = 'openrcs.shows';
@@ -1235,6 +1298,31 @@ VIEWS.shows = (() => {
         el('button', { class: 'btn ghost', onclick: () => del(show.id) }, 'Delete')));
   }
 
+  function confRow(s) {
+    const label = s.reason + (s.auto ? ' · auto' : '');
+    return el('div', { class: 'conf-row' },
+      el('div', { class: 'show-main' },
+        el('div', { class: 'conf-name', text: label }),
+        el('div', { class: 'show-meta', text: `${s.values.length.toLocaleString()} values · ${fmtWhen(s.created)}` })),
+      el('button', { class: 'btn pvw', onclick: () => doRestore(s), disabled: busy ? true : undefined }, 'Revert'),
+      el('button', { class: 'btn ghost', onclick: () => CONFIDENCE.remove(s.id) }, '✕'));
+  }
+
+  function confidencePanel() {
+    const ring = CONFIDENCE.list();
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row', style: 'align-items:center' },
+        el('h2', 'Confidence'),
+        el('div', { class: 'spacer' }),
+        el('label', { class: 'field' }, 'Auto before take', checkbox(CONFIDENCE.getAuto(), v => CONFIDENCE.setAuto(v))),
+        el('button', { class: 'btn', onclick: () => { const s = CONFIDENCE.snapshot('manual'); note = s ? 'Confidence snapshot taken.' : 'Nothing read yet to snapshot — open the Workspace first.'; store.notify(); } }, 'Snapshot now'),
+        ring.length ? el('button', { class: 'btn ghost', onclick: () => CONFIDENCE.clear() }, 'Clear') : null),
+      el('div', { class: 'hint', text: 'Instant undo — snapshots the current look from what’s already on screen. Revert re-reads the device and writes back only what changed.' }),
+      ring.length
+        ? el('div', { class: 'show-list' }, ...ring.map(confRow))
+        : el('div', { class: 'empty-state', text: 'No confidence snapshots yet. Take one before a risky change, or turn on “Auto before take”.' }));
+  }
+
   function showRow(show) {
     const open = selected === show.id;
     const scopes = (show.scopes || []).map(id => SHOW_SCOPES.find(s => s.id === id)?.label || id).join(', ');
@@ -1258,6 +1346,7 @@ VIEWS.shows = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'Shows' }),
         el('span', { class: 'hint', text: 'Save and restore the device’s state — a show file for the look and the banks' })),
       capturePanel(),
+      confidencePanel(),
       el('div', { class: 'panel' },
         el('h2', `Saved shows (${shows.length})`),
         shows.length
