@@ -585,6 +585,25 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .conf-row .show-main { flex: 1; min-width: 0; }
 .conf-name { font: 600 13px var(--sans); color: var(--text); text-transform: capitalize; }
 
+/* ---------- Destinations (screen groups) ---------- */
+.dest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
+.dest-card { border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.dest-card.transit { border-color: var(--armed); }
+.dest-head { display: flex; flex-direction: column; gap: 6px; }
+.dest-title { font: 600 14px var(--sans); color: var(--text); display: flex; align-items: baseline; gap: 8px; }
+.dest-status { font: 500 11px var(--mono); color: var(--muted); }
+.dest-card.transit .dest-status { color: var(--armed); }
+.dest-screens { display: flex; flex-wrap: wrap; gap: 4px; }
+.dest-chip { font: 600 11px var(--mono); padding: 2px 7px; border-radius: var(--r); background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.dest-chip.grp { color: var(--accent); border-color: var(--accent-dim); }
+.dest-tbar input[type=range] { width: 100%; }
+.dest-controls { display: flex; gap: 6px; }
+.dest-controls .take-btn { flex: 1; }
+
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
+.group-cell { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.group-scr { font: 600 12px var(--sans); color: var(--text); }
+
 .diff-chip { font: 600 11px var(--mono); padding: 3px 8px; border-radius: 999px;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
 .diff-change { color: var(--armed); border-color: var(--armed); }

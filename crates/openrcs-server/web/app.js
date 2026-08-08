@@ -112,6 +112,36 @@ function doStepBack(screen) {
   else if (store.byMnem.has('GCsba')) store.set('GCsba', [screen], 1);       // Midra
 }
 
+// ---------- Screen groups / super-destinations ----------
+// A group (0..15) is a destination that takes several screens at once. Plngr
+// maps each screen to a group; the GC* take verbs are indexed by group. These
+// mirror the per-screen take helpers but drive a group index directly.
+const activeScreens = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
+const groupCount = () => store.byMnem.get('GCsta')?.dims[0] || 16;
+// [ [group, [screens…]] ], only groups that actually hold an active screen.
+function activeGroups() {
+  const seen = new Map();
+  for (const s of activeScreens()) {
+    const g = store.val('Plngr', s) ?? s;
+    if (!seen.has(g)) seen.set(g, []);
+    seen.get(g).push(s);
+  }
+  return [...seen.entries()].sort((a, b) => a[0] - b[0]);
+}
+const groupLiveCtx = (g) => hasBanks() ? ((store.val('GCsta', g) === GRP_AT_UP || store.val('GCsta', g) === GRP_FROM_UP) ? 1 : 0) : 0;
+const groupTransitioning = (g) => { const v = store.val('GCsta', g); return v === GRP_FROM_DOWN || v === GRP_FROM_UP; };
+function groupTake(g, ttime) {
+  if (!hasBanks()) return;
+  const to = 1 - groupLiveCtx(g);
+  if (store.byMnem.has('GCtba')) store.set('GCtba', [g], to === 1 ? 0 : 65535);
+  if (ttime != null) store.set(to === 1 ? 'GCtup' : 'GCtdn', [g], ttime);
+  store.set(to === 1 ? 'GCtku' : 'GCtkd', [g], 1);
+}
+function groupCut(g) { groupTake(g, 0); setTimeout(() => { if (store.byMnem.has('GCtfr')) store.set('GCtfr', [g], 1); }, 60); }
+const groupTbar = (g, v) => { if (store.byMnem.has('GCtba')) store.set('GCtba', [g], v); };
+const groupStepBack = (g) => { if (store.byMnem.has('GCstb')) store.set('GCstb', [g], 1); };
+const commitGroups = () => { if (store.byMnem.has('GCupd')) store.set('GCupd', [], 1); };
+
 // ---------- store ----------
 class Store {
   constructor() {
@@ -203,7 +233,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'shows', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -249,7 +279,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['workspace', 'Workspace'], ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'],
+  ['workspace', 'Workspace'], ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
@@ -270,6 +300,7 @@ const VIEW_REQUIRES = {
   edid: 'EIspf', audio: 'AUile', gpio: 'GPoav',
   // shown whenever a live-look scope exists — true on both platforms
   shows: () => store.byGroup.has('PRESET') || store.byGroup.has('GRP_PRESET_ELEMENT'),
+  destinations: 'GCsta',   // screen-group take model (LiveCore)
 };
 const viewSupported = (id) => {
   const req = VIEW_REQUIRES[id];
@@ -1354,6 +1385,91 @@ VIEWS.shows = (() => {
           : el('div', { class: 'empty-state', text: 'No shows yet. Capture the current state above, or import a show file.' })));
   }
   return { render };
+})();
+
+// ---------- Destinations (super-destinations / screen groups) ----------
+VIEWS.destinations = (() => {
+  let ttime = 1000;
+  let editing = false;
+
+  function enter() {
+    for (const m of ['SCssh', 'SCmly', 'Plngr', 'GCsta', 'GCava', 'GCtba', 'GCtup']) if (store.byMnem.has(m)) store.scan(m);
+    // member layer sources, so a card can show what each screen is carrying
+    for (const s of activeScreens()) for (let l = 0; l < layerSlots(); l++) store.get('PRinp', [s, groupLiveCtx(groupOf(s)), l]);
+  }
+
+  const STATUS = (g) => {
+    const v = store.val('GCsta', g);
+    if (v == null) return '—';
+    if (v === GRP_FROM_DOWN || v === GRP_FROM_UP) return 'Transitioning';
+    if (v === 4 || v === 5) return 'Copying';
+    return v === GRP_AT_UP ? 'On air · B' : 'On air · A';
+  };
+
+  function takeAll() { for (const [g] of activeGroups()) if (membersMulti(g)) groupTake(g, ttime); }
+  const membersMulti = (g) => activeScreens().filter(s => (store.val('Plngr', s) ?? s) === g).length > 1;
+
+  function destCard([g, screens]) {
+    const live = groupLiveCtx(g);
+    const tbar = store.val('GCtba', g) ?? 0;
+    const multi = screens.length > 1;
+    return el('div', { class: 'dest-card' + (groupTransitioning(g) ? ' transit' : '') },
+      el('div', { class: 'dest-head' },
+        el('div', { class: 'dest-title' }, multi ? `Group ${g + 1}` : `Screen ${g + 1}`,
+          el('span', { class: 'dest-status', text: STATUS(g) })),
+        el('div', { class: 'dest-screens' },
+          ...screens.map(s => el('span', { class: 'dest-chip' + (multi ? ' grp' : ''), text: `S${s + 1}` })))),
+      el('div', { class: 'dest-tbar' },
+        el('input', {
+          type: 'range', min: 0, max: 65535, value: tbar,
+          onpointerdown: beginDrag, onpointerup: endDrag,
+          oninput: e => groupTbar(g, +e.target.value),
+        })),
+      el('div', { class: 'dest-controls' },
+        el('button', { class: 'btn', onclick: () => groupStepBack(g), title: 'Step back' }, '↶'),
+        el('button', { class: 'btn ghost', onclick: () => groupCut(g) }, 'CUT'),
+        el('button', { class: 'btn pgm take-btn', onclick: () => groupTake(g, ttime) }, 'TAKE')));
+  }
+
+  // membership editor: one group number per active screen, then commit
+  function memberEditor() {
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row', style: 'align-items:center' },
+        el('h2', 'Grouping'),
+        el('div', { class: 'hint', text: 'Assign screens to a group to take them as one destination.' }),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn', onclick: () => { commitGroups(); enter(); } }, 'Update device')),
+      el('div', { class: 'group-grid' }, ...activeScreens().map(s => {
+        const g = store.val('Plngr', s) ?? s;
+        return el('label', { class: 'group-cell' },
+          el('span', { class: 'group-scr', text: `Screen ${s + 1}` }),
+          el('select', { onchange: e => { store.set('Plngr', [s], +e.target.value); store.notify(); } },
+            ...Array.from({ length: groupCount() }, (_, gi) => el('option', { value: gi, selected: gi === g || undefined }, `Group ${gi + 1}`))));
+      })));
+  }
+
+  function render() {
+    const groups = activeGroups();
+    const anyMulti = groups.some(([g]) => membersMulti(g));
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Destinations' }),
+        el('span', { class: 'hint', text: 'Take, cut and T-bar whole screen groups as one destination' }),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ' + (editing ? 'pgm' : 'ghost'), onclick: () => { editing = !editing; store.notify(); } }, editing ? 'Done' : 'Edit groups')),
+      el('div', { class: 'panel' },
+        el('div', { class: 'takebar' },
+          el('label', { class: 'field' }, 'Transition',
+            el('input', { type: 'number', min: 0, max: 3000, step: 100, value: ttime, style: 'width:80px',
+              oninput: e => ttime = Math.max(0, +e.target.value || 0) })),
+          el('span', { class: 'hint', text: 'ms' }),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn pgm take-btn', onclick: takeAll, disabled: anyMulti ? undefined : true }, 'TAKE ALL GROUPS')),
+        groups.length
+          ? el('div', { class: 'dest-grid' }, ...groups.map(destCard))
+          : el('div', { class: 'empty-state', text: 'No active screens.' })),
+      editing ? memberEditor() : null);
+  }
+  return { render, enter };
 })();
 
 // ---------- Live ----------
