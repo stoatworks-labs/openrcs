@@ -201,7 +201,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'shows', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -252,7 +252,7 @@ const NAV = [
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
-  ['inspector', 'Inspector'], ['console', 'Console'],
+  ['shows', 'Shows'], ['inspector', 'Inspector'], ['console', 'Console'],
 ];
 
 // a view is shown only when the device advertises the variable it needs
@@ -266,6 +266,8 @@ const VIEW_REQUIRES = {
   // soft edge is a different (scalar) model, so gate on an indexed SEcen
   softedge: () => (store.byMnem.get('SEcen')?.dims.length || 0) > 0,
   edid: 'EIspf', audio: 'AUile', gpio: 'GPoav',
+  // shown whenever a live-look scope exists — true on both platforms
+  shows: () => store.byGroup.has('PRESET') || store.byGroup.has('GRP_PRESET_ELEMENT'),
 };
 const viewSupported = (id) => {
   const req = VIEW_REQUIRES[id];
@@ -970,6 +972,300 @@ function enumSelect2(cur, pairs, onchange) {
 function checkbox(on, onchange) {
   return el('input', { type: 'checkbox', checked: on || undefined, onchange: e => onchange(e.target.checked) });
 }
+
+// ---------- Show files: state snapshot / restore ----------
+// Capture the device's writable state to a portable JSON "show", and restore it
+// by replaying sets. This is the foundation the Confidence (undo) buffer builds
+// on, and the first step toward offline planning. The rule that keeps restore
+// safe: capture only *indexed content* variables. A scalar writable inside a
+// memory or control group is almost always a momentary trigger — SAVE, LOAD,
+// TAKE, RESET — not a value to be restored; the take/swap verbs are indexed but
+// live in groups no scope includes. So "indexed, writable, not a status readback"
+// captures the look and the banks without ever firing an action.
+const SHOW_VERSION = 1;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Scopes are sets of variable *groups*; a scope is offered only when the
+// connected device advertises at least one of its groups. Group names cover
+// both platforms (LiveCore bare, Midra GRP_*); the engine intersects with
+// whatever the device actually has.
+const SHOW_SCOPES = [
+  { id: 'look', label: 'Live look',
+    hint: 'The current on-screen composition — every layer’s source, geometry, opacity, border, crop and transitions, plus the native background.',
+    groups: ['PRESET', 'PRESET_NATIVE', 'MASTER_ALPHA', 'GRP_PRESET_ELEMENT'] },
+  { id: 'memories', label: 'Memory banks',
+    hint: 'The stored screen and master memories. Large — a full bank is thousands of values and takes a moment to read.',
+    groups: ['PRESET_MEMORIES', 'MASTER_PRESET_MEMORIES', 'CONFIDENCE_MEMORIES', 'MONITORING_LAYOUT_MEMORIES', 'GRP_PRESET_MEMORY'] },
+  { id: 'inputs', label: 'Input setup',
+    hint: 'Per-input settings and plug configuration.',
+    groups: ['INPUT', 'INPUT_SETTINGS', 'INPUT_SETTINGS_MEMORIES', 'GRP_INPUT', 'GRP_INPUT_SETTINGS', 'GRP_INPUT_SETTINGS_MEMORIES', 'GRP_INPUT_KEYING'] },
+  { id: 'outputs', label: 'Outputs & screens',
+    hint: 'Output format and processing, screen composition and soft-edge blends.',
+    groups: ['OUTPUT', 'OUTPUT_SCREEN', 'OUTPUT_CONTROL', 'OUTPUT_AOI_SIZE', 'SCREEN', 'SCREEN_MIRROR', 'SOFTEDGE', 'MONITORING_LAYOUT', 'MONITORING__OUTPUTS', 'MONITORING_SCREEN', 'GRP_OUTPUT', 'GRP_VIDEO_OUT', 'GRP_SCREEN', 'GRP_SCREEN_CONFIG', 'GRP_SOFTEDGE', 'GRP_OUTPUT_FORMAT'] },
+  { id: 'audio', label: 'Audio',
+    hint: 'Audio input and output routing and levels.',
+    groups: ['GRP_AUDIO_INPUT', 'GRP_AUDIO_OUTPUT'] },
+];
+
+// A variable is capturable within a scope when the device has it, it's writable,
+// it's indexed (scalars in these groups are triggers/selectors), and it isn't a
+// status read-back the device flags writable. Returns the variable defs.
+function scopeVars(scope) {
+  const out = [];
+  for (const g of scope.groups) {
+    const list = store.byGroup.get(g);
+    if (!list) continue;
+    for (const def of list) {
+      if (def.ro) continue;
+      if (!def.dims || def.dims.length === 0) continue;
+      if (/STATUS/.test(def.name || '')) continue;
+      out.push(def);
+    }
+  }
+  return out;
+}
+const scopeOffered = (scope) => scope.groups.some(g => store.byGroup.has(g));
+const scopeCount = (scope) => scopeVars(scope).reduce((n, d) => n + d.dims.reduce((a, b) => a * b, 1), 0);
+
+// Ask the device for every index of each named variable, letting the replies
+// drain into the store between batches so the link isn't flooded. The store is
+// a cache: it only holds values the client has actually read, so any operation
+// that needs to compare against the *live* device — capture, or a restore's
+// diff — must scan first rather than trust whatever happens to be cached.
+async function scanMnems(mnems, onProgress) {
+  for (let i = 0; i < mnems.length; i++) {
+    store.scan(mnems[i]);
+    if (onProgress) onProgress((i + 1) / mnems.length);
+    if ((i & 7) === 7) await sleep(40);
+  }
+  await sleep(450);                        // settle for the last variable's replies
+}
+
+// Capture: scan every capturable variable, then serialize what came back.
+async function captureShow(scopeIds, onProgress) {
+  const scopes = SHOW_SCOPES.filter(s => scopeIds.includes(s.id) && scopeOffered(s));
+  const defs = [];
+  const seen = new Set();
+  for (const sc of scopes) for (const d of scopeVars(sc)) if (!seen.has(d.m)) { seen.add(d.m); defs.push(d); }
+  await scanMnems(defs.map(d => d.m), onProgress);
+  const values = [];
+  for (const [key, v] of store.state) {
+    const bar = key.indexOf('|');
+    const m = key.slice(0, bar);
+    if (!seen.has(m)) continue;
+    const idxStr = key.slice(bar + 1);
+    values.push([m, idxStr === '' ? [] : idxStr.split(',').map(Number), v]);
+  }
+  return {
+    format: 'openrcs-show', version: SHOW_VERSION,
+    created: new Date().toISOString(),
+    device: {
+      platform: store.meta?.platform || null,
+      model: deviceModel() || null,
+      serial: store.val('DIdsn') ?? store.val('SYssn') ?? null,
+    },
+    scopes: scopeIds.filter(id => scopes.some(s => s.id === id)),
+    values,
+  };
+}
+
+// The distinct variables a show touches that this device has and can be written.
+const showMnems = (show) => [...new Set(show.values.map(v => v[0]))].filter(m => {
+  const d = store.byMnem.get(m); return d && !d.ro;
+});
+// Re-read those variables so a diff or restore compares against the live device,
+// not a stale/sparse cache.
+const refreshShow = (show, onProgress) => scanMnems(showMnems(show), onProgress);
+
+// How a show compares to the *cached* device state: values that would change,
+// values that match, and values whose variable this device doesn't have (a
+// foreign or newer capture). Only meaningful after refreshShow — the caller
+// scans first. Values not yet in the cache count as changed.
+function showDiff(show) {
+  let same = 0, differ = 0, missing = 0;
+  for (const [m, idx, v] of show.values) {
+    const def = store.byMnem.get(m);
+    if (!def || def.ro) { missing++; continue; }
+    if (store.state.get(keyOf(m, idx)) === v) same++; else differ++;
+  }
+  return { same, differ, missing, total: show.values.length };
+}
+
+// Restore: replay captured values as sets, throttled. Only values that differ
+// from the device's current state are written — a full look is thousands of
+// values but almost all already match, so restore stays fast and touches the
+// device as little as possible. Skips anything this device lacks or that's
+// read-only. onProgress(fraction) runs across the values to write.
+async function restoreShow(show, onProgress) {
+  const vals = show.values.filter(([m, idx, v]) => {
+    const d = store.byMnem.get(m);
+    return d && !d.ro && store.state.get(keyOf(m, idx)) !== v;
+  });
+  for (let i = 0; i < vals.length; i++) {
+    const [m, idx, v] = vals[i];
+    store.set(m, idx, v);
+    if (onProgress) onProgress((i + 1) / vals.length);
+    if ((i & 15) === 15) await sleep(30);
+  }
+  return vals.length;
+}
+
+// ---------- Shows view ----------
+VIEWS.shows = (() => {
+  const KEY = 'openrcs.shows';
+  let shows = [];      // { id, name, created, device, scopes, values, kind }
+  try { shows = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { /* first run */ }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(shows)); } catch { /* quota/private */ } };
+
+  let pick = { look: true };            // which scopes to capture
+  let busy = null;                      // { label, frac } while capturing/restoring
+  let selected = null;                  // id of the show whose detail is open
+  let note = '';                        // transient status line
+
+  const setBusy = (label, frac) => { busy = { label, frac }; store.notify(); };
+  const clearBusy = () => { busy = null; store.notify(); };
+  const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso; } };
+
+  async function doCapture() {
+    const ids = SHOW_SCOPES.filter(s => pick[s.id] && scopeOffered(s)).map(s => s.id);
+    if (!ids.length) { note = 'Pick at least one thing to capture.'; store.notify(); return; }
+    setBusy('Reading device…', 0);
+    const show = await captureShow(ids, f => setBusy('Reading device…', f));
+    show.id = Date.now();
+    show.kind = 'show';
+    const scopeLabels = ids.map(id => SHOW_SCOPES.find(s => s.id === id).label).join(', ');
+    show.name = `${deviceModel() || 'Show'} — ${new Date().toLocaleString()}`;
+    shows.unshift(show); persist();
+    note = `Captured ${show.values.length} values (${scopeLabels}).`;
+    selected = show.id;
+    clearBusy();
+  }
+
+  // Read the device before comparing — the diff shown in the detail is against
+  // whatever the client last read, which may be sparse right after connecting.
+  async function doCompare(show) {
+    setBusy('Reading device…', 0);
+    await refreshShow(show, f => setBusy('Reading device…', f));
+    note = ''; clearBusy();
+  }
+
+  async function doRestore(show) {
+    // Always re-read first, so the change count is real and the write is minimal.
+    setBusy('Reading device…', 0);
+    await refreshShow(show, f => setBusy('Reading device…', f));
+    const d = showDiff(show);
+    clearBusy();
+    if (d.differ === 0) { note = `“${show.name}” already matches the device — nothing to restore.`; store.notify(); return; }
+    const ok = confirm(
+      `Restore “${show.name}”?\n\n` +
+      `${d.differ} value(s) will change on the device, ${d.same} already match` +
+      (d.missing ? `, ${d.missing} not applicable to this device` : '') + '.\n\n' +
+      `This writes to the connected processor.`);
+    if (!ok) { note = 'Restore cancelled.'; store.notify(); return; }
+    setBusy('Restoring…', 0);
+    const n = await restoreShow(show, f => setBusy('Restoring…', f));
+    note = `Restored ${n} value(s) from “${show.name}”.`;
+    clearBusy();
+  }
+
+  function download(show) {
+    const safe = (show.name || 'show').replace(/[^\w.-]+/g, '_').slice(0, 60);
+    const blob = new Blob([JSON.stringify(show, null, 2)], { type: 'application/json' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: `${safe}.orcs-show.json` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  function importFile(file) {
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const show = JSON.parse(rd.result);
+        if (show.format !== 'openrcs-show' || !Array.isArray(show.values)) throw 0;
+        show.id = Date.now(); show.kind = show.kind || 'show';
+        show.name = show.name || `Imported — ${file.name}`;
+        shows.unshift(show); persist(); selected = show.id;
+        note = `Imported "${show.name}" (${show.values.length} values).`;
+      } catch { note = 'That file isn’t an openrcs show.'; }
+      store.notify();
+    };
+    rd.readAsText(file);
+  }
+
+  function rename(show, name) { show.name = name; persist(); }
+  function del(id) { shows = shows.filter(s => s.id !== id); if (selected === id) selected = null; persist(); store.notify(); }
+
+  function capturePanel() {
+    const offered = SHOW_SCOPES.filter(scopeOffered);
+    return el('div', { class: 'panel' },
+      el('h2', 'Capture a show'),
+      el('div', { class: 'hint', text: 'Read the device’s current state into a saved show you can restore or download.' }),
+      el('div', { class: 'scope-list' }, ...offered.map(s => {
+        const n = scopeCount(s);
+        return el('label', { class: 'scope-row' },
+          checkbox(!!pick[s.id], v => { pick[s.id] = v; store.notify(); }),
+          el('div', { class: 'scope-main' },
+            el('div', { class: 'scope-label' }, s.label,
+              el('span', { class: 'scope-n', text: `${n.toLocaleString()} values` })),
+            el('div', { class: 'scope-hint', text: s.hint })));
+      })),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn pgm', onclick: doCapture, disabled: busy ? true : undefined }, 'Capture now'),
+        el('label', { class: 'btn ghost file-btn' }, 'Import file…',
+          el('input', { type: 'file', accept: '.json,application/json', style: 'display:none',
+            onchange: e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; } }))),
+      busy ? el('div', { class: 'show-prog' },
+        el('div', { class: 'show-prog-bar', style: `width:${Math.round(busy.frac * 100)}%` }),
+        el('span', { class: 'show-prog-label', text: busy.label })) : null,
+      note ? el('div', { class: 'show-note', text: note }) : null);
+  }
+
+  function detail(show) {
+    const d = showDiff(show);
+    return el('div', { class: 'show-detail' },
+      el('div', { class: 'row', style: 'align-items:center' },
+        el('span', { class: 'diff-chip diff-change', text: `${d.differ} to change` }),
+        el('span', { class: 'diff-chip', text: `${d.same} match` }),
+        d.missing ? el('span', { class: 'diff-chip diff-missing', text: `${d.missing} n/a here` }) : null,
+        el('button', { class: 'btn ghost', onclick: () => doCompare(show), disabled: busy ? true : undefined }, 'Compare with device'),
+        el('span', { class: 'show-note', style: 'margin:0', text: 'vs last read' })),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn pgm', onclick: () => doRestore(show), disabled: busy ? true : undefined }, 'Restore to device'),
+        el('button', { class: 'btn ghost', onclick: () => download(show) }, 'Download'),
+        el('button', { class: 'btn ghost', onclick: () => del(show.id) }, 'Delete')));
+  }
+
+  function showRow(show) {
+    const open = selected === show.id;
+    const scopes = (show.scopes || []).map(id => SHOW_SCOPES.find(s => s.id === id)?.label || id).join(', ');
+    const foreign = show.device?.platform && store.meta && show.device.platform !== store.meta.platform;
+    return el('div', { class: 'show-item' + (open ? ' open' : '') },
+      el('div', { class: 'show-head', onclick: () => { selected = open ? null : show.id; store.notify(); } },
+        el('div', { class: 'show-main' },
+          el('input', { class: 'show-name', type: 'text', value: show.name,
+            onclick: e => e.stopPropagation(),
+            oninput: e => rename(show, e.target.value) }),
+          el('div', { class: 'show-meta', text:
+            `${show.values.length.toLocaleString()} values · ${scopes || 'custom'} · ${fmtWhen(show.created)}` +
+            (show.device?.model ? ` · ${show.device.model}` : '') })),
+        foreign ? el('span', { class: 'diff-chip diff-missing', text: show.device.platform }) : null,
+        el('span', { class: 'show-caret', text: open ? '–' : '+' })),
+      open ? detail(show) : null);
+  }
+
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Shows' }),
+        el('span', { class: 'hint', text: 'Save and restore the device’s state — a show file for the look and the banks' })),
+      capturePanel(),
+      el('div', { class: 'panel' },
+        el('h2', `Saved shows (${shows.length})`),
+        shows.length
+          ? el('div', { class: 'show-list' }, ...shows.map(showRow))
+          : el('div', { class: 'empty-state', text: 'No shows yet. Capture the current state above, or import a show file.' })));
+  }
+  return { render };
+})();
 
 // ---------- Live ----------
 VIEWS.live = (() => {

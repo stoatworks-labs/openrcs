@@ -29,6 +29,14 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   multi-output screens); **EDID** (per-input preferred formats + store/factory,
   and the EDID a connected display reports); GPIO.
 - **System** — identity, network, health, front-panel.
+- **Shows** — capture the device's writable state to a portable JSON show file
+  and restore it. Scoped: the live look (every layer's source, geometry, opacity,
+  border, crop and transitions, plus the native background), the memory banks,
+  input setup, or outputs & screens. Restore re-reads the device first, shows how
+  many values will actually change, then writes only the differences. Shows are
+  kept locally and can be downloaded and re-imported. The engine captures only
+  indexed content — never a momentary SAVE/LOAD/TAKE trigger — so a restore can't
+  fire an action. This is the foundation for confidence/undo and offline planning.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
 ## Near-term parity (already in the protocol)
@@ -105,9 +113,13 @@ bridge.**
 - **Touch / tablet mode** — larger targets, a simplified "show" layout for a
   panel at front-of-house.
 - **Offline / plan mode** — build memories and layer arrangements against the
-  variable model with no device attached, then push on connect.
+  variable model with no device attached, then push on connect. The **Shows**
+  capture/restore engine is the state layer this builds on: a captured show is
+  already an editable snapshot of the variable model that restore can push.
 - **Confidence & undo** — snapshot-and-restore around risky actions, using the
-  device's own state as the source of truth.
+  device's own state as the source of truth. Now a short step on top of
+  **Shows**: an auto-captured "look" before a risky action, with one-click
+  revert, is the same capture/diff/restore path with an auto-named snapshot.
 
 ## A note on the inspirations
 
