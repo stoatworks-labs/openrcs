@@ -585,6 +585,12 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .conf-row .show-main { flex: 1; min-width: 0; }
 .conf-name { font: 600 13px var(--sans); color: var(--text); text-transform: capitalize; }
 
+/* ---------- Cue autofollow ---------- */
+.cue.following { border-color: var(--armed); box-shadow: inset 0 0 0 1px var(--armed); }
+.cue-follow { display: flex; align-items: center; gap: 5px; }
+.cue-notes { font-size: 11px; color: var(--faint); margin-top: 2px; }
+.cue-following-note { font: 500 11px var(--mono); color: var(--armed); margin-top: 3px; }
+
 /* ---------- Plan (offline planning) ---------- */
 .chip.plan { color: var(--armed); border-color: var(--armed); cursor: pointer; }
 .chip.plan .dot { background: var(--armed); box-shadow: 0 0 8px var(--armed); }

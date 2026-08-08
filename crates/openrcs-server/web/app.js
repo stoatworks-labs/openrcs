@@ -869,7 +869,7 @@ function bind(label, mnem, idx, min, max, step = 1, fmt = (v) => v) {
 // ---------- Cues (a show script over the memory system) ----------
 VIEWS.cues = (() => {
   const KEY = 'openrcs.cues';
-  let cues = [];      // { id, label, scope:'master'|'screen', slot, screen }
+  let cues = [];      // { id, label, scope, slot, screen, follow, wait, notes }
   let cur = -1;       // index of the last cue taken
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -879,6 +879,12 @@ VIEWS.cues = (() => {
 
   // draft for the "add cue" row
   let dScope = 'master', dSlot = 1, dScreen = 0, dLabel = '';
+  let dFollow = false, dWait = 3000;
+
+  // Autofollow: after a cue with follow, arm a timer to fire the next one. Any
+  // manual action cancels it, so a hold is just leaving follow off.
+  let followTimer = null, followFrom = -1, followAt = 0;
+  function clearFollow() { if (followTimer) { clearTimeout(followTimer); followTimer = null; followFrom = -1; } }
 
   function recall(c, take) {
     if (c.scope === 'master') {
@@ -890,24 +896,41 @@ VIEWS.cues = (() => {
       store.set(take ? 'PMlot' : 'PMloa', [], 1);
     }
   }
-  function go(i) { if (i < 0 || i >= cues.length) return; recall(cues[i], true); cur = i; persist(); store.notify(); }
+  function go(i) {
+    if (i < 0 || i >= cues.length) return;
+    clearFollow();
+    recall(cues[i], true); cur = i; persist();
+    const c = cues[i];
+    if (c.follow && cur + 1 < cues.length) {
+      followFrom = i; followAt = Date.now() + Math.max(0, c.wait || 0);
+      followTimer = setTimeout(() => { followTimer = null; followFrom = -1; goNext(); }, Math.max(0, c.wait || 0));
+    }
+    store.notify();
+  }
   function goNext() { go(cur + 1 < cues.length ? cur + 1 : cur); }
-  function arm(i) { recall(cues[i], false); store.notify(); }
+  function hold() { clearFollow(); store.notify(); }
+  function arm(i) { clearFollow(); recall(cues[i], false); store.notify(); }
   function addCue() {
     const label = dLabel.trim() || (dScope === 'master' ? `Master ${dSlot}` : `Screen ${dScreen + 1} · ${dSlot}`);
-    cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen });
+    cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen, follow: dFollow, wait: dWait, notes: '' });
     dLabel = ''; persist(); store.notify();
   }
-  function move(i, d) { const j = i + d; if (j < 0 || j >= cues.length) return; [cues[i], cues[j]] = [cues[j], cues[i]]; if (cur === i) cur = j; else if (cur === j) cur = i; persist(); store.notify(); }
-  function del(i) { cues.splice(i, 1); if (cur >= cues.length) cur = cues.length - 1; persist(); store.notify(); }
+  function move(i, d) { const j = i + d; if (j < 0 || j >= cues.length) return; clearFollow(); [cues[i], cues[j]] = [cues[j], cues[i]]; if (cur === i) cur = j; else if (cur === j) cur = i; persist(); store.notify(); }
+  function del(i) { clearFollow(); cues.splice(i, 1); if (cur >= cues.length) cur = cues.length - 1; persist(); store.notify(); }
+  const patch = (c, k, v) => { c[k] = v; persist(); store.notify(); };
 
   function cueRow(c, i) {
     const target = c.scope === 'master' ? `Master ${c.slot + 1}` : `Screen ${c.screen + 1} · slot ${c.slot + 1}`;
-    return el('div', { class: 'cue' + (i === cur ? ' current' : '') },
+    return el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i ? ' following' : '') },
       el('span', { class: 'cue-n', text: i + 1 }),
       el('div', { class: 'cue-main' },
         el('div', { class: 'cue-label', text: c.label }),
-        el('div', { class: 'cue-target', text: target })),
+        el('div', { class: 'cue-target', text: target + (c.follow ? ` · auto ${(c.wait / 1000).toFixed(1)}s` : '') }),
+        c.notes ? el('div', { class: 'cue-notes', text: c.notes }) : null),
+      el('label', { class: 'cue-follow', title: 'Autofollow to the next cue' },
+        checkbox(!!c.follow, v => patch(c, 'follow', v)),
+        el('input', { type: 'number', min: 0, max: 600000, step: 500, value: c.wait, style: 'width:64px',
+          title: 'Wait (ms)', oninput: e => patch(c, 'wait', Math.max(0, +e.target.value || 0)) })),
       el('button', { class: 'btn ghost', onclick: () => arm(i) }, 'Preview'),
       el('button', { class: 'btn pvw', onclick: () => go(i) }, 'Go'),
       el('div', { class: 'cue-ord' },
@@ -918,13 +941,18 @@ VIEWS.cues = (() => {
 
   function render() {
     const next = cur + 1 < cues.length ? cues[cur + 1] : null;
+    const following = followFrom >= 0;
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Cues' }),
-        el('span', { class: 'hint', text: 'A show script — each cue recalls a memory and takes it' })),
+        el('span', { class: 'hint', text: 'A show script — recall, take, and autofollow down the list' })),
       el('div', { class: 'panel' },
         el('div', { class: 'takebar' },
           el('div', { class: 'tbar' },
-            el('div', { class: 'cue-next-label', text: next ? `Next: ${next.label}` : (cues.length ? 'End of list' : 'No cues yet') })),
+            el('div', { class: 'cue-next-label', text: next ? `Next: ${next.label}` : (cues.length ? 'End of list' : 'No cues yet') }),
+            following ? el('div', { class: 'cue-following-note', text: 'Autofollow armed — GO or HOLD' }) : null),
+          following
+            ? el('button', { class: 'btn armed take-btn', onclick: hold }, 'HOLD')
+            : null,
           el('button', { class: 'btn pgm take-btn', onclick: goNext, disabled: !next || undefined }, 'GO NEXT'))),
       el('div', { class: 'panel' },
         el('h2', 'Add cue'),
@@ -937,14 +965,18 @@ VIEWS.cues = (() => {
             el('input', { type: 'number', min: 1, max: 144, value: dSlot + 1, style: 'width:70px',
               oninput: (e) => dSlot = Math.max(0, (+e.target.value || 1) - 1) })),
           el('label', { class: 'field' }, 'Label',
-            el('input', { id: 'cue-label', type: 'text', placeholder: 'optional', value: dLabel, style: 'width:200px',
+            el('input', { id: 'cue-label', type: 'text', placeholder: 'optional', value: dLabel, style: 'width:180px',
               oninput: (e) => dLabel = e.target.value })),
+          el('label', { class: 'field' }, 'Autofollow', checkbox(dFollow, v => { dFollow = v; store.notify(); })),
+          dFollow ? el('label', { class: 'field' }, 'Wait ms',
+            el('input', { type: 'number', min: 0, max: 600000, step: 500, value: dWait, style: 'width:80px',
+              oninput: (e) => dWait = Math.max(0, +e.target.value || 0) })) : null,
           el('button', { class: 'btn', onclick: addCue }, 'Add'))),
       el('div', { class: 'panel' },
         el('h2', `Cue list (${cues.length})`),
         cues.length
           ? el('div', { class: 'cue-list' }, ...cues.map(cueRow))
-          : el('div', { class: 'empty-state', text: 'Build a cue list from your saved memories, then run the show with GO NEXT.' })));
+          : el('div', { class: 'empty-state', text: 'Build a cue list from your saved memories, then run the show with GO NEXT — or chain cues with autofollow.' })));
   }
   return { render };
 })();
