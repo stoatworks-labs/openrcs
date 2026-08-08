@@ -153,6 +153,11 @@ class Store {
     this.log = [];                   // {dir, text}
     this.listeners = new Set();
     this._pending = false;
+    // Plan mode: while on, sets stage into planState instead of hitting the
+    // device, and reads prefer the staged value — so a whole look can be built
+    // offline and pushed on connect. See pushPlan / clearPlan.
+    this.plan = false;
+    this.planState = new Map();       // "MNEM|i,i" -> staged value
     this.connect();
   }
   connect() {
@@ -196,15 +201,58 @@ class Store {
     this.log.push({ dir, text });
     if (this.log.length > 400) this.log.shift();
   }
-  // value accessor, by answer mnemonic (what the device sends)
-  val(m, ...idx) { return this.state.get(keyOf(m, idx)); }
+  // value accessor, by answer mnemonic (what the device sends). In plan mode a
+  // staged value shadows the device's, so the UI reflects the planned look.
+  val(m, ...idx) {
+    const k = keyOf(m, idx);
+    if (this.plan && this.planState.has(k)) return this.planState.get(k);
+    return this.state.get(k);
+  }
   arr(m, n) { return Array.from({ length: n }, (_, i) => this.val(m, i)); }
 
   send(o) { if (this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
-  set(m, idx, v) { this.send({ t: 'set', m, i: idx, v }); this.pushLog('tx', `${m} ${[...idx, v].join(',')}`); }
+  set(m, idx, v) {
+    if (this.plan) {                 // stage, don't send
+      this.planState.set(keyOf(m, idx), v);
+      this.pushLog('pl', `${m} ${[...idx, v].join(',')}`);
+      this.notify();
+      return;
+    }
+    this.send({ t: 'set', m, i: idx, v });
+    this.pushLog('tx', `${m} ${[...idx, v].join(',')}`);
+  }
   get(m, idx = []) { this.send({ t: 'get', m, i: idx }); }
   scan(m) { this.send({ t: 'scan', m }); }
   raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
+
+  // ---- plan mode ----
+  setPlan(on) { this.plan = !!on; this.notify(); }
+  planList() {
+    const out = [];
+    for (const [k, v] of this.planState) {
+      const bar = k.indexOf('|'); const m = k.slice(0, bar); const idxStr = k.slice(bar + 1);
+      out.push({ m, idx: idxStr === '' ? [] : idxStr.split(',').map(Number), v, name: this.byMnem.get(m)?.name || m });
+    }
+    return out;
+  }
+  clearPlan() { this.planState.clear(); this.notify(); }
+  // Send every staged value to the device for real, then clear the plan.
+  async pushPlan(onProgress) {
+    const wasPlan = this.plan;
+    this.plan = false;               // sends go to the device now
+    const entries = this.planList();
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      this.send({ t: 'set', m: e.m, i: e.idx, v: e.v });
+      this.pushLog('tx', `${e.m} ${[...e.idx, e.v].join(',')}`);
+      if (onProgress) onProgress((i + 1) / entries.length);
+      if ((i & 15) === 15) await sleep(30);
+    }
+    this.planState.clear();
+    this.plan = wasPlan;
+    this.notify();
+    return entries.length;
+  }
 
   subscribe(fn) { this.listeners.add(fn); }
   notify() {
@@ -233,7 +281,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -270,9 +318,13 @@ function header() {
       el('div', { class: 'model', text: model }),
       el('div', { class: 'sub', text: `${plat.toUpperCase()} · :${store.meta?.port ?? ''}` })),
     el('div', { class: 'spacer' }),
-    el('div', { class: 'legend' },
-      el('span', { class: 'pgm' }, el('b'), 'program'),
-      el('span', { class: 'pvw' }, el('b'), 'preview')),
+    store.plan
+      ? el('button', { class: 'chip plan', title: 'Plan mode — edits are staged, not sent. Open Plan to push.',
+          onclick: () => switchView('plan') },
+          el('span', { class: 'dot' }), `PLAN · ${store.planState.size}`)
+      : el('div', { class: 'legend' },
+          el('span', { class: 'pgm' }, el('b'), 'program'),
+          el('span', { class: 'pvw' }, el('b'), 'preview')),
     el('div', { class: 'chip ' + (store.connected ? 'on' : 'off') },
       el('span', { class: 'dot' }), store.connected ? 'ONLINE' : 'OFFLINE'));
 }
@@ -284,7 +336,7 @@ const NAV = [
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
-  ['shows', 'Shows'], ['inspector', 'Inspector'], ['console', 'Console'],
+  ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'],
 ];
 
 // a view is shown only when the device advertises the variable it needs
@@ -1470,6 +1522,55 @@ VIEWS.destinations = (() => {
       editing ? memberEditor() : null);
   }
   return { render, enter };
+})();
+
+// ---------- Plan (offline planning) ----------
+VIEWS.plan = (() => {
+  let busy = null;   // { frac }
+
+  async function push() {
+    if (!store.connected) { store.notify(); return; }
+    busy = { frac: 0 }; store.notify();
+    await store.pushPlan(f => { busy = { frac: f }; store.notify(); });
+    busy = null; store.notify();
+  }
+
+  function planRow(e) {
+    return el('div', { class: 'plan-row' },
+      el('span', { class: 'plan-mnem', text: e.m + (e.idx.length ? `[${e.idx.join(',')}]` : '') }),
+      el('span', { class: 'plan-name', text: e.name }),
+      el('span', { class: 'plan-val', text: e.v }));
+  }
+
+  function render() {
+    const list = store.planList();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Plan' }),
+        el('span', { class: 'hint', text: 'Build a look with no device — edits are staged, then pushed on connect' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row', style: 'align-items:center' },
+          el('label', { class: 'plan-switch' },
+            checkbox(store.plan, v => store.setPlan(v)),
+            el('span', { text: store.plan ? 'Plan mode ON — edits are staged' : 'Plan mode off — edits go straight to the device' })),
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'chip ' + (store.connected ? 'on' : 'off') },
+            el('span', { class: 'dot' }), store.connected ? 'device online' : 'no device')),
+        el('div', { class: 'hint', text: 'While on, everything you do in the Workspace, Layers, Memories and elsewhere is collected here instead of being sent. Reads show your staged values so the look previews as you build it. Push when a device is connected.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row', style: 'align-items:center' },
+          el('h2', `Staged changes (${list.length})`),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn pgm', onclick: push, disabled: (!list.length || !store.connected || busy) ? true : undefined },
+            store.connected ? 'Push to device' : 'Push (no device)'),
+          list.length ? el('button', { class: 'btn ghost', onclick: () => store.clearPlan() }, 'Discard') : null),
+        busy ? el('div', { class: 'show-prog' },
+          el('div', { class: 'show-prog-bar', style: `width:${Math.round(busy.frac * 100)}%` }),
+          el('span', { class: 'show-prog-label', text: 'Pushing…' })) : null,
+        list.length
+          ? el('div', { class: 'plan-list' }, ...list.slice(0, 300).map(planRow))
+          : el('div', { class: 'empty-state', text: store.plan ? 'No staged changes yet. Go build a look — every edit lands here.' : 'Turn on plan mode to start staging changes.' })));
+  }
+  return { render };
 })();
 
 // ---------- Live ----------
