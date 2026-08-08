@@ -34,9 +34,24 @@ const MODELS = {
 const MIDRA_MODELS = {
   259: 'Pulse2',
 };
+// Devices outside the vendor's PDEV id space identify by their wire model code:
+// DEVICE_STRING (DIdst) is 4 ASCII chars per device, indexed [device, char].
+const WIRE_MODELS = {
+  ALW1: 'almost-least-weasel',
+};
+function wireModel() {
+  if (!store.byMnem.has('DIdst')) return null;
+  let s = '';
+  for (let c = 0; c < 4; c++) {
+    const v = store.val('DIdst', 0, c);
+    if (v == null || v === 0) break;
+    s += String.fromCharCode(v);
+  }
+  return WIRE_MODELS[s] || null;
+}
 function deviceModel() {
   const pdev = store.val('PDEV');
-  if (pdev != null) return MODELS[pdev] || `device ${pdev}`;
+  if (pdev != null) return MODELS[pdev] || wireModel() || `device ${pdev}`;
   const dev = store.val('DEV');
   if (dev != null) return MIDRA_MODELS[dev] || `Midra device ${dev}`;
   return '—';
@@ -345,6 +360,8 @@ window.addEventListener('hashchange', () => {
 function onReady() {
   store.get('?');            // DEV
   store.get('!');            // DEV_PLATFORM -> PDEV
+  // wire model code, for devices whose PDEV id is not in MODELS
+  if (store.byMnem.has('DIdst')) for (let c = 0; c < 4; c++) store.get('DIdst', [0, c]);
   VIEWS[currentView].enter?.();
 }
 

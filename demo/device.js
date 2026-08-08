@@ -284,6 +284,11 @@
 
   // The seam app.js looks for. Returning a factory (rather than an instance)
   // keeps the app's reconnect path working: it just builds another one.
-  const url = (document.currentScript && document.currentScript.dataset.fixtures) || './fixtures.json';
+  // `?device=<name>` selects an alternative fixture (fixtures-<name>.json),
+  // e.g. ?device=almost-least-weasel; the name is constrained to a filename.
+  const pick = new URLSearchParams(location.search).get('device');
+  const url = pick && /^[a-z0-9-]{1,64}$/.test(pick)
+    ? `./fixtures-${pick}.json`
+    : (document.currentScript && document.currentScript.dataset.fixtures) || './fixtures.json';
   globalThis.OPENRCS_DEMO_DEVICE = () => new DemoDevice(url);
 })();

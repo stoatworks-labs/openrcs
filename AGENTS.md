@@ -38,8 +38,9 @@ std binary and may use crates. Keep the split.
 - **Be precise about validation.** The LiveCore codec is confirmed against
   device behaviour; the Midra table is not yet exercised against a device. Do
   not overstate this.
-- **The two platforms differ.** Midra terminates commands with `\r\n`, LiveCore
-  with `\n`. This is not cosmetic and is easy to regress.
+- **The platforms differ.** Midra terminates commands with `\r\n`, LiveCore
+  with `\n`, and `almost_least_weasel` (a custom LiveCore-family switcher
+  profile) with `\r\n`. This is not cosmetic and is easy to regress.
 - **Use vendor names nominatively only** — to state compatibility, never as
   branding or in a way implying endorsement.
 

@@ -27,6 +27,7 @@ views — is the same code the bridge server serves.
 | File | What it is |
 |---|---|
 | `fixtures.json` | The recorded variable table and device state the demo starts from |
+| `fixtures-almost-least-weasel.json` | Alternative fixture for the ALW1 custom-switcher profile — load it with `?device=almost-least-weasel` |
 | `device.js` | The simulated device: same message contract as the bridge's websocket |
 | `demo-footer.js` | The standing "this is a demo" banner and the limitations footer |
 | `demo.css` | The layout changes the hosted build needs (the app is a 100vh grid) |
@@ -45,6 +46,13 @@ the bridge's cache.
 Hand-authoring that would be a guess about what the device does, and guesses
 drift away from the protocol without anything failing loudly. If the fixture
 needs regenerating, record it again rather than editing it.
+
+The almost-least-weasel fixture is the one exception, and it isn't a guess
+either: that device's table in `protocol/almost_least_weasel.json` *is* its
+spec, so its fixture is derived mechanically from the table (definitions plus
+declared defaults, with a small seeded opening look). Values it doesn't seed
+read as each variable's declared minimum, exactly as an unreported variable
+does on the wire.
 
 ## What the simulated device actually models
 

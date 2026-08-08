@@ -9,8 +9,8 @@
 //! reply:  <MNEMONIC>idx0,idx1,…,<value>\n
 //! ```
 //!
-//! The terminator differs by platform: Midra sends CRLF, LiveCore sends LF.
-//! See [`Platform`].
+//! The terminator differs by platform: Midra sends CRLF, LiveCore sends LF,
+//! and the almost-least-weasel custom profile sends CRLF. See [`Platform`].
 //!
 //! Per-variable ranges and dimensions are declarations, not guarantees — the
 //! crate validates against them but the device is the final authority.
@@ -30,7 +30,7 @@ pub use codec::{
     encode_get, encode_get_checked, encode_set, encode_set_checked, parse_frame,
     parse_reply, Decoder, Frame, Reply,
 };
-pub use tables::{livecore, midra};
+pub use tables::{almost_least_weasel, livecore, midra};
 
 /// One controllable variable in the device's control table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +106,9 @@ pub enum Platform {
     Midra,
     /// Ascender 16/32/48, NeXtage 8/16, SmartMatriX Ultra.
     LiveCore,
+    /// almost-least-weasel (ALW1): a custom switcher speaking the
+    /// LiveCore-family wire format with its own identity and dimensions.
+    AlmostLeastWeasel,
 }
 
 impl Platform {
@@ -114,6 +117,7 @@ impl Platform {
         match self {
             Platform::Midra => midra::TERMINATOR,
             Platform::LiveCore => livecore::TERMINATOR,
+            Platform::AlmostLeastWeasel => almost_least_weasel::TERMINATOR,
         }
     }
 
@@ -122,6 +126,7 @@ impl Platform {
         match self {
             Platform::Midra => midra::PORT,
             Platform::LiveCore => livecore::PORT,
+            Platform::AlmostLeastWeasel => almost_least_weasel::PORT,
         }
     }
 
@@ -130,6 +135,7 @@ impl Platform {
         match self {
             Platform::Midra => midra::VARS,
             Platform::LiveCore => livecore::VARS,
+            Platform::AlmostLeastWeasel => almost_least_weasel::VARS,
         }
     }
 

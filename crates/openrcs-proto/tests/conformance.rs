@@ -107,3 +107,34 @@ fn a_full_transcript_decodes_in_order() {
     assert_eq!(values, 8);
     assert!(d.pending().is_empty());
 }
+
+#[test]
+fn almost_least_weasel_table_matches_its_profile() {
+    // ALW1 speaks the LiveCore wire format at LiveCore-compatible mnemonics,
+    // but with its own identity and dimensions: 8 inputs, 2 screens, 3 layers
+    // per screen, 2 take groups — and CRLF-terminated commands, unlike
+    // LiveCore's bare LF.
+    const ALW: Platform = Platform::AlmostLeastWeasel;
+    assert_eq!(ALW.terminator(), "\r\n");
+    assert_eq!(ALW.port(), 10500);
+
+    let plat = ALW.lookup("!").unwrap();
+    assert_eq!(plat.answer, "PDEV");
+    assert_eq!((plat.min, plat.max, plat.default), (87, 87, 87));
+
+    assert_eq!(ALW.lookup("INava").unwrap().dims, &[8]);        // inputs
+    assert_eq!(ALW.lookup("SCmly").unwrap().dims, &[2]);        // screens
+    assert_eq!(ALW.lookup("PRinp").unwrap().dims, &[2, 3, 3]);  // screen, bank, layer
+    assert_eq!(ALW.lookup("OUava").unwrap().dims, &[2]);        // outputs
+    assert_eq!(ALW.lookup("GCtba").unwrap().dims, &[2]);        // take groups
+    assert_eq!(ALW.lookup("DIdst").unwrap().dims, &[2, 4]);     // wire model code
+
+    // an index the LiveCore table accepts is out of range here
+    let err = encode_get_checked(ALW, "INava", &[8]).unwrap_err();
+    assert!(matches!(err, Error::IndexOutOfRange { bound: 8, .. }));
+    assert!(encode_get_checked(Platform::LiveCore, "INava", &[8]).is_ok());
+
+    // inventory the device does not have is absent, not zero-sized
+    assert!(ALW.lookup("LSval").is_none());   // stills
+    assert!(ALW.lookup("SEbst").is_none());   // soft edge
+}

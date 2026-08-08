@@ -112,6 +112,11 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 # ...or --platform midra ; then open http://127.0.0.1:8730/
 ```
 
+A third platform, `--platform almost-least-weasel` (alias `alw`), targets a
+custom switcher profile that speaks the LiveCore-family wire format with its
+own identity and smaller dimensions (8 inputs, 2 screens, 3 layers per screen).
+Its table lives in `protocol/almost_least_weasel.json` like the other two.
+
 The UI is **platform-aware** — it reads the variable table the device advertises
 and shows only the views that processor supports. It centres on a **Workspace**
 working page — sources (inputs and stills), every screen editable side by side

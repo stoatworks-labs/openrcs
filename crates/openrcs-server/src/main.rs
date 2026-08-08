@@ -77,6 +77,7 @@ fn parse_args() -> Config {
             "--platform" => {
                 platform = match args.next().as_deref() {
                     Some("midra") => Platform::Midra,
+                    Some("almost-least-weasel") | Some("alw") => Platform::AlmostLeastWeasel,
                     _ => Platform::LiveCore,
                 }
             }
@@ -87,7 +88,8 @@ fn parse_args() -> Config {
             }
             "--web" => web_dir = args.next().unwrap_or(web_dir),
             "-h" | "--help" => {
-                eprintln!("openrcs-server [--device host:port] [--platform livecore|midra] \
+                eprintln!("openrcs-server [--device host:port] \
+                           [--platform livecore|midra|almost-least-weasel] \
                            [--listen host:port] [--web dir]");
                 std::process::exit(0);
             }
@@ -179,6 +181,7 @@ fn platform_name(p: Platform) -> &'static str {
     match p {
         Platform::LiveCore => "livecore",
         Platform::Midra => "midra",
+        Platform::AlmostLeastWeasel => "almost-least-weasel",
     }
 }
 

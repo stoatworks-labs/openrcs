@@ -32,14 +32,14 @@ done
 # commit stale. A content hash changes exactly when the assets change, which is
 # the only thing the query string is for.
 stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
-              "$here/demo-footer.js" "$here/support-footer.js" "$here/fixtures.json" \
+              "$here/demo-footer.js" "$here/support-footer.js" "$here"/fixtures*.json \
          | shasum -a 256 | cut -c1-8)"
 
 rm -rf "$dist"
 mkdir -p "$dist"
 cp "$web/app.js" "$web/style.css" "$dist/"
 cp "$here/device.js" "$here/demo.css" "$here/demo-footer.js" \
-   "$here/support-footer.js" "$here/fixtures.json" "$dist/"
+   "$here/support-footer.js" "$here"/fixtures*.json "$dist/"
 
 # index.html is generated rather than copied: the demo has to install the
 # simulated device BEFORE app.js runs, and wants a fixed asset version.
