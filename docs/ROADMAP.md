@@ -10,7 +10,10 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 - **Stage** — an all-screens overview: every active screen with its layers in
   one canvas, a global TAKE ALL / CUT ALL, click-through to editing.
 - **Memories** — master and screen memory grids (recall / load+take / save).
-- **Cues** — a show script over the memories: an ordered cue list with GO NEXT.
+- **Cues** — a show script over the memories: an ordered cue list with GO NEXT,
+  per-cue autofollow (chain to the next after a wait) with a HOLD, and notes.
+- **Destinations** — screen groups as super-destinations: take/cut/T-bar/step-back
+  a whole group at once, TAKE ALL GROUPS, and a grouping editor (`Plngr`/`GCupd`).
 - **Keys** — programmable one-tap macros (recall + take, freeze, black, fade…).
 - **Live** — preview→program take with a transition time, and master fade.
 - **Layers** — a graphical arrangement canvas (drag/resize, snap presets, raise/
@@ -36,7 +39,10 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   many values will actually change, then writes only the differences. Shows are
   kept locally and can be downloaded and re-imported. The engine captures only
   indexed content — never a momentary SAVE/LOAD/TAKE trigger — so a restore can't
-  fire an action. This is the foundation for confidence/undo and offline planning.
+  fire an action. Also hosts **Confidence** — an instant cache-based undo: a ring
+  of lightweight 'look' snapshots, auto-armed before each take, one-click revert.
+- **Plan** — offline planning: stage a whole look/config with no device attached
+  (reads preview your staged values), then push it to the device on connect.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
 ## Near-term parity (already in the protocol)
@@ -78,15 +84,17 @@ per-screen. Next steps — place screens at their real output positions
 (`OSCREEN_OUT_POS`), drag a layer from one screen to another, and show soft-edge
 overlaps between adjacent screens. **Feasible on current data.**
 
-### Super destinations / screen groups — *Event Master*
-`GROUP_CONTROL` / `GROUP_STATUS` expose screen groups: take, cut and recall
-across several screens as one destination. A "destinations" bar that takes a
-whole group at once. **Feasible.**
+### Super destinations / screen groups — *Event Master* — **shipped, v1**
+The Destinations view drives `GROUP_CONTROL`/`GROUP_STATUS`: each group of
+screens (mapped via `Plngr`) is a destination with its own T-bar, take, cut and
+step-back that move the whole group at once, plus TAKE ALL GROUPS and a grouping
+editor that assigns screens and commits with `GCupd`. Next: recall a memory
+across a whole group, and per-group transition presets.
 
-### Cue list / show timeline — *LivePremier* — **shipped, v1**
-The Cues view is the first cut: an ordered list of memory recalls with GO NEXT.
-Next: autofollow/hold timing, per-cue notes, and hooking `SEQ_TAKE` for the
-device's own sequences.
+### Cue list / show timeline — *LivePremier* — **shipped, v2**
+The Cues view is an ordered list of memory recalls with GO NEXT, plus per-cue
+**autofollow** (chain to the next cue after a wait) with a HOLD, and per-cue
+notes. Next: hooking `SEQ_TAKE` for the device's own sequences.
 
 ### User keys / macros — *Event Master, Pixel Flow* — **shipped, v1**
 The Keys view runs multi-action macros on one tap. Next: colour/label per key,
@@ -110,16 +118,15 @@ Aligns with the Stage/canvas idea across devices. **Feasible; an extension of th
 bridge.**
 
 ### Operator ergonomics
+- **Offline / plan mode** — **shipped, v1.** The Plan view stages every edit into
+  a local overlay (reads preview the staged values) so a whole look or config is
+  built with no device attached, then pushed on connect. Next: seed a plan from
+  the device's current state, and per-scope push.
+- **Confidence & undo** — **shipped, v1.** An instant cache-based ring of 'look'
+  snapshots in the Shows view, auto-armed before each take, one-click revert.
+  Next: snapshot other scopes, and a visible revert countdown.
 - **Touch / tablet mode** — larger targets, a simplified "show" layout for a
-  panel at front-of-house.
-- **Offline / plan mode** — build memories and layer arrangements against the
-  variable model with no device attached, then push on connect. The **Shows**
-  capture/restore engine is the state layer this builds on: a captured show is
-  already an editable snapshot of the variable model that restore can push.
-- **Confidence & undo** — snapshot-and-restore around risky actions, using the
-  device's own state as the source of truth. Now a short step on top of
-  **Shows**: an auto-captured "look" before a risky action, with one-click
-  revert, is the same capture/diff/restore path with an auto-named snapshot.
+  panel at front-of-house. **Not yet built.**
 
 ## A note on the inspirations
 
