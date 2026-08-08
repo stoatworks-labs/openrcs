@@ -585,6 +585,22 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .conf-row .show-main { flex: 1; min-width: 0; }
 .conf-name { font: 600 13px var(--sans); color: var(--text); text-transform: capitalize; }
 
+/* ---------- Wall (screen output-position map) ---------- */
+.wall-wrap { overflow-x: auto; }
+.wall-canvas { position: relative; background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r); }
+.wall-gline { position: absolute; background: var(--line); }
+.wall-gline.v { top: 0; bottom: 0; width: 1px; }
+.wall-gline.h { left: 0; right: 0; height: 1px; }
+.wall-screen { position: absolute; border: 2px solid rgba(255,255,255,.35); border-radius: 3px; cursor: grab;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); touch-action: none; overflow: hidden; }
+.wall-screen:active { cursor: grabbing; }
+.wall-screen.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); z-index: 5; }
+.wall-name { font: 700 13px var(--sans); }
+.wall-dim { font: 600 10px var(--mono); opacity: .85; }
+.wall-sel-name { font: 700 13px var(--sans); color: var(--text); }
+.wall-ro { font: 600 12px var(--mono); color: var(--text); padding: 0 6px; }
+
 /* ---------- Cue autofollow ---------- */
 .cue.following { border-color: var(--armed); box-shadow: inset 0 0 0 1px var(--armed); }
 .cue-follow { display: flex; align-items: center; gap: 5px; }

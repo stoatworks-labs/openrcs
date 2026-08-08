@@ -300,7 +300,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['workspace', 'stage', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -350,7 +350,7 @@ function header() {
 
 const NAV = [
   { section: 'Program' },
-  ['workspace', 'Workspace'], ['stage', 'Stage'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
+  ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
   ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
@@ -372,6 +372,7 @@ const VIEW_REQUIRES = {
   // shown whenever a live-look scope exists — true on both platforms
   shows: () => store.byGroup.has('PRESET') || store.byGroup.has('GRP_PRESET_ELEMENT'),
   destinations: 'GCsta',   // screen-group take model (LiveCore)
+  wall: 'OSpoh',           // screen output-position map (LiveCore)
 };
 const viewSupported = (id) => {
   const req = VIEW_REQUIRES[id];
@@ -2053,6 +2054,115 @@ VIEWS.stage = (() => {
       screens.length
         ? el('div', { class: 'stage-grid' }, ...screens.map(screenCard))
         : el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured yet.' })));
+  }
+  return { enter, render };
+})();
+
+// ---------- Wall (screen output-position map) ----------
+// Screens occupy a rectangle in the device's output-tile grid: position
+// OSpoh/OSpov (1..16, 1-based) and size SCsih/SCsiv (in tiles). This canvas
+// places them to scale and lets you drag one to reposition it, then commit the
+// arrangement with OSCREEN_OUT_GLOBAL_UPDATE.
+VIEWS.wall = (() => {
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
+  const posH = (s) => store.val('OSpoh', s) || 1;
+  const posV = (s) => store.val('OSpov', s) || 1;
+  const sizeH = (s) => store.val('SCsih', s) || 1;
+  const sizeV = (s) => store.val('SCsiv', s) || 1;
+
+  let sel = null, grab = null;
+
+  function enter() {
+    for (const m of ['SCssh', 'SCssv', 'SCmly', 'OSpoh', 'OSpov', 'SCsih', 'SCsiv', 'OSsou']) if (store.byMnem.has(m)) store.scan(m);
+    for (let s = 0; s < screenCount(); s++) fetchLabel('LBScr', [s]);
+  }
+
+  const gridDims = () => {
+    let w = 4, h = 3;
+    for (const s of active()) { w = Math.max(w, posH(s) + sizeH(s) - 1); h = Math.max(h, posV(s) + sizeV(s) - 1); }
+    return { w, h };
+  };
+
+  function onDown(e, s, tile) {
+    beginDrag(); sel = s;
+    grab = { x: e.clientX, y: e.clientY, poh: posH(s), pov: posV(s), tile };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    store.notify();
+  }
+  function onMove(e, s) {
+    if (!DRAG || sel !== s || !grab) return;
+    const dx = Math.round((e.clientX - grab.x) / grab.tile);
+    const dy = Math.round((e.clientY - grab.y) / grab.tile);
+    const nh = clamp(grab.poh + dx, 1, 16 - sizeH(s) + 1);
+    const nv = clamp(grab.pov + dy, 1, 16 - sizeV(s) + 1);
+    if (nh !== posH(s)) store.set('OSpoh', [s], nh);
+    if (nv !== posV(s)) store.set('OSpov', [s], nv);
+  }
+  function onUp() { endDrag(); grab = null; }
+
+  const stepSize = (s, axis, d) => {
+    const m = axis === 'h' ? 'SCsih' : 'SCsiv';
+    const cur = axis === 'h' ? sizeH(s) : sizeV(s);
+    const pos = axis === 'h' ? posH(s) : posV(s);
+    store.set(m, [s], clamp(cur + d, 1, 16 - pos + 1));
+  };
+
+  function screenRect(s, tile) {
+    const w = sizeH(s) * tile, h = sizeV(s) * tile;
+    const left = (posH(s) - 1) * tile, top = (posV(s) - 1) * tile;
+    const sw = store.val('SCssh', s) || 0, sh = store.val('SCssv', s) || 0;
+    return el('div', {
+      class: 'wall-screen' + (sel === s ? ' sel' : ''),
+      style: `left:${left}px;top:${top}px;width:${w}px;height:${h}px;background:${srcColor(s + 1)}`,
+      onpointerdown: e => onDown(e, s, tile),
+      onpointermove: e => onMove(e, s),
+      onpointerup: onUp, onpointercancel: onUp,
+      onclick: () => { sel = s; store.notify(); },
+    },
+      el('span', { class: 'wall-name', text: screenLabel(s) }),
+      el('span', { class: 'wall-dim', text: sw ? `${sw}×${sh}` : `${sizeH(s)}×${sizeV(s)} tiles` }));
+  }
+
+  function selPanel() {
+    if (sel == null) return el('div', { class: 'hint', text: 'Click a screen to select it, drag to reposition.' });
+    const s = sel;
+    return el('div', { class: 'row', style: 'align-items:center;flex-wrap:wrap' },
+      el('span', { class: 'wall-sel-name', text: screenLabel(s) }),
+      el('label', { class: 'field' }, 'Pos',
+        el('span', { class: 'wall-ro', text: `${posH(s)},${posV(s)}` })),
+      el('label', { class: 'field' }, 'Width',
+        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', -1) }, '−'),
+        el('span', { class: 'wall-ro', text: sizeH(s) }),
+        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', 1) }, '+')),
+      el('label', { class: 'field' }, 'Height',
+        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', -1) }, '−'),
+        el('span', { class: 'wall-ro', text: sizeV(s) }),
+        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', 1) }, '+')));
+  }
+
+  function render() {
+    const screens = active();
+    const { w, h } = gridDims();
+    const CW = 720, tile = Math.floor(CW / w), CH = tile * h;
+    const canvas = el('div', { class: 'wall-canvas', style: `width:${w * tile}px;height:${CH}px;--tile:${tile}px` });
+    // grid lines
+    for (let x = 1; x < w; x++) canvas.append(el('div', { class: 'wall-gline v', style: `left:${x * tile}px` }));
+    for (let y = 1; y < h; y++) canvas.append(el('div', { class: 'wall-gline h', style: `top:${y * tile}px` }));
+    for (const s of screens) canvas.append(screenRect(s, tile));
+
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Wall' }),
+        el('span', { class: 'hint', text: 'Where each screen sits in the output — drag to arrange, then apply' }),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn pgm', onclick: () => { if (store.byMnem.has('OSupd')) store.set('OSupd', [], 1); }, disabled: store.byMnem.has('OSupd') ? undefined : true }, 'Apply to device')),
+      el('div', { class: 'panel' }, selPanel()),
+      el('div', { class: 'panel' },
+        screens.length
+          ? el('div', { class: 'wall-wrap' }, canvas)
+          : el('div', { class: 'empty-state', text: 'No active screens to map.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'hint', text: 'Positions are in output tiles (OSpoh/OSpov); size is SCsih/SCsiv. Apply commits the layout with a global output update.' })));
   }
   return { enter, render };
 })();
