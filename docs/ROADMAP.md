@@ -7,8 +7,12 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 
 ## Shipped
 
+- **Show mode** — a big-target front-of-house surface: large CUT ALL / TAKE ALL,
+  a TAKE tile per destination, and a master-memory grid that recalls on tap.
 - **Stage** — an all-screens overview: every active screen with its layers in
   one canvas, a global TAKE ALL / CUT ALL, click-through to editing.
+- **Wall** — a screen output-position map: each screen placed in the output-tile
+  grid at its real position (`OSpoh`/`OSpov`), drag to arrange, apply with `OSupd`.
 - **Memories** — master and screen memory grids (recall / load+take / save).
 - **Cues** — a show script over the memories: an ordered cue list with GO NEXT,
   per-cue autofollow (chain to the next after a wait) with a HOLD, and notes.
@@ -77,12 +81,11 @@ Confirmed on a NeXtage 16. Two limits found on hardware: the files are named
 other spelling 404 even with the matching snapshot slots enabled, so screens,
 outputs and stills still have no thumbnail. A Midra serves no HTTP at all.
 
-### Stage as a true canvas — *Pixelflow*
-The Stage view is the first step toward a pixel-space model: one canvas, every
-screen as a viewport, content arranged across the whole thing rather than
-per-screen. Next steps — place screens at their real output positions
-(`OSCREEN_OUT_POS`), drag a layer from one screen to another, and show soft-edge
-overlaps between adjacent screens. **Feasible on current data.**
+### Stage as a true canvas — *Pixelflow* — **shipped, v1 (Wall)**
+The Wall view places each screen at its real output position (`OSpoh`/`OSpov`,
+size `SCsih`/`SCsiv`) in the output-tile grid, draggable and committed with
+`OSupd`. Next: drag a layer from one screen to another, and show soft-edge
+overlaps between adjacent screens on the same canvas.
 
 ### Super destinations / screen groups — *Event Master* — **shipped, v1**
 The Destinations view drives `GROUP_CONTROL`/`GROUP_STATUS`: each group of
@@ -125,8 +128,9 @@ bridge.**
 - **Confidence & undo** — **shipped, v1.** An instant cache-based ring of 'look'
   snapshots in the Shows view, auto-armed before each take, one-click revert.
   Next: snapshot other scopes, and a visible revert countdown.
-- **Touch / tablet mode** — larger targets, a simplified "show" layout for a
-  panel at front-of-house. **Not yet built.**
+- **Touch / tablet mode** — **shipped, v1 (Show mode).** A big-target FOH surface
+  with TAKE ALL/CUT ALL, per-destination take tiles, and master-memory recall
+  tiles. Next: per-screen tiles and a lock so it can't be left accidentally.
 
 ## A note on the inspirations
 
