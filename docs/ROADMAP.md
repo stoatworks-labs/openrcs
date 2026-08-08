@@ -16,6 +16,11 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
 - **Layers** — a graphical arrangement canvas (drag/resize, snap presets, raise/
   lower z-order) plus a full property editor: source, opacity, position, size,
   border, crop, per-layer opening/closing transitions, and the native background.
+- **Workspace** — the working page, and the one to drive a show from: drag a
+  source from the palette onto a layer, program stacked over preview per screen
+  with the on-air bank marked, a properties panel exposing every per-layer
+  variable the device holds, per-screen take/cut/T-bar/step-back, and the full
+  144-slot screen and master memory system with labels and category filters.
 - **Setup** — a live **Tally** grid; Inputs; Outputs with format, HDCP and output
   processing (brightness/contrast/gamma/gain); Screens; Stills; **Capture** (grab
   a source frame — full or a graphical region — into the still library);
@@ -32,6 +37,21 @@ Concrete device capabilities not yet given a dedicated surface:
 
 - **Screen mapping** — place each screen at its real output position for the Stage
   canvas, and the two monitor outputs in a monitoring screen (`MONITORING_SCREEN`).
+- **Confidence memories** (`CM*`) and per-screen **Confidential** (`CO*`) — the
+  fullscreen/mosaic core is done; these two grids are not yet exposed.
+- **Cut & fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` (mask curve) are known,
+  but the rest of the RCS's Cut & Fill panel has no obvious mnemonics yet.
+
+## Open questions on hardware
+
+- **Midra layer allocation.** On a Pulse2 only layer slot 0 accepted a `PRinp`
+  write; the others are silently dropped, with no `E` code. Whatever the RCS2
+  does to open a Midra layer is not yet known, so the Workspace reads back after
+  every Midra source write and says so when the device refuses. Capturing RCS2's
+  own traffic against a device is the way to settle it.
+- **Midra source numbering** above the frame's input count. A Pulse2 with eight
+  inputs was found with a layer on source 9, so 9–11 are frame/logo/colour in
+  some order. openrcs shows them as "Source n" rather than guess.
 
 ## Beyond the stock control software
 
@@ -39,13 +59,14 @@ Features the manufacturer's own control software doesn't really offer, that
 openrcs is well placed to add because it already sits as a server between the
 device and its clients.
 
-### Live source thumbnails — *Event Master, LivePremier*
-The device has a snapshot system (`SNAPSHOTS`: `SNena` per source, `SNlsz`
-resolution) and serves the images over HTTP. The bridge server can fetch and
-proxy them, so source pickers, the layer canvas, and the Stage view show the
-*actual picture* on each input and layer — the single biggest jump in
-day-to-day usability. **Feasible; needs the device's HTTP thumbnail endpoint
-confirmed on hardware.**
+### Live source thumbnails — *Event Master, LivePremier* — **shipped, v1**
+The device's snapshot system (`SNAPSHOTS`: `SNena` per source, `SNlsz`
+resolution) is served over its own HTTP server, and the Workspace now shows the
+real picture on each input in the source palette and on the layers themselves.
+Confirmed on a NeXtage 16. Two limits found on hardware: the files are named
+`.bmp` but are PNGs, and **only inputs** are served — `capture_out_N` and every
+other spelling 404 even with the matching snapshot slots enabled, so screens,
+outputs and stills still have no thumbnail. A Midra serves no HTTP at all.
 
 ### Stage as a true canvas — *Pixelflow*
 The Stage view is the first step toward a pixel-space model: one canvas, every
@@ -102,5 +123,6 @@ PixelHue's **Pixel Flow** (a layer-based canvas with a clean touch UI). openrcs
 borrows the ideas that its LiveCore/Midra targets can actually execute.
 
 Everything above is gated on hardware access for the features that touch signal
-paths (thumbnails, capture, EDID) and on confirming the enum meanings the
-Inspector currently shows as raw numbers.
+paths (capture, EDID). The LiveCore enum meanings are no longer a guess — they
+were recovered from the device's own Web RCS and are documented in
+[PROTOCOL.md](PROTOCOL.md); the Midra table still has the gaps listed above.

@@ -42,32 +42,54 @@ single shape.
 ![The working page — sources, live screens and memories on one page](screenshots/workspace.png)
 
 One page that mirrors how you actually drive a show, with everything in reach:
-the **source palette** down the left, **every active screen** laid out and
-editable side by side in the middle, and the **memory strip** along the bottom.
-The page fits the window — the previews grow to fill the space and the memory
-strip stays in view, so nothing is a scroll away. Collapse the main menu with the
-button top-left (it stays collapsed) when you want the screens even larger.
+the **source palette** down the left, **every active screen** in the middle with
+its program above its preview, and the **layer properties** panel on the right.
+The page fits the window — the previews grow to fill the space — and the memory
+strip along the bottom folds away when you want more room. Collapse the main menu
+with the button top-left (it stays collapsed) for more space still.
 
-- **Arm a source**, then click a screen's layer slot — or click straight onto the
-  canvas — to drop it in. Arm **— none —** to clear a layer. The source palette
-  has **Inputs** and **Stills** tabs (LiveCore) — the Stills tab lists the loaded
-  frame-store images, so you can place a still just like a live input.
-- **Drag and resize** layers directly on each screen, exactly as in the Layers
-  editor, with every screen live at once. One screen fills the width; two or more
-  share it side by side.
-- **Layout presets** on each screen — **Fill**, **2-up**, **Quad**, **PiP** —
-  arrange that screen's assigned sources into a common look in one click.
-- Each screen has its own **Take**; **Take all** cuts every visible screen.
-- **Show** picks the contexts on screen — **Program**, **Preview**, or both.
-  With both on, each screen shows a program and a preview canvas side by side
-  (tagged red and green), and each edits its **own** context, so you can build
-  preview next to what's on air. On a Midra unit the program preset is
-  protected, so it defaults to preview; a LiveCore unit defaults to program.
-- **Screens** toggles pick which screens are shown — hide the ones you're not
-  touching and the rest grow to fill the space.
-- The memory strip follows each family's model — LiveCore **master memories**
-  (recall and take a whole-device look) or Midra **presets** (recalled to
-  preview).
+- **Drag a source onto a layer.** Drag from the palette onto a layer rectangle,
+  onto a layer slot, or onto bare canvas — dropping on the canvas puts the source
+  on the first free layer, where you let go. Clicking a source **arms** it instead,
+  for touch panels: arm, then tap a layer. Arm **— none —** to clear a layer.
+  The palette has **Inputs**, **Stills** and **Other** tabs on LiveCore.
+- **Live thumbnails.** Where the device offers them (LiveCore inputs), the palette
+  and the layers on the canvas show the actual picture on that input, refreshed a
+  few times a minute. openrcs turns the device's snapshot system on for you.
+- **Drag and resize** layers directly on each canvas, with every screen live at
+  once, and use the **layout presets** — Fill, 2-up, 3-up, Quad, PiP, Stack — to
+  arrange a screen's assigned sources into a common look in one click.
+- **The layer properties panel** opens when you select a layer, and exposes
+  everything the device holds for it: source and z-order, position and size (with
+  keep-aspect, screen size, content size, a nine-point placement pad and aspect
+  ratio presets), transparency and the master fader, cropping and aspect override,
+  border style, colour, size and opacity, opening and closing transitions with
+  their directions, timing and speed, the flying curve, and the effects — force
+  transition, smooth move, flip, black & white, negative, sepia, solarise, strobe.
+  A Midra unit shows its own equivalents instead, including per-layer opening and
+  closing durations and a layer freeze.
+- **Program sits above preview** for each screen, tagged red and green, with the
+  live one marked **ON AIR**. Each canvas edits its own context, so you can build
+  the next look underneath what is on air. **Show** picks which of the two you
+  want; **Screens** toggles hide the ones you are not touching.
+- **Take and Cut per screen**, plus a **T-bar** to run the transition by hand, a
+  **step back** to the look before the last take, and — on a Midra — screen freeze
+  and reload-program. **Take all** and **Cut all** in the top bar cover every
+  visible screen, with a take time you set once.
+
+  On a LiveCore, which preset bank is program moves as you take; openrcs reads
+  that from the device rather than assuming, so the ON AIR tag always follows the
+  real output. If a transition stalls, a **···** button appears to complete it.
+
+- **Unavailable sources are flagged.** A layer pointed at an input the frame does
+  not have can never open, and a take waiting on it never lands — openrcs marks
+  those layers amber and offers to clear them, rather than letting you discover it
+  mid-show.
+- **Memories** along the bottom. On LiveCore that is the device's 144 **screen
+  memories** and 144 **master memories**, with save mode, load, load-and-take,
+  erase, editable labels, and the per-category **filter** so a recall can bring in
+  only the layer geometry, or only the sources, and so on. On a Midra it is the
+  eight presets that live in the unit.
 
 ## Stage
 

@@ -93,14 +93,104 @@ One index (screen, 0–1), value 0–10000. Screen 1 to 50 % travel:
 
 ## Device HTTP surface
 
-The device serves HTTP on port 80 alongside the control socket. Input
-thumbnails are BMPs, cache-busted by timestamp:
+A LiveCore serves HTTP on port 80 alongside the control socket. Input
+thumbnails are cache-busted by timestamp:
 
 ```
 http://<ip>/assets/Snapshots/capture_in_8.bmp?time=1777759289995
 ```
 
-Useful for source previews.
+Confirmed on a NeXtage 16, with these caveats:
+
+- The file is named `.bmp` but the body is a **PNG** (128 px wide, RGBA).
+- It only carries a picture once `SNAPSHOTS` is enabled for that source —
+  `SNdis` (global disable) clear and `SNena[i]` set. Until then the request
+  still returns 200, with a blank image.
+- **Inputs only.** `capture_out_N`, `capture_prw_N` and every other spelling
+  tried return 404, even with the matching output and preview snapshot slots
+  enabled. There is no thumbnail for a screen, output or still.
+- A Midra (Pulse2) serves no HTTP at all — the port refuses the connection.
+
+`openrcs-server` reports the device host to the browser in its `meta` frame so
+the control surface can fetch these directly from the device.
+
+## Preset banks and the take (LiveCore)
+
+`PRinp[screen, preset, layer]` addresses three fixed preset buffers — PA, PB and
+PC. A take does **not** swap their contents; it changes which one the screen is
+showing, and `GCsta[group]` reports that:
+
+| `GCsta` | meaning | live bank |
+|---|---|---|
+| 0 | `AT_DOWN` | PA |
+| 1 | `AT_UP` | PB |
+| 2 | `EFFECT_FROM_DOWN` | mid-transition, leaving PA |
+| 3 | `EFFECT_FROM_UP` | mid-transition, leaving PB |
+
+So "program" is the bank the device names, not a constant index. A take is
+therefore directional: `GCtku[group]` transitions to the UP bank over
+`GCtup[group]` ms, `GCtkd`/`GCtdn` to the DOWN bank. Firing the direction the
+screen is already at does nothing. `GCtba[group]` is the T-bar (0 = DOWN,
+65535 = UP) and drives the same engine; `GCtfr[group]` completes a transition
+immediately.
+
+`GC*` is indexed by **group**, not screen — `Plngr[screen]` maps one to the
+other (identity unless screens have been grouped, which is why the difference is
+easy to miss).
+
+Two traps worth knowing:
+
+- A layer pointed at a source the frame does not have (an input with no card)
+  never opens, and the take waiting on it **never lands** — the group sits in
+  `EFFECT_FROM_*` indefinitely. `GCtfr` is the way out.
+- `PRlay` is the RCS's multi-layer *edit selection*, not layer visibility. A
+  layer shows because it has a source.
+
+To ask the device which bank is live rather than inferring it: set `PMscf`
+(screen), `PMprf` = 0 (`PRESET_MODE` MAIN), `PMmet` (slot), `PMsav` = 1, then
+read `PMinp[slot, layer]` — the device saves whichever bank is on air.
+
+## Preset elements differ between the platforms
+
+LiveCore packs its per-layer booleans into one bitfield, `PRflg` (`PE_FLAGS`):
+
+| bit | meaning | bit | meaning |
+|---|---|---|---|
+| 0 | force transition | 10 | black & white |
+| 1 | smooth move | 11 | negative |
+| 2 | flip H | 12 | sepia |
+| 3 | flip V | 13 | solarise |
+| 4/5/6 | flying bezier 1pt / 2pt / parabolic | 14 | depth cut start |
+| 7/8 | depth cut middle / end | 15 | mask cut & fill |
+| 9 | force cross-transition | 16–19 | anchor slice 0–3 |
+| 20 | rounded border corner | | |
+
+Midra spells the same ideas out as ordinary variables instead — `PRftr`,
+`PRsmm`, `PRfli` — and gives each layer its own `PRodu`/`PRcdu` duration in
+tenths of a second, where LiveCore slides a layer's window inside the screen's
+take with `PRoso`/`PRoeo`/`PRcso`/`PRceo`.
+
+`PMcat` (`PEMEM_CATEGORY`) is the preset-memory load/save filter, one bit each
+for source, pos/size, transparency, crop, border, transitions, effects, timing,
+speed, flying curve, native background and mask — 4095 for all of them.
+
+These names come from the enumerations in the device's own Web RCS rather than
+from guesswork; see the note on recovering them in the research repository.
+
+## Midra layer allocation — unresolved
+
+On a Pulse2, `PRinp[screen, preset, slot]` exposes eight layer slots but only
+slot 0 accepted a source, and a write to any other slot is **silently dropped**:
+no `E` code, the old value simply stays. Re-arming `CTpmu`, writing a single
+value, and giving the layer valid on-screen geometry all failed to make a second
+change stick. Whatever allocates a Midra layer has not been identified —
+`CTqfr`/`CTqfa` answer `E10` on this firmware. Any client must read back after
+writing `PRinp` on Midra rather than trusting the absence of a NAK.
+
+Midra source numbering above the frame's input count is also unconfirmed: a
+Pulse2 with eight inputs (`INava` 1–8, and no plugs at all on 9/10 per `INpav`)
+was found with a layer sitting on source 9, so 9–11 are the frame, logo and
+colour sources in an order nobody has pinned down yet.
 
 ## The data
 

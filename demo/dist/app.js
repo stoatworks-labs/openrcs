@@ -53,16 +53,61 @@ const srcMaxOf = () => store.byMnem.get('PRinp')?.max ?? 41;
 const inputCount = () => store.byMnem.get('INava')?.dims[0] || 24;
 const outputCount = () => store.byMnem.get('OUava')?.dims[0] || 8;
 const hasPRlay = () => store.byMnem.has('PRlay');
-// whether a layer should read as "shown": PRlay on LiveCore, source-present on Midra
-const layerShown = (s, ctx, l) => hasPRlay() ? store.val('PRlay', s, ctx, l) === 1 : (store.val('PRinp', s, ctx, l) || 0) > 0;
-const takeMnem = () => store.byMnem.has('GCtku') ? 'GCtku' : 'GCtak';
-function doTake(screen, ttime) {
-  if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
-  store.set(takeMnem(), [screen], 1);
+// A layer shows because it has a source. PRlay is the RCS's multi-layer *edit
+// selection*, not visibility — reading it as "shown" hides live layers.
+const layerShown = (s, ctx, l) => (store.val('PRinp', s, ctx, l) || 0) > 0;
+
+// ---------- LiveCore preset banks ----------
+// PRinp[s,0], [s,1], [s,2] are the fixed preset buffers PA, PB and PC — a take does
+// not swap their contents. GCsta says which one is on air, so "program" is a bank the
+// device names, not a constant index. GC* are indexed by group, and Plngr maps a
+// screen to its group (identity unless screens have been grouped).
+// Verified on a NeXtage 16; see docs/PROTOCOL.md.
+const GRP_AT_DOWN = 0, GRP_AT_UP = 1, GRP_FROM_DOWN = 2, GRP_FROM_UP = 3;
+const hasBanks = () => store.byMnem.has('GCsta');
+const groupOf = (s) => store.val('Plngr', s) ?? s;
+/** Preset index currently on air for a screen (Midra has one program context). */
+function liveCtx(s) {
+  if (!hasBanks()) return 0;
+  const st = store.val('GCsta', groupOf(s));
+  return (st === GRP_AT_UP || st === GRP_FROM_UP) ? 1 : 0;
 }
+/** Preset index safe to edit — the one that isn't on air. */
+const editCtx = (s) => hasBanks() ? 1 - liveCtx(s) : 1;
+const midTransition = (s) => {
+  const v = store.val('GCsta', groupOf(s));
+  return v === GRP_FROM_DOWN || v === GRP_FROM_UP;
+};
+/** Take: transition to whichever bank is not currently live. */
+function doTake(screen, ttime) {
+  if (!hasBanks()) {                                   // Midra: one-way take per screen
+    if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
+    store.set('GCtak', [screen], 1);
+    return;
+  }
+  const g = groupOf(screen), to = editCtx(screen);
+  // The T-bar and the auto take drive the same transition engine. If the bar is parked
+  // at the end we are heading for, the take has no travel left and the group sits in
+  // EFFECT_FROM_* for ever, so park the bar at the live end before starting.
+  if (store.byMnem.has('GCtba')) store.set('GCtba', [g], to === 1 ? 0 : 65535);
+  if (ttime != null) store.set(to === 1 ? 'GCtup' : 'GCtdn', [g], ttime);
+  store.set(to === 1 ? 'GCtku' : 'GCtkd', [g], 1);
+}
+/** Cut: go straight there. TAKE_FORCE completes whatever transition is running. */
 function doCut(screen) {
-  if (store.byMnem.has('GCtfr')) store.set('GCtfr', [screen], 1);
-  else store.set(takeMnem(), [screen], 1);
+  if (!hasBanks()) { store.set('GCtak', [screen], 1); return; }
+  doTake(screen, 0);
+  setTimeout(() => store.set('GCtfr', [groupOf(screen)], 1), 60);
+}
+/** Complete a transition that is sitting half-done. */
+function forceTake(screen) { if (store.byMnem.has('GCtfr')) store.set('GCtfr', [groupOf(screen)], 1); }
+/** Manual T-bar, 0 = the DOWN bank (PA) fully on, 65535 = the UP bank (PB). */
+function setTbar(screen, v) { if (store.byMnem.has('GCtba')) store.set('GCtba', [groupOf(screen)], v); }
+function tbarValue(screen) { return store.val('GCtba', groupOf(screen)) ?? 0; }
+/** Step a screen back to the look it had before the last take. */
+function doStepBack(screen) {
+  if (store.byMnem.has('GCstb')) store.set('GCstb', [groupOf(screen)], 1);   // LiveCore
+  else if (store.byMnem.has('GCsba')) store.set('GCsba', [screen], 1);       // Midra
 }
 
 // ---------- store ----------
@@ -526,12 +571,121 @@ function throttledSet(m, idx, v) {
   else { clearTimeout(_throttle.get(k + ':t')); _throttle.set(k + ':t', setTimeout(() => store.set(m, idx, v), 45)); }
 }
 
-// LiveCore layer sources: 1–24 inputs, 25–40 stills (still N = source 24+N), 41 pattern
+// ---------- device labels ----------
+// LABEL_STRINGS are 16-char arrays, one variable get/set per character, ASCII 0..126
+// with 0 terminating. Empty on a factory device, so every reader falls back to a
+// positional name.
+const LABEL_LEN = 16;
+function readLabel(m, pre) {
+  if (!store.byMnem.has(m)) return '';
+  let s = '';
+  for (let c = 0; c < LABEL_LEN; c++) {
+    const v = store.val(m, ...pre, c);
+    if (v == null || v === 0) break;
+    s += String.fromCharCode(v);
+  }
+  return s.trim();
+}
+function fetchLabel(m, pre) {
+  if (!store.byMnem.has(m)) return;
+  for (let c = 0; c < LABEL_LEN; c++) store.get(m, [...pre, c]);
+}
+function writeLabel(m, pre, text) {
+  if (!store.byMnem.has(m)) return;
+  const t = [...(text || '')].filter(ch => ch.charCodeAt(0) > 0 && ch.charCodeAt(0) < 127).join('').slice(0, LABEL_LEN);
+  for (let c = 0; c < LABEL_LEN; c++) store.set(m, [...pre, c], c < t.length ? t.charCodeAt(c) : 0);
+}
+// an input's label lives under its *active* plug
+const inputLabel = (i) => readLabel('LBInp', [i, store.val('INplg', i) ?? 0]);
+const screenLabel = (s) => readLabel('LBScr', [s]) || `Screen ${s + 1}`;
+const outputLabel = (o) => readLabel('LBOut', [o]) || `Output ${o + 1}`;
+const stillLabel = (i) => readLabel('LBLgS', [i]);
+const rstillLabel = (i) => readLabel('LBRdS', [i]);
+
+const isMidra = () => store.meta?.platform === 'midra';
+/** How many inputs the frame actually has, per the device's own availability map. */
+function availableInputs() {
+  const d = store.byMnem.get('INava')?.dims[0];
+  if (!d) return inputCount();
+  let n = 0;
+  for (let i = 0; i < d; i++) if (store.val('INava', i) === 1) n++;
+  return n || d;
+}
+
+// LiveCore layer sources (INPUTLAYER): 0 none, 1–24 live inputs, 25–32 large stills,
+// 33–40 reduced stills, 41 colour.
+//
+// Midra numbers its inputs from 1, but what sits above the frame's input count — the
+// frame, logo and colour sources — has not been confirmed against hardware (a Pulse2
+// with eight inputs happily reports a layer on source 9). Those are shown by number
+// rather than given a name we would be guessing at.
 function sourceName(n) {
   if (n == null) return '·';
   if (n === 0) return '— none —';
-  if (store.meta?.platform === 'livecore' && n >= 25 && n <= 40) return 'Still ' + (n - 24);
-  return 'IN ' + n;
+  if (isMidra()) return n <= availableInputs() ? 'IN ' + n : 'Source ' + n;
+  if (n === 41) return 'Colour';
+  if (n >= 33 && n <= 40) return rstillLabel(n - 33) || 'R.Still ' + (n - 32);
+  if (n >= 25 && n <= 32) return stillLabel(n - 25) || 'Still ' + (n - 24);
+  return inputLabel(n - 1) || 'IN ' + n;
+}
+/**
+ * Whether the device can actually produce this source right now.
+ *
+ * This matters more than it looks: a layer pointed at an input the frame has no card
+ * for never opens, and the transition that is waiting for it sits in EFFECT_FROM_*
+ * for ever — the take simply never lands. Confirmed on a NeXtage 16.
+ */
+function sourceAvailable(n) {
+  if (!n) return true;
+  // Midra: only the inputs are known ground; the sources above them are unconfirmed,
+  // so claiming one is missing would be a guess dressed up as a warning.
+  if (isMidra()) return n > availableInputs() ? true : store.val('INava', n - 1) !== 0;
+  if (store.meta?.platform !== 'livecore') return true;
+  if (n === 41) return true;                                    // colour is always there
+  if (n >= 33 && n <= 40) return store.val('RSval', n - 33) !== 0;
+  if (n >= 25 && n <= 32) return store.val('LSval', n - 25) !== 0;
+  const v = store.val('INava', n - 1);
+  return v == null ? true : v === 1;                            // unknown until scanned
+}
+// ---------- source thumbnails ----------
+// The device serves a small PNG per input from its own HTTP server (named .bmp, and
+// only for inputs — outputs and previews 404 even with their snapshot slots enabled).
+// They only appear once SNAPSHOTS is enabled for that source, which the Workspace does
+// on entry. Confirmed on a NeXtage 16; a Pulse2 serves no HTTP at all.
+let SNAP_TICK = 0;
+const snapshotsWork = () => store.meta?.platform === 'livecore' && !!store.meta?.host;
+/** URL for a source's thumbnail, or null when the device cannot provide one. */
+function snapshotUrl(n) {
+  if (!snapshotsWork() || !n || n > 24) return null;
+  // the tick is the whole cache-busting story: a stable URL between ticks means a
+  // re-render reuses the cached image instead of refetching and flickering
+  return `http://${store.meta.host}/assets/Snapshots/capture_in_${n}.bmp?t=${SNAP_TICK}`;
+}
+function startSnapshots() {
+  if (startSnapshots.timer || !snapshotsWork()) return;
+  startSnapshots.timer = setInterval(() => {
+    if (currentView !== 'workspace' || document.hidden) return;
+    SNAP_TICK++;
+    store.notify();
+  }, 3000);
+}
+/** Ask the device to keep thumbnails of the inputs up to date. */
+function enableSnapshots() {
+  if (!store.byMnem.has('SNena')) return;
+  if (store.byMnem.has('SNdis')) store.set('SNdis', [], 0);
+  for (let i = 0; i < inputCount() && i < 24; i++) {
+    if (store.val('SNena', i) !== 1) store.set('SNena', [i], 1);
+  }
+}
+
+/** What kind of thing a source number is, for grouping and colouring. */
+function sourceKind(n) {
+  if (!n) return 'none';
+  if (store.meta?.platform !== 'livecore') return 'input';
+  if (n === 41) return 'colour';
+  if (n >= 33) return 'rstill';
+  if (n >= 25) return 'still';
+  return 'input';
 }
 
 function sourceSelect(mnem, idx, max) {
@@ -539,7 +693,10 @@ function sourceSelect(mnem, idx, max) {
   const cur = store.val(mnem, ...idx);
   const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
   for (let i = 0; i <= max; i++) {
-    const opt = el('option', { value: i, text: sourceName(i) });
+    // an unavailable source stalls any take that waits for it, so it is only listed
+    // when it is the value already on the layer — where hiding it would be a lie
+    if (!sourceAvailable(i) && i !== cur) continue;
+    const opt = el('option', { value: i, text: sourceName(i) + (sourceAvailable(i) ? '' : ' — not available') });
     if (i === (cur ?? 0)) opt.selected = true;
     s.append(opt);
   }
@@ -875,13 +1032,58 @@ VIEWS.live = (() => {
 // biased by +POS_BIAS (so a centred full-screen 1080p layer reads 33728,33308 =
 // 32768 + 960,540). PRsih/PRsiv are the size in pixels.
 const POS_BIAS = 32768;
-// transition-type labels are best-effort; 0 is always "cut" (no animation)
-const TRANSITIONS = ['Cut', 'Fade', 'Slide', 'Wipe', 'Zoom', 'Rotate', 'Push', 'Effect 7'];
+
+// ---------- LiveCore enums ----------
+// Names taken from the device's own Web RCS, so these are the manufacturer's terms
+// rather than guesses. See docs/PROTOCOL.md for how they were recovered.
+const TRANSITIONS = ['Cut', 'Fade', 'Slide', 'Wipe', 'Circle', 'Stretch', 'Wipe advanced', '7'];
+const TRANSITION_WAYS = ['Left → right', 'Right → left', 'Bottom → up', 'Up → bottom',
+  'Vertical from/to centre', 'Horizontal from/to centre', 'Both from/to centre',
+  'SW → NE', 'SE → NW', 'NW → SE', 'NE → SW'];
+const BORDER_STYLES = ['None', 'Edge', 'Smooth', 'Smooth edge', 'Shadow', 'Smooth shadow'];
+// Midra carries five styles rather than six. The manual names only the EDGE and SHADOW
+// families, so this drops "smooth edge" from the LiveCore list — inferred, not confirmed.
+const MIDRA_BORDER_STYLES = ['None', 'Edge', 'Smooth', 'Shadow', 'Smooth shadow'];
+const SHADOW_POSITIONS = ['Bottom right', 'Bottom left', 'Top right', 'Top left'];
+/** Labels for a variable's enum, padded with plain numbers if the device has more. */
+function enumLabels(mnem, names) {
+  const max = store.byMnem.get(mnem)?.max ?? names.length - 1;
+  const out = names.slice(0, max + 1);
+  for (let i = out.length; i <= max; i++) out.push(String(i));
+  return out;
+}
+const ASPECT_OVERRIDES = ['None', '1:1', 'Centred', 'Fullscreen', 'Cropped'];
+const NATIVE_TRANSITIONS = ['Cut', 'Fade', 'Wipe'];
+const LAYER_STATUSES = ['Off', 'Open', 'Close', 'Cross', 'Flying', 'Flying depth', 'Slave', 'Mask'];
+
+// PE_FLAGS — the bit layout of PRflg / PMflg.
+const PE_FLAG = {
+  FORCE_TRANSITION: 0, SMOOTH_TRANSITION: 1, FLIP_H: 2, FLIP_V: 3,
+  FLY_BEZIER_1PT: 4, FLY_BEZIER_2PT: 5, FLY_BEZIER_DEVIANT: 6,
+  DEPTH_CUT_MIDDLE: 7, DEPTH_CUT_END: 8, FORCE_CROSS: 9,
+  BLACK_N_WHITE: 10, NEGATIVE: 11, SEPIA: 12, SOLAR: 13,
+  DEPTH_CUT_START: 14, MASK_CUT_N_FILL: 15,
+  ANCHOR_SLICE_0: 16, ANCHOR_SLICE_1: 17, ANCHOR_SLICE_2: 18, ANCHOR_SLICE_3: 19,
+  ROUND_BORDER_CORNER: 20,
+};
+const flagOn = (v, bit) => ((v ?? 0) >>> bit & 1) === 1;
+const flagSet = (v, bit, on) => on ? ((v ?? 0) | (1 << bit)) >>> 0 : ((v ?? 0) & ~(1 << bit)) >>> 0;
+
+// PEMEM_CATEGORY — the bit layout of PMcat, the preset-memory load/save filter.
+const MEM_FILTERS = [
+  ['Source', 0], ['Pos/size', 1], ['Transparency', 2], ['Crop', 3], ['Border', 4],
+  ['Transitions', 5], ['Effects', 6], ['Timing', 7], ['Speed', 8], ['Flying curve', 9],
+  ['Native bkg', 10], ['Mask', 11],
+];
+const MEM_FILTER_ALL = 4095;
 
 VIEWS.layers = (() => {
   let screen = 0;
-  let ctx = 1;             // PRESET context: 0 = program, 1 = preview (edit here)
+  // Track the *role* being edited, not a preset index: which bank is program moves
+  // with the device (see liveCtx), so a fixed index would edit the wrong one.
+  let role = 'pvw';
   let sel = 0;             // selected layer
+  const ctxOf = () => role === 'pgm' ? liveCtx(screen) : editCtx(screen);
 
   const count = () => { const m = store.val('SCmly', screen) || 0; return m > 0 ? m : 8; };
   const screenPx = () => ({
@@ -891,8 +1093,8 @@ VIEWS.layers = (() => {
   // Midra built-in layouts: GCqly[screen,ctx]=N picks a preset arrangement; the
   // device then pushes the new per-layer geometry, which our canvas reflects.
   function layoutSelect() {
-    const cur = store.val('GCqly', screen, ctx), max = store.byMnem.get('GCqly')?.max ?? 26;
-    const s = el('select', { onchange: (e) => { store.set('GCqly', [screen, ctx], +e.target.value); setTimeout(() => { enter(); store.notify(); }, 350); } });
+    const cur = store.val('GCqly', screen, ctxOf()), max = store.byMnem.get('GCqly')?.max ?? 26;
+    const s = el('select', { onchange: (e) => { store.set('GCqly', [screen, ctxOf()], +e.target.value); setTimeout(() => { enter(); store.notify(); }, 350); } });
     for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: 'Layout ' + (i + 1) }); if (i === cur) o.selected = true; s.append(o); }
     return s;
   }
@@ -901,20 +1103,20 @@ VIEWS.layers = (() => {
     'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
-    // Midra protects the program preset; edits must go to preview (ctx 1) with
+    // Midra protects the program preset; edits must go to preview with
     // preset-update-mode on. Enabling it here lets source/geometry edits stick,
     // then a take commits them. (LiveCore edits apply directly — don't touch it.)
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
-    if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctx]);
+    if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctxOf()]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
-    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctx]);
+    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctxOf()]);
     const n = count();
     for (let l = 0; l < n; l++)
-      for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [screen, ctx, l]);
+      for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [screen, ctxOf(), l]);
   }
 
   function background() {
-    const i = [screen, ctx];
+    const i = [screen, ctxOf()];
     const src = store.val('PNinp', ...i);
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
@@ -926,17 +1128,17 @@ VIEWS.layers = (() => {
 
   // device layer -> {left,top,w,h} in device pixels
   function rectPx(l) {
-    const cx = (store.val('PRpoh', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
-    const cy = (store.val('PRpov', screen, ctx, l) ?? POS_BIAS) - POS_BIAS;
-    const w = store.val('PRsih', screen, ctx, l) ?? 0;
-    const h = store.val('PRsiv', screen, ctx, l) ?? 0;
+    const cx = (store.val('PRpoh', screen, ctxOf(), l) ?? POS_BIAS) - POS_BIAS;
+    const cy = (store.val('PRpov', screen, ctxOf(), l) ?? POS_BIAS) - POS_BIAS;
+    const w = store.val('PRsih', screen, ctxOf(), l) ?? 0;
+    const h = store.val('PRsiv', screen, ctxOf(), l) ?? 0;
     return { left: cx - w / 2, top: cy - h / 2, w, h };
   }
   const setGeom = (l, r) => {
-    throttledSet('PRsih', [screen, ctx, l], Math.round(r.w));
-    throttledSet('PRsiv', [screen, ctx, l], Math.round(r.h));
-    throttledSet('PRpoh', [screen, ctx, l], Math.round(r.left + r.w / 2 + POS_BIAS));
-    throttledSet('PRpov', [screen, ctx, l], Math.round(r.top + r.h / 2 + POS_BIAS));
+    throttledSet('PRsih', [screen, ctxOf(), l], Math.round(r.w));
+    throttledSet('PRsiv', [screen, ctxOf(), l], Math.round(r.h));
+    throttledSet('PRpoh', [screen, ctxOf(), l], Math.round(r.left + r.w / 2 + POS_BIAS));
+    throttledSet('PRpov', [screen, ctxOf(), l], Math.round(r.top + r.h / 2 + POS_BIAS));
   };
 
   function canvas() {
@@ -945,8 +1147,8 @@ VIEWS.layers = (() => {
     const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
     const n = count();
     for (let l = 0; l < n; l++) {
-      const on = layerShown(screen, ctx, l);
-      const src = store.val('PRinp', screen, ctx, l);
+      const on = layerShown(screen, ctxOf(), l);
+      const src = store.val('PRinp', screen, ctxOf(), l);
       // don't clutter the canvas with empty, hidden layers
       if (!src && !on && l !== sel) continue;
       const r = rectPx(l);
@@ -1010,7 +1212,7 @@ VIEWS.layers = (() => {
   // reorder the selected layer in the screen's z-stack (LAYER_SWAP)
   function reorder(dir) {
     store.set('LSscr', [], screen);
-    store.set('LSprs', [], ctx);       // preset = program/preview context (GUESSED)
+    store.set('LSprs', [], ctxOf());       // preset = the bank being edited
     store.set('LSlay', [], sel);
     store.set(dir === 'up' ? 'LSrai' : 'LSlow', [], 1);
   }
@@ -1019,18 +1221,18 @@ VIEWS.layers = (() => {
     const n = count();
     const wrap = el('div', { class: 'layers' });
     for (let l = n - 1; l >= 0; l--) {
-      const src = store.val('PRinp', screen, ctx, l);
-      const on = layerShown(screen, ctx, l);
+      const src = store.val('PRinp', screen, ctxOf(), l);
+      const on = layerShown(screen, ctxOf(), l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
         el('span', { class: 'tag', text: 'L' + (l + 1) }),
         el('span', { class: 'src', text: sourceName(src) }),
-        hasPRlay() ? el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctx, l], store.val('PRlay', screen, ctx, l) === 1 ? 0 : 1); } }, on ? 'Hide' : 'Show') : null));
+        hasPRlay() ? el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctxOf(), l], store.val('PRlay', screen, ctxOf(), l) === 1 ? 0 : 1); } }, on ? 'Hide' : 'Show') : null));
     }
     return wrap;
   }
 
   function editor() {
-    const i = [screen, ctx, sel];
+    const i = [screen, ctxOf(), sel];
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
         el('label', { class: 'field' }, 'Source', sourceSelect('PRinp', i)),
@@ -1077,13 +1279,13 @@ VIEWS.layers = (() => {
     const configured = (store.val('SCmly', screen) || 0) > 0;
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Layers' }),
-        el('span', { class: 'hint', text: `Screen ${screen + 1} · ${ctx === 1 ? 'Preview' : 'Program'} · drag to arrange` })),
+        el('span', { class: 'hint', text: `${screenLabel(screen)} · ${role === 'pgm' ? 'Program' : 'Preview'} · drag to arrange` })),
       el('div', { class: 'panel' },
         el('div', { class: 'row' },
           el('label', { class: 'field' }, 'Screen', screenSelect(screen, v => { screen = v; sel = 0; enter(); store.notify(); })),
           el('div', { class: 'seg' },
-            el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
-            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+            el('button', { class: role === 'pgm' ? 'on take' : '', onclick: () => { role = 'pgm'; enter(); store.notify(); } }, 'Program'),
+            el('button', { class: role === 'pvw' ? 'on recall' : '', onclick: () => { role = 'pvw'; enter(); store.notify(); } }, 'Preview')),
           store.byMnem.has('GCqly') ? el('label', { class: 'field' }, 'Layout', layoutSelect()) : null,
           !configured ? el('span', { class: 'hint', text: '⚠ screen not configured — edits are stored but won’t display until a screen is set up' }) : null)),
       el('div', { class: 'split-wide' },
@@ -1093,7 +1295,7 @@ VIEWS.layers = (() => {
           el('div', { class: 'panel' }, el('h2', 'Background'), background()),
           el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor()))));
   }
-  return { enter, render, focus(s, c) { screen = s; if (c != null) ctx = c; sel = 0; } };
+  return { enter, render, focus(s, r) { screen = s; if (r) role = r; sel = 0; } };
 })();
 
 // device layer -> {left,top,w,h} in device pixels (shared with the Stage view)
@@ -1113,38 +1315,47 @@ function srcColor(n) {
 
 // ---------- Stage (all screens at a glance) ----------
 VIEWS.stage = (() => {
-  let ctx = 0;   // 0 = program (what's on air), 1 = preview
+  // Which role to show, resolved to a preset index per screen — the bank that is
+  // program is the device's business, not a constant (see liveCtx).
+  let role = 'pgm';
   let ttime = 1000;
+  const ctxOf = (s) => role === 'pgm' ? liveCtx(s) : editCtx(s);
   const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
   function takeAll() { for (const s of active()) doTake(s, ttime); }
   function cutAll() { for (const s of active()) doCut(s); }
 
   function enter() {
     for (const m of ['SCssh', 'SCssv', 'SCmly']) store.scan(m);
-    for (let s = 0; s < screenCount(); s++)
+    for (const m of ['GCsta', 'Plngr']) if (store.byMnem.has(m)) store.scan(m);
+    for (let s = 0; s < screenCount(); s++) {
+      fetchLabel('LBScr', [s]);
       for (let l = 0; l < layerSlots(); l++)
-        for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
-          store.get(m, [s, ctx, l]);
+        for (const c of [0, 1])
+          for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
+            store.get(m, [s, c, l]);
+    }
   }
 
   function screenCard(s) {
+    const ctx = ctxOf(s);
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
     const CW = 380, scale = CW / sw, CH = Math.round(sh * scale);
     const cv = el('div', { class: 'stage-screen', style: `width:${CW}px;height:${CH}px` });
     const max = store.val('SCmly', s) || 0;
     for (let l = 0; l < max; l++) {
-      if (!(store.val('PRinp', s, ctx, l) || 0)) continue;   // draw layers that have a source
-      const src = store.val('PRinp', s, ctx, l);
+      const src = store.val('PRinp', s, ctx, l) || 0;
+      if (!src) continue;                                   // draw layers that have a source
       const r = layerRectPx(s, ctx, l);
       cv.append(el('div', {
-        class: 'stage-layer',
+        class: 'stage-layer' + (sourceAvailable(src) ? '' : ' missing'),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;`
              + `background:${srcColor(src)};z-index:${l + 1}`,
       }, el('span', { text: sourceName(src) })));
     }
-    return el('div', { class: 'stage-card', onclick: () => { VIEWS.layers.focus(s, ctx); switchView('layers'); } },
+    return el('div', { class: 'stage-card', onclick: () => { VIEWS.layers.focus(s, role); switchView('layers'); } },
       el('div', { class: 'stage-head' },
-        el('span', { class: 'stage-name', text: `Screen ${s + 1}` }),
+        el('span', { class: 'stage-name', text: screenLabel(s) }),
+        midTransition(s) ? el('span', { class: 'ws-busy', text: '···' }) : null,
         el('span', { class: 'stage-dim', text: `${sw}×${sh} · ${store.val('SCmly', s) || 0} layers` })),
       cv);
   }
@@ -1157,8 +1368,8 @@ VIEWS.stage = (() => {
       el('div', { class: 'panel' },
         el('div', { class: 'takebar' },
           el('div', { class: 'seg' },
-            el('button', { class: ctx === 0 ? 'on take' : '', onclick: () => { ctx = 0; enter(); store.notify(); } }, 'Program'),
-            el('button', { class: ctx === 1 ? 'on recall' : '', onclick: () => { ctx = 1; enter(); store.notify(); } }, 'Preview')),
+            el('button', { class: role === 'pgm' ? 'on take' : '', onclick: () => { role = 'pgm'; enter(); store.notify(); } }, 'Program'),
+            el('button', { class: role === 'pvw' ? 'on recall' : '', onclick: () => { role = 'pvw'; enter(); store.notify(); } }, 'Preview')),
           el('div', { class: 'tbar' },
             el('label', { class: 'field slider' },
               el('span', {}, 'Transition', el('b', { class: 'sv', text: (ttime / 1000).toFixed(1) + 's' })),
@@ -1956,23 +2167,36 @@ VIEWS.softedge = (() => {
   return { enter, render };
 })();
 
-// ---------- Workspace (a working page: sources + multi-screen editing + memories) ----------
+// ---------- Workspace (the working page: sources, screens, layer properties, memories) ----------
+// One page you can actually run a show from: drag a source onto a layer, arrange it,
+// edit every property of the selected layer, take it to air, and store/recall the look.
 VIEWS.workspace = (() => {
-  let showPgm = true, showPvw = false;   // which contexts are displayed (independent toggles)
-  let sel = null;          // { s, c, l } selected layer (c = context)
-  let armed = null;        // armed source number, null = nothing armed
-  let hidden = new Set();  // screen indices hidden from the workspace
-  let srcTab = 'inputs';   // source rail tab: 'inputs' | 'stills'
-  let ctxInit = false;
+  let sel = null;            // { s, c, l } selected layer
+  let armed = null;          // armed source number (click-to-place, the touch-friendly path)
+  let hidden = new Set();    // screens hidden from the page
+  let srcTab = 'inputs';     // source rail tab
+  let showLive = true, showEdit = true;   // which banks are drawn
+  let ttime = 1000;          // take duration, ms
+  let open = new Set(['geom', 'transp', 'effects']);   // expanded inspector sections
+  let keepAspect = false;
+  let dragSrc = null;        // source number under an HTML5 drag
+  let dragLayer = null;      // { s, c, l } layer being dragged between slots
   const B = POS_BIAS;
-  const shownCtx = () => [0, 1].filter(c => (c === 0 ? showPgm : showPvw));
-  const CTXN = (c) => (c === 0 ? 'Program' : 'Preview');
 
   const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
   const maxLayers = (s) => store.val('SCmly', s) || 4;
+  const screenPx = (s) => ({ w: store.val('SCssh', s) || 1920, h: store.val('SCssv', s) || 1080 });
+  // On LiveCore the two banks are program and preview and which is which moves with
+  // GCsta; on Midra context 0 is program and 1 is the protected preview.
+  const ctxRole = (s, c) => (hasBanks() ? (c === liveCtx(s) ? 'pgm' : 'pvw') : (c === 0 ? 'pgm' : 'pvw'));
+  const ctxName = (s, c) => ctxRole(s, c) === 'pgm' ? 'Program' : 'Preview';
+  // program first so the on-air look always sits on top of the stack, whichever
+  // bank the device currently has live
+  const shownCtx = (s) => [0, 1]
+    .filter(c => (ctxRole(s, c) === 'pgm' ? showLive : showEdit))
+    .sort((a, b) => (ctxRole(s, a) === 'pgm' ? 0 : 1) - (ctxRole(s, b) === 'pgm' ? 0 : 1));
 
-  // size every screen canvas to the largest box that fits its slot, keeping aspect ratio,
-  // so the previews grow to fill the window and the memory strip stays in view without scrolling
+  // size every canvas to the largest box that fits its slot, keeping aspect ratio
   function fitCanvases() {
     document.querySelectorAll('.ws-screen .canvas-wrap').forEach(wrap => {
       const cv = wrap.querySelector('.screen-canvas'); if (!cv) return;
@@ -1988,47 +2212,148 @@ VIEWS.workspace = (() => {
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
 
   function enter() {
-    // Midra protects the program preset — default to showing/editing preview, then take.
-    if (!ctxInit) { ctxInit = true; if (store.meta?.platform === 'midra') { showPgm = false; showPvw = true; } }
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
-    for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava']) store.scan(m);
-    if (store.meta?.platform === 'livecore') for (const m of ['LSval', 'RSava']) if (store.byMnem.has(m)) store.scan(m);
-    for (let s = 0; s < screenCount(); s++)
+    for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['GCsta', 'Plngr', 'GCtba', 'GCtup', 'GCtdn']) if (store.byMnem.has(m)) store.scan(m);
+    if (store.meta?.platform === 'livecore') for (const m of ['LSval', 'RSval']) if (store.byMnem.has(m)) store.scan(m);
+    for (let s = 0; s < screenCount(); s++) {
+      fetchLabel('LBScr', [s]);
       for (let l = 0; l < layerSlots(); l++)
         for (const c of [0, 1])
-          for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv']) store.get(m, [s, c, l]);
-    if (store.byMnem.has('PSval')) store.scan('PSval');
+          for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv', 'PRalp']) store.get(m, [s, c, l]);
+    }
+    for (let i = 0; i < inputCount(); i++) fetchLabel('LBInp', [i, store.val('INplg', i) ?? 0]);
+    for (let i = 0; i < 8; i++) { fetchLabel('LBLgS', [i]); fetchLabel('LBRdS', [i]); }
+    if (store.byMnem.has('PSval')) { store.scan('PSval'); store.scan('PSssm'); }
+    if (store.byMnem.has('PMscw')) store.scan('PMscw');
     if (store.byMnem.has('PMpst')) store.scan('PMpst');
+    if (sel) fetchLayer(sel.s, sel.c, sel.l);
+    enableSnapshots();
+    startSnapshots();
+    // land on the page with something in the properties panel rather than an empty one
+    if (!sel) setTimeout(selectSomething, 700);
   }
 
-  function assign(s, c, l, src) { store.set('PRinp', [s, c, l], src); sel = { s, c, l }; store.notify(); }
+  // every per-layer variable the inspector can show
+  const LAYER_VARS = ['PRinp', 'PRalp', 'PRpoh', 'PRpov', 'PRpoz', 'PRsih', 'PRsiv',
+    'PRaov', 'PRflg', 'PRcph', 'PRcpv', 'PRcsh', 'PRcsv',
+    'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbal', 'PRbsh', 'PRbsv',
+    'PRotr', 'PRowa', 'PRctr', 'PRcwa', 'PRoso', 'PRoeo', 'PRcso', 'PRceo',
+    'PRtba', 'PRtbb', 'PRbah', 'PRbav', 'PRbbh', 'PRbbv', 'PRroh', 'PRrov', 'PRroz',
+    // Midra spells these out instead of packing them into PRflg
+    'PRodu', 'PRcdu', 'PRftr', 'PRsmm', 'PRfli', 'PRshp'];
+  function fetchLayer(s, c, l) {
+    for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [s, c, l]);
+    if (store.byMnem.has('MAsla')) { store.get('MAsla', [s, l]); store.get('MAsfa', [s, l]); }
+    if (store.byMnem.has('STsls')) store.get('STsls', [s, l]);
+    if (store.byMnem.has('Plsgr')) store.get('Plsgr', [s, l]);
+    if (store.byMnem.has('GCfrl')) store.get('GCfrl', [s, l]);
+  }
+  function select(s, c, l) { sel = { s, c, l }; fetchLayer(s, c, l); store.notify(); }
+  /** First layer worth showing: the editable bank of the first visible screen. */
+  function selectSomething() {
+    if (sel) return;
+    for (const s of active()) {
+      if (hidden.has(s)) continue;
+      for (const c of [editCtx(s), liveCtx(s)])
+        for (let l = 0; l < maxLayers(s); l++)
+          if (store.val('PRinp', s, c, l)) { select(s, c, l); return; }
+    }
+  }
 
+  // ---- geometry ----
   const setGeom = (s, c, l, r) => {
-    throttledSet('PRsih', [s, c, l], Math.round(r.w));
-    throttledSet('PRsiv', [s, c, l], Math.round(r.h));
+    throttledSet('PRsih', [s, c, l], Math.max(0, Math.round(r.w)));
+    throttledSet('PRsiv', [s, c, l], Math.max(0, Math.round(r.h)));
     throttledSet('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
     throttledSet('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
   };
-  // scale (device px per rendered px) read live from the canvas, so drag works at any size
+  const setGeomNow = (s, c, l, r) => {
+    store.set('PRsih', [s, c, l], Math.max(0, Math.round(r.w)));
+    store.set('PRsiv', [s, c, l], Math.max(0, Math.round(r.h)));
+    store.set('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
+    store.set('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
+  };
   const scaleOf = (cv, sw, sh) => ({ x: cv.clientWidth / sw || 1, y: cv.clientHeight / sh || 1 });
-  // layers are positioned as a % of the screen, so they track the canvas as it resizes
   const asPct = (box, r, sw, sh) => {
     box.style.left = (r.left / sw * 100) + '%'; box.style.top = (r.top / sh * 100) + '%';
     box.style.width = (r.w / sw * 100) + '%'; box.style.height = (r.h / sh * 100) + '%';
   };
-
-  // one-shot geometry: presets set several layers at once, then a single notify
-  const setGeomNow = (s, c, l, r) => {
-    store.set('PRsih', [s, c, l], Math.round(r.w));
-    store.set('PRsiv', [s, c, l], Math.round(r.h));
-    store.set('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
-    store.set('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
+  const assignedLayers = (s, c) => {
+    const o = []; for (let l = 0; l < maxLayers(s); l++) if (store.val('PRinp', s, c, l)) o.push(l); return o;
   };
-  const assignedLayers = (s, c) => { const o = []; for (let l = 0; l < maxLayers(s); l++) if (store.val('PRinp', s, c, l)) o.push(l); return o; };
-  const LAYOUTS = [['full', 'Fill', 'Fill the screen'], ['2up', '2-up', 'Two sources side by side'], ['quad', 'Quad', 'Four sources, quadrants'], ['pip', 'PiP', 'Full source with an inset']];
-  // arrange the screen's assigned sources into a common look
+  const firstFreeLayer = (s, c) => {
+    for (let l = 0; l < maxLayers(s); l++) if (!store.val('PRinp', s, c, l)) return l;
+    return null;
+  };
+
+  // ---- placing a source ----
+  /** Put a source on a layer, giving it a sensible box if it has none yet. */
+  function assign(s, c, l, src, at) {
+    store.set('PRinp', [s, c, l], src);
+    // Midra decides for itself whether a layer may take a source — a write to a slot the
+    // device has not allocated is silently dropped rather than NAKed. Read it back so a
+    // rejection shows up instead of looking like it worked.
+    if (isMidra()) {
+      store.get('PRinp', [s, c, l]);
+      setTimeout(() => {
+        store.get('PRinp', [s, c, l]);
+        setTimeout(() => {
+          if ((store.val('PRinp', s, c, l) || 0) !== src)
+            flash(`The device would not put ${sourceName(src)} on L${l + 1} — that layer is not available for a source`);
+        }, 350);
+      }, 350);
+    }
+    const cur = layerRectPx(s, c, l);
+    if (!(cur.w > 0 && cur.h > 0)) {
+      const { w: sw, h: sh } = screenPx(s);
+      if (at) {                                  // dropped somewhere specific: a PiP there
+        const w = Math.round(sw / 3), h = Math.round(sh / 3);
+        setGeomNow(s, c, l, {
+          left: Math.min(Math.max(0, at.x - w / 2), sw - w),
+          top: Math.min(Math.max(0, at.y - h / 2), sh - h), w, h,
+        });
+      } else if (assignedLayers(s, c).filter(x => x !== l).length === 0) {
+        setGeomNow(s, c, l, { left: 0, top: 0, w: sw, h: sh });   // first layer fills
+      } else {
+        const w = Math.round(sw / 3), h = Math.round(sh / 3);
+        setGeomNow(s, c, l, { left: Math.round((sw - w) / 2), top: Math.round((sh - h) / 2), w, h });
+      }
+      if (store.byMnem.has('PRalp') && !store.val('PRalp', s, c, l)) store.set('PRalp', [s, c, l], 256);
+    }
+    select(s, c, l);
+  }
+  /** Drop a source onto a screen without naming a layer: take the first free one. */
+  function drop(s, c, src, at) {
+    const l = firstFreeLayer(s, c);
+    if (l == null) { flash(`Screen ${s + 1} has no free layer`); return; }
+    assign(s, c, l, src, at);
+  }
+  function clearLayer(s, c, l) {
+    store.set('PRinp', [s, c, l], 0);
+    if (sel && sel.s === s && sel.c === c && sel.l === l) sel = null;
+    store.notify();
+  }
+  function clearAll(s, c) { for (let l = 0; l < maxLayers(s); l++) store.set('PRinp', [s, c, l], 0); sel = null; store.notify(); }
+
+  let flashMsg = null, flashTimer = null;
+  function flash(t) {
+    flashMsg = t; clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashMsg = null; store.notify(); }, 2600);
+    store.notify();
+  }
+
+  // ---- layout presets ----
+  const LAYOUTS = [
+    ['full', 'Fill', 'Selected source fills the screen'],
+    ['2up', '2-up', 'Two sources side by side'],
+    ['3up', '3-up', 'Three sources side by side'],
+    ['quad', 'Quad', 'Four sources in quadrants'],
+    ['pip', 'PiP', 'Full source with an inset'],
+    ['stack', 'Stack', 'Two sources, one above the other'],
+  ];
   function arrange(s, c, kind) {
-    const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
+    const { w: sw, h: sh } = screenPx(s);
     const ls = assignedLayers(s, c); if (!ls.length) return;
     const put = (l, x, y, w, h) => setGeomNow(s, c, l, { left: x, top: y, w, h });
     if (kind === 'full') {
@@ -2036,16 +2361,56 @@ VIEWS.workspace = (() => {
       put(t, 0, 0, sw, sh);
     } else if (kind === '2up') {
       const w = sw / 2; ls.slice(0, 2).forEach((l, i) => put(l, i * w, 0, w, sh));
+    } else if (kind === '3up') {
+      const w = sw / 3; ls.slice(0, 3).forEach((l, i) => put(l, i * w, 0, w, sh));
     } else if (kind === 'quad') {
-      const w = sw / 2, h = sh / 2; ls.slice(0, 4).forEach((l, i) => put(l, (i % 2) * w, (i < 2 ? 0 : 1) * h, w, h));
+      const w = sw / 2, h = sh / 2;
+      ls.slice(0, 4).forEach((l, i) => put(l, (i % 2) * w, (i < 2 ? 0 : 1) * h, w, h));
+    } else if (kind === 'stack') {
+      const h = sh / 2; ls.slice(0, 2).forEach((l, i) => put(l, 0, i * h, sw, h));
     } else if (kind === 'pip') {
       put(ls[0], 0, 0, sw, sh);
-      if (ls[1]) { const w = Math.round(sw / 3), h = Math.round(sh / 3), m = Math.round(sw * 0.03); put(ls[1], sw - w - m, sh - h - m, w, h); }
+      if (ls[1]) {
+        const w = Math.round(sw / 3), h = Math.round(sh / 3), m = Math.round(sw * 0.03);
+        put(ls[1], sw - w - m, sh - h - m, w, h);
+      }
     }
     store.notify();
   }
+  /** Nine-point placement of the selected layer, keeping its size. */
+  function place(s, c, l, ix) {
+    const { w: sw, h: sh } = screenPx(s), r = layerRectPx(s, c, l);
+    const col = ix % 3, row = Math.floor(ix / 3);
+    setGeomNow(s, c, l, { left: col * (sw - r.w) / 2, top: row * (sh - r.h) / 2, w: r.w, h: r.h });
+    store.notify();
+  }
+  /** Resize the selected layer to an aspect ratio, keeping its width. */
+  function setAspect(s, c, l, ar) {
+    const r = layerRectPx(s, c, l);
+    setGeomNow(s, c, l, { left: r.left, top: r.top, w: r.w, h: Math.round(r.w / ar) });
+    store.notify();
+  }
+  /** Size the layer to its source's native resolution, centred. */
+  function contentSize(s, c, l) {
+    const src = store.val('PRinp', s, c, l) || 0;
+    let w = 0, h = 0;
+    if (src >= 1 && src <= 24) { w = store.val('INish', src - 1) || 0; h = store.val('INisv', src - 1) || 0; }
+    else if (src >= 25 && src <= 32) { w = store.val('LSdwi', src - 25) || 0; h = store.val('LSdhe', src - 25) || 0; }
+    if (!w || !h) { flash('No native size reported for this source'); return; }
+    const { w: sw, h: sh } = screenPx(s);
+    setGeomNow(s, c, l, { left: Math.round((sw - w) / 2), top: Math.round((sh - h) / 2), w, h });
+    store.notify();
+  }
+  function reorder(s, c, l, dir) {
+    if (!store.byMnem.has('LSscr')) return;
+    store.set('LSscr', [], s); store.set('LSprs', [], c); store.set('LSlay', [], l);
+    store.set(dir === 'up' ? 'LSrai' : 'LSlow', [], 1);
+    setTimeout(() => { for (let k = 0; k < maxLayers(s); k++) fetchLayer(s, c, k); }, 250);
+  }
+
+  // ---- pointer drags on the canvas ----
   function dragMove(e, s, c, l, cv, sw, sh) {
-    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, c, l };
+    e.preventDefault(); e.stopPropagation(); beginDrag(); select(s, c, l);
     const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh);
     const move = (ev) => {
       const r = { ...r0, left: r0.left + (ev.clientX - sx) / k.x, top: r0.top + (ev.clientY - sy) / k.y };
@@ -2055,175 +2420,666 @@ VIEWS.workspace = (() => {
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
   function dragResize(e, s, c, l, cv, sw, sh, corner) {
-    e.preventDefault(); e.stopPropagation(); beginDrag(); sel = { s, c, l };
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh);
+    e.preventDefault(); e.stopPropagation(); beginDrag(); select(s, c, l);
+    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY;
+    const r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh), ar = r0.h ? r0.w / r0.h : 16 / 9;
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
       const dx = (ev.clientX - sx) / k.x, dy = (ev.clientY - sy) / k.y;
       let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
       if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
       if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
-      const r = { left, top, w: right - left, h: bot - top };
+      let r = { left, top, w: right - left, h: bot - top };
+      if (keepAspect) {
+        const h = r.w / ar;
+        if (north) r.top = bot - h;
+        r.h = h;
+      }
       asPct(box, r, sw, sh); setGeom(s, c, l, r);
     };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
 
-  const srcTile = (n) => el('button', { class: 'src-tile' + (armed === n ? ' armed' : ''), onclick: () => { armed = armed === n ? null : n; store.notify(); } },
-    el('span', { class: 'src-sw', style: `background:${n === 0 ? 'var(--line-hi)' : srcColor(n)}` }), sourceName(n));
-  // LiveCore has 24 input slots; show the ones the device reports available (fall back to a sane range)
+  // ---- HTML5 drag and drop: source rail -> layer ----
+  // A full re-render mid-drag would tear the drag out of the DOM, so a drag holds off
+  // rendering the same way a slider does.
+  const dragProps = (n) => ({
+    draggable: 'true',
+    ondragstart: (e) => {
+      dragSrc = n; beginDrag();
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', String(n));
+    },
+    ondragend: () => { dragSrc = null; dragLayer = null; endDrag(); document.querySelectorAll('.drop-hot').forEach(x => x.classList.remove('drop-hot')); },
+  });
+  /** Read the dragged source out of a drop event, falling back to the module flag. */
+  const droppedSource = (e) => {
+    const t = e.dataTransfer?.getData('text/plain');
+    const n = t === '' || t == null ? NaN : Number(t);
+    return Number.isFinite(n) ? n : dragSrc;
+  };
+  const dropTarget = (onDrop) => ({
+    ondragover: (e) => {
+      if (dragSrc == null && !dragLayer) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      e.currentTarget.classList.add('drop-hot');
+    },
+    ondragleave: (e) => e.currentTarget.classList.remove('drop-hot'),
+    ondrop: (e) => {
+      e.preventDefault(); e.stopPropagation();
+      e.currentTarget.classList.remove('drop-hot');
+      onDrop(e);
+      dragSrc = null; dragLayer = null; endDrag();
+    },
+  });
+
+  // ---- source rail ----
+  function srcTile(n) {
+    const name = sourceName(n), kind = sourceKind(n);
+    const snap = snapshotUrl(n);
+    return el('button', {
+      class: 'src-tile' + (armed === n ? ' armed' : '') + ' k-' + kind,
+      title: n ? `${name} — drag onto a layer, or click to arm` : 'Clear the layer',
+      ...dragProps(n),
+      onclick: () => { armed = armed === n ? null : n; store.notify(); },
+    },
+      el('span', {
+        class: 'src-sw' + (snap ? ' shot' : ''),
+        style: `background:${n === 0 ? 'var(--line-hi)' : srcColor(n)}`
+             + (snap ? `;background-image:url("${snap}")` : ''),
+      }),
+      el('span', { class: 'src-nm', text: name }),
+      n ? el('span', { class: 'src-ix', text: srcBadge(n, kind) }) : null);
+  }
+  function srcBadge(n, kind) {
+    if (isMidra()) return n <= availableInputs() ? 'IN' + n : String(n);
+    if (kind === 'still') return 'ST' + (n - 24);
+    if (kind === 'rstill') return 'RS' + (n - 32);
+    if (kind === 'colour') return '';
+    return 'IN' + n;
+  }
   function inputNums() {
-    if (store.byMnem.has('INava')) { const o = []; for (let i = 0; i < 24; i++) if (store.val('INava', i)) o.push(i + 1); if (o.length) return o; }
+    if (store.byMnem.has('INava')) {
+      const o = []; for (let i = 0; i < inputCount(); i++) if (store.val('INava', i)) o.push(i + 1);
+      if (o.length) return o;
+    }
     const max = store.meta?.platform === 'livecore' ? Math.min(srcMaxOf(), 24) : srcMaxOf();
     return Array.from({ length: max }, (_, i) => i + 1);
   }
-  // stills sit at sources 25–40 (still N = 24+N); the frame store is the 8 large stills at 25–32
-  function loadedStills() {
-    const out = [];
-    for (let i = 1; i <= 8; i++) if (store.val('LSval', i - 1) === 1) out.push(24 + i);
-    return out;
+  const loadedStills = () => { const o = []; for (let i = 0; i < 8; i++) if (store.val('LSval', i) === 1) o.push(25 + i); return o; };
+  const loadedRStills = () => { const o = []; for (let i = 0; i < 8; i++) if (store.val('RSval', i) === 1) o.push(33 + i); return o; };
+
+  /** Every source number the device is already using, so nothing in use is unlistable. */
+  function sourcesInUse() {
+    const set = new Set();
+    for (let s = 0; s < screenCount(); s++)
+      for (let c = 0; c < 3; c++)
+        for (let l = 0; l < layerSlots(); l++) {
+          const v = store.val('PRinp', s, c, l);
+          if (v) set.add(v);
+        }
+    return set;
   }
   function sourceRail() {
     const live = store.meta?.platform === 'livecore';
     if (!live) {
-      const max = srcMaxOf();
+      // Midra: the inputs the frame reports, plus anything already on a layer (which
+      // covers the frame/logo sources we cannot name yet).
+      const nIn = availableInputs(), extra = [...sourcesInUse()].filter(n => n > nIn).sort((a, b) => a - b);
+      const nums = [...Array.from({ length: nIn }, (_, i) => i + 1), ...extra];
       return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
-        el('div', { class: 'src-list' }, srcTile(0), ...Array.from({ length: max }, (_, i) => srcTile(i + 1))));
+        el('div', { class: 'src-list' }, srcTile(0), ...nums.map(srcTile)),
+        el('div', { class: 'ws-rail-foot hint', text: armed != null ? `${sourceName(armed)} armed` : 'Drag onto a layer' }));
     }
     const tab = (id, label) => el('button', { class: 'src-tab' + (srcTab === id ? ' on' : ''), onclick: () => { srcTab = id; store.notify(); } }, label);
-    let list;
+    let items;
     if (srcTab === 'stills') {
-      const stills = loadedStills();
-      list = el('div', { class: 'src-list' }, srcTile(0),
-        ...(stills.length ? stills.map(srcTile)
-          : [el('div', { class: 'hint', style: 'padding:10px 8px', text: 'No stills loaded — capture or load frames in the Stills view.' })]));
+      const st = loadedStills(), rs = loadedRStills();
+      items = st.length || rs.length ? [...st, ...rs]
+        : [el('div', { class: 'hint', style: 'padding:10px 8px', text: 'No stills loaded — load or capture frames in the Stills view.' })];
+    } else if (srcTab === 'other') {
+      items = [41];
     } else {
-      list = el('div', { class: 'src-list' }, srcTile(0), ...inputNums().map(srcTile));
+      items = inputNums();
     }
+    const list = el('div', { class: 'src-list' }, srcTile(0),
+      ...items.map(x => typeof x === 'number' ? srcTile(x) : x));
     return el('div', { class: 'panel ws-rail' },
-      el('div', { class: 'src-tabs' }, tab('inputs', 'Inputs'), tab('stills', 'Stills')),
-      list);
+      el('div', { class: 'src-tabs' }, tab('inputs', 'Inputs'), tab('stills', 'Stills'), tab('other', 'Other')),
+      list,
+      el('div', { class: 'ws-rail-foot hint', text: armed != null ? `${sourceName(armed)} armed` : 'Drag onto a layer' }));
   }
 
-  // one context (program or preview) of one screen: its canvas + slot/preset row
-  function contextCol(s, c) {
-    const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
+  // ---- one bank of one screen ----
+  function contextCanvas(s, c) {
+    const { w: sw, h: sh } = screenPx(s);
+    const role = ctxRole(s, c);
     const n = maxLayers(s);
-    const cv = el('div', { class: 'screen-canvas ws-cv-' + (c === 0 ? 'pgm' : 'pvw') });
+    const cv = el('div', { class: 'screen-canvas ws-cv-' + role });
     cv.dataset.ar = String(sw / sh);
+    const pointFromEvent = (e) => {
+      const b = cv.getBoundingClientRect();
+      return { x: (e.clientX - b.left) / (b.width || 1) * sw, y: (e.clientY - b.top) / (b.height || 1) * sh };
+    };
+    // dropping on bare canvas places the source on the first free layer, where you let go
+    Object.entries(dropTarget((e) => {
+      const src = droppedSource(e);
+      if (src == null || Number.isNaN(src)) return;
+      drop(s, c, src, pointFromEvent(e));
+    })).forEach(([k, v]) => cv.addEventListener(k.slice(2), v));
+
     for (let l = 0; l < n; l++) {
       const src = store.val('PRinp', s, c, l);
       const isSel = sel && sel.s === s && sel.c === c && sel.l === l;
       if (!src && !isSel) continue;
       const r = layerRectPx(s, c, l);
+      const alpha = (store.val('PRalp', s, c, l) ?? 256) / 256;
+      const missing = src && !sourceAvailable(src);
+      const snap = snapshotUrl(src);
       const box = el('div', {
-        class: 'lrect' + (isSel ? ' sel' : ''),
-        style: `background:${srcColor(src)};z-index:${l + 1}`,
-        onpointerdown: (e) => { if (armed != null) { e.stopPropagation(); assign(s, c, l, armed); } else dragMove(e, s, c, l, cv, sw, sh); },
+        class: 'lrect' + (isSel ? ' sel' : '') + (src ? '' : ' empty') + (missing ? ' missing' : '') + (snap ? ' shot' : ''),
+        title: missing ? `${sourceName(src)} is not available — a take waiting on this layer will not land` : '',
+        style: `background:${srcColor(src)};z-index:${l + 1};opacity:${Math.max(0.15, alpha)}`
+             + (snap ? `;background-image:url("${snap}")` : ''),
+        ...dropTarget((e) => {
+          const n2 = droppedSource(e);
+          if (n2 == null || Number.isNaN(n2)) return;
+          assign(s, c, l, n2);
+        }),
+        onpointerdown: (e) => {
+          if (armed != null) { e.stopPropagation(); assign(s, c, l, armed); }
+          else dragMove(e, s, c, l, cv, sw, sh);
+        },
       },
-        el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(cn => el('div', { class: 'handle ' + cn, onpointerdown: (e) => dragResize(e, s, c, l, cv, sw, sh, cn) })));
+        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}${missing ? ' ⚠' : ''}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(cn =>
+          el('div', { class: 'handle ' + cn, onpointerdown: (e) => dragResize(e, s, c, l, cv, sw, sh, cn) })));
       asPct(box, r, sw, sh);
       cv.append(box);
     }
-    const slots = el('div', { class: 'ws-slots' });
-    for (let l = 0; l < n; l++) {
-      const src = store.val('PRinp', s, c, l), isSel = sel && sel.s === s && sel.c === c && sel.l === l;
-      slots.append(el('button', {
-        class: 'ws-slot' + (isSel ? ' sel' : '') + (src ? ' filled' : ''),
-        style: src ? `--c:${srcColor(src)}` : '',
-        title: src ? sourceName(src) : 'empty',
-        onclick: () => { if (armed != null) assign(s, c, l, armed); else { sel = { s, c, l }; store.notify(); } },
-      }, `L${l + 1}`));
-    }
-    // quick layout presets, right-aligned in the same row as the layer slots
-    slots.append(el('div', { class: 'spacer' }));
-    for (const [k, label, t] of LAYOUTS)
-      slots.append(el('button', { class: 'ws-lay', title: t, onclick: () => arrange(s, c, k) }, label));
-    return el('div', { class: 'ws-ctx' },
-      el('div', { class: 'ws-ctx-head' }, el('span', { class: 'ws-ctx-tag ' + (c === 0 ? 'pgm' : 'pvw') }, CTXN(c))),
+    const broken = assignedLayers(s, c).filter(l => !sourceAvailable(store.val('PRinp', s, c, l)));
+    return el('div', { class: 'ws-ctx ws-ctx-' + role },
+      el('div', { class: 'ws-ctx-head' },
+        el('span', { class: 'ws-ctx-tag ' + role }, ctxName(s, c)),
+        role === 'pgm' ? el('span', { class: 'ws-onair', text: 'ON AIR' }) : null,
+        broken.length ? el('button', {
+          class: 'ws-warn',
+          title: `${broken.map(l => 'L' + (l + 1) + ' · ' + sourceName(store.val('PRinp', s, c, l))).join(', ')} — the source is not available, so a take will not land. Click to clear them.`,
+          onclick: () => { broken.forEach(l => store.set('PRinp', [s, c, l], 0)); store.notify(); },
+        }, `⚠ ${broken.length} unavailable`) : null,
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: `${assignedLayers(s, c).length}/${n} layers` }),
+        el('button', { class: 'ws-mini', title: 'Clear every layer in this bank', onclick: () => clearAll(s, c) }, 'Clear')),
       el('div', { class: 'canvas-wrap' }, cv),
-      slots);
+      slotRow(s, c));
   }
 
+  function slotRow(s, c) {
+    const row = el('div', { class: 'ws-slots' });
+    for (let l = 0; l < maxLayers(s); l++) {
+      const src = store.val('PRinp', s, c, l), isSel = sel && sel.s === s && sel.c === c && sel.l === l;
+      row.append(el('button', {
+        class: 'ws-slot' + (isSel ? ' sel' : '') + (src ? ' filled' : ''),
+        style: src ? `--c:${srcColor(src)}` : '',
+        title: src ? `L${l + 1} · ${sourceName(src)}` : `L${l + 1} — empty`,
+        ...dropTarget((e) => {
+          const n = droppedSource(e);
+          if (n == null || Number.isNaN(n)) return;
+          assign(s, c, l, n);
+        }),
+        onclick: () => { if (armed != null) assign(s, c, l, armed); else select(s, c, l); },
+      }, `L${l + 1}`));
+    }
+    row.append(el('div', { class: 'spacer' }));
+    for (const [k, label, t] of LAYOUTS)
+      row.append(el('button', { class: 'ws-lay', title: t, onclick: () => arrange(s, c, k) }, label));
+    return row;
+  }
+
+  // ---- screen card ----
   function screenCard(s) {
-    const cols = shownCtx().map(c => contextCol(s, c));
-    return el('div', { class: 'panel ws-screen' + (cols.length > 1 ? ' ws-dual' : '') },
-      el('div', { class: 'ws-screen-head' }, el('h2', `Screen ${s + 1}`), el('div', { class: 'spacer' }),
-        el('button', { class: 'btn ghost', onclick: () => doTake(s) }, 'Take')),
+    const cols = shownCtx(s).map(c => contextCanvas(s, c));
+    const g = groupOf(s), status = store.val('GCsta', g);
+    const busy = midTransition(s);
+    // both platforms carry a T-bar, but over different ranges (0..65535 / 0..10000)
+    const tbarDef = store.byMnem.get('GCtba');
+    const tbarMax = tbarDef?.max ?? 65535;
+    const tbarIdx = hasBanks() ? g : s;
+    const tbar = !!tbarDef;
+    const takeReady = store.byMnem.has('GCtav') ? store.val('GCtav', s) !== 0 : true;
+    return el('div', { class: 'panel ws-screen' },
+      el('div', { class: 'ws-screen-head' },
+        el('h2', screenLabel(s)),
+        el('span', { class: 'ws-dim hint', text: `${screenPx(s).w}×${screenPx(s).h}` }),
+        busy ? el('button', { class: 'ws-mini ws-busy', title: 'Transition in progress — click to complete it now', onclick: () => forceTake(s) }, '···') : null,
+        el('div', { class: 'spacer' }),
+        tbar ? el('label', { class: 'ws-tbar', title: 'T-bar — drag to transition by hand' },
+          el('input', {
+            type: 'range', min: 0, max: tbarMax, step: Math.max(1, Math.round(tbarMax / 256)),
+            value: store.val('GCtba', tbarIdx) ?? 0,
+            onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+            oninput: (e) => throttledSet('GCtba', [tbarIdx], +e.target.value),
+          })) : null,
+        store.byMnem.has('GCfsc') ? el('button', {
+          class: 'ws-mini' + (store.val('GCfsc', s) === 1 ? ' on' : ''), title: 'Freeze this screen',
+          onclick: () => store.set('GCfsc', [s], store.val('GCfsc', s) === 1 ? 0 : 1),
+        }, '❄') : null,
+        store.byMnem.has('GCrpr') ? el('button', { class: 'ws-mini', title: 'Copy program back into preview', onclick: () => { store.set('GCrpr', [s], 1); setTimeout(() => enter(), 400); } }, '⇊') : null,
+        (store.byMnem.has('GCstb') || store.byMnem.has('GCsba')) ? el('button', { class: 'ws-mini', title: 'Return to the look before the last take', onclick: () => doStepBack(s) }, '↶') : null,
+        el('button', { class: 'ws-mini pvw-b', onclick: () => doCut(s) }, 'Cut'),
+        el('button', { class: 'ws-mini pgm-b' + (takeReady ? '' : ' dim'), title: takeReady ? '' : 'The device reports nothing to take', onclick: () => doTake(s, ttime) }, 'Take')),
       el('div', { class: 'ws-ctxs' }, ...cols));
   }
 
-  // recall a whole-device look: LiveCore master memories; Midra re-applies a stored preset
-  function recallMem(i) {
-    if (store.byMnem.has('PSmet')) { store.set('PSmet', [], i); store.set('PSlot', [], 1); return; }
-    if (store.byMnem.has('PMpst')) {
-      const c = 1;   // Midra edits preview
-      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
-      for (let s = 0; s < screenCount(); s++)
-        for (let l = 0; l < layerSlots(); l++) {
-          store.set('PRsih', [s, c, l], store.val('PMsih', i, s, l) || 0);
-          store.set('PRsiv', [s, c, l], store.val('PMsiv', i, s, l) || 0);
-          store.set('PRpoh', [s, c, l], store.val('PMpoh', i, s, l) ?? B);
-          store.set('PRpov', [s, c, l], store.val('PMpov', i, s, l) ?? B);
-          store.set('PRinp', [s, c, l], store.val('PMinp', i, s, l) || 0);
-        }
-      store.notify();
-    }
+  // ================= layer inspector =================
+  function section(id, title, ...body) {
+    const isOpen = open.has(id);
+    return el('div', { class: 'insp-sec' + (isOpen ? ' open' : '') },
+      el('button', {
+        class: 'insp-head',
+        onclick: () => { if (isOpen) open.delete(id); else open.add(id); store.notify(); },
+      }, el('span', { class: 'insp-caret', text: isOpen ? '▾' : '▸' }), title),
+      isOpen ? el('div', { class: 'insp-body' }, ...body) : null);
   }
-  function ensureMidraSlot(i) {   // pull a stored preset's contents so recall can re-apply it
-    for (let s = 0; s < screenCount(); s++)
-      for (let l = 0; l < layerSlots(); l++)
-        for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv']) store.get(m, [i, s, l]);
+  /** A numeric entry bound to a device variable, with the device's own range. */
+  function num(label, mnem, idx, opts = {}) {
+    const def = store.byMnem.get(mnem);
+    if (!def) return null;
+    const cur = store.val(mnem, ...idx);
+    const id = `n-${mnem}-${idx.join('-')}`;
+    return el('label', { class: 'nfield' },
+      el('span', { text: label }),
+      el('input', {
+        id, type: 'number', min: opts.min ?? def.min, max: opts.max ?? def.max, step: opts.step ?? 1,
+        value: cur ?? '',
+        onchange: (e) => { const v = Math.round(+e.target.value); if (Number.isFinite(v)) store.set(mnem, idx, v); },
+      }));
   }
-  function memoryStrip() {
-    const midra = !store.byMnem.has('PSmet') && store.byMnem.has('PMpst');
-    if (!store.byMnem.has('PSmet') && !midra) return null;
-    const N = midra ? 8 : 24;
-    const used = (i) => midra ? store.val('PMpst', i) === 1 : store.val('PSval', i) === 1;
-    const grid = el('div', { class: 'ws-mem' });
-    for (let i = 0; i < N; i++) {
-      const v = used(i);
-      grid.append(el('button', { class: 'ws-mslot' + (v ? ' valid' : ''),
-        title: (midra ? 'Preset ' : 'Memory ') + (i + 1) + (v ? '' : ' — empty'),
-        onclick: () => { if (midra) { ensureMidraSlot(i); setTimeout(() => recallMem(i), 500); } else recallMem(i); } },
-        el('span', { class: 'num', text: i + 1 })));
-    }
-    return el('div', { class: 'panel ws-membar' },
-      el('div', { class: 'ws-membar-label' },
-        el('h2', midra ? 'Presets' : 'Master memories'),
-        el('span', { class: 'hint', text: midra ? 'recall to preview' : 'recall + take a look' })),
-      grid);
+  /** Geometry entry in screen pixels: the wire carries a biased centre, not a corner. */
+  function geomField(label, s, c, l, axis) {
+    const r = layerRectPx(s, c, l), { w: sw, h: sh } = screenPx(s);
+    const val = { x: r.left, y: r.top, w: r.w, h: r.h }[axis];
+    const id = `g-${axis}-${s}-${c}-${l}`;
+    return el('label', { class: 'nfield' },
+      el('span', { text: label }),
+      el('input', {
+        id, type: 'number', step: 1, value: Math.round(val),
+        onchange: (e) => {
+          const v = Math.round(+e.target.value); if (!Number.isFinite(v)) return;
+          const next = { left: r.left, top: r.top, w: r.w, h: r.h };
+          if (axis === 'x') next.left = v;
+          else if (axis === 'y') next.top = v;
+          else if (axis === 'w') { const ar = r.h ? r.w / r.h : 1; next.w = v; if (keepAspect && ar) next.h = Math.round(v / ar); }
+          else { const ar = r.w ? r.h / r.w : 1; next.h = v; if (keepAspect && ar) next.w = Math.round(v / ar); }
+          setGeomNow(s, c, l, next); store.notify();
+        },
+      }),
+      el('span', { class: 'nunit hint', text: axis === 'x' || axis === 'w' ? `/${sw}` : `/${sh}` }));
+  }
+  /** A checkbox over a plain 0/1 variable (Midra's equivalent of a PRflg bit). */
+  function boolVar(label, mnem, idx) {
+    if (!store.byMnem.has(mnem)) return null;
+    const on = store.val(mnem, ...idx) === 1;
+    return el('label', { class: 'cbox' },
+      el('input', { type: 'checkbox', checked: on || null, onchange: (e) => store.set(mnem, idx, e.target.checked ? 1 : 0) }),
+      el('span', { text: label }));
+  }
+  /** A checkbox over one bit of PRflg. */
+  function flagBox(label, s, c, l, bit) {
+    if (!store.byMnem.has('PRflg')) return null;
+    const v = store.val('PRflg', s, c, l) ?? 0, on = flagOn(v, bit);
+    return el('label', { class: 'cbox' },
+      el('input', { type: 'checkbox', checked: on || null, onchange: (e) => store.set('PRflg', [s, c, l], flagSet(v, bit, e.target.checked)) }),
+      el('span', { text: label }));
   }
 
+  function inspector() {
+    if (!sel) {
+      return el('div', { class: 'panel ws-insp' }, el('h2', 'Layer'),
+        el('div', { class: 'empty-state', text: 'Select a layer to edit its properties.' }));
+    }
+    const { s, c, l } = sel, i = [s, c, l];
+    const src = store.val('PRinp', ...i) || 0;
+    const role = ctxRole(s, c);
+    const has = (m) => store.byMnem.has(m);
+    const perspective = store.val('PEsps', s) === 1;
+
+    return el('div', { class: 'panel ws-insp' },
+      el('div', { class: 'insp-title' },
+        el('h2', `L${l + 1}`),
+        el('span', { class: 'ws-ctx-tag ' + role }, ctxName(s, c)),
+        el('span', { class: 'hint', text: screenLabel(s) }),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'ws-mini', title: 'Remove this layer from the preset', onclick: () => clearLayer(s, c, l) }, 'Clear')),
+
+      el('div', { class: 'insp-src' },
+        el('label', { class: 'field' }, 'Source', sourceSelect('PRinp', i)),
+        el('div', { class: 'row' },
+          el('span', { class: 'hint', text: 'Order' }),
+          el('button', { class: 'ws-mini', title: 'Bring forward', onclick: () => reorder(s, c, l, 'up') }, '▲'),
+          el('button', { class: 'ws-mini', title: 'Send back', onclick: () => reorder(s, c, l, 'down') }, '▼'),
+          el('div', { class: 'spacer' }),
+          has('SLstu') ? el('span', { class: 'hint', title: 'Layer status reported by the device',
+            text: 'status: ' + (LAYER_STATUSES[store.val('SLstu', s, l) ?? 0] || '·').toLowerCase() }) : null)),
+
+      section('geom', 'Position / size',
+        el('div', { class: 'nrow' }, geomField('X', s, c, l, 'x'), geomField('Y', s, c, l, 'y')),
+        el('div', { class: 'nrow' }, geomField('Width', s, c, l, 'w'), geomField('Height', s, c, l, 'h')),
+        el('div', { class: 'row wrap' },
+          el('label', { class: 'cbox' },
+            el('input', { type: 'checkbox', checked: keepAspect || null, onchange: (e) => { keepAspect = e.target.checked; store.notify(); } }),
+            el('span', { text: 'Keep aspect' })),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'ws-mini', title: 'Fill the screen', onclick: () => { const p = screenPx(s); setGeomNow(s, c, l, { left: 0, top: 0, w: p.w, h: p.h }); store.notify(); } }, 'Screen size'),
+          el('button', { class: 'ws-mini', title: "Size to the source's own resolution", onclick: () => contentSize(s, c, l) }, 'Content size')),
+        el('div', { class: 'row' },
+          el('span', { class: 'hint', text: 'Place' }),
+          el('div', { class: 'pos9' }, ...Array.from({ length: 9 }, (_, k) =>
+            el('button', { title: 'Move here', onclick: () => place(s, c, l, k) })))),
+        el('div', { class: 'row wrap' },
+          el('span', { class: 'hint', text: 'Aspect' }),
+          ...[['5:4', 5 / 4], ['4:3', 4 / 3], ['16:10', 16 / 10], ['15:9', 15 / 9], ['16:9', 16 / 9], ['21:9', 21 / 9]]
+            .map(([lbl, ar]) => el('button', { class: 'ws-mini', onclick: () => setAspect(s, c, l, ar) }, lbl))),
+        perspective && has('PRpoz') ? num('Depth (Z)', 'PRpoz', i) : null,
+        perspective && has('PRroz') ? el('div', { class: 'nrow' }, num('Rotate X', 'PRroh', i), num('Rotate Y', 'PRrov', i), num('Rotate Z', 'PRroz', i)) : null),
+
+      section('transp', 'Transparency',
+        bind('Layer opacity', 'PRalp', i, null, null, 1,
+          v => Math.round(v / (store.byMnem.get('PRalp')?.max || 256) * 100) + '%'),
+        has('MAsla') ? bind('Master fader', 'MAsla', [s, l], 0, 255, 1, v => Math.round(v / 255 * 100) + '%') : null,
+        has('MAsfa') ? el('div', { class: 'row' },
+          el('span', { class: 'hint', text: 'Auto fade' }),
+          el('button', { class: 'ws-mini', onclick: () => store.set('MAsfa', [s, l], 1) }, 'Fade in'),
+          el('button', { class: 'ws-mini', onclick: () => store.set('MAsfa', [s, l], 2) }, 'Fade out')) : null),
+
+      section('crop', 'Cropping',
+        el('div', { class: 'nrow' }, num('Pos H', 'PRcph', i, { step: 16 }), num('Size H', 'PRcsh', i, { step: 16 })),
+        el('div', { class: 'nrow' }, num('Pos V', 'PRcpv', i, { step: 16 }), num('Size V', 'PRcsv', i, { step: 16 })),
+        has('PRaov') ? el('label', { class: 'field' }, 'Aspect override', enumSelect('PRaov', i, ASPECT_OVERRIDES)) : null,
+        el('button', { class: 'ws-mini', title: 'Remove the crop', onclick: () => { store.set('PRcph', i, 32768); store.set('PRcpv', i, 32768); store.set('PRcsh', i, 0); store.set('PRcsv', i, 0); } }, 'Reset crop')),
+
+      section('border', 'Border',
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Style',
+            enumSelect('PRbst', i, enumLabels('PRbst', isMidra() ? MIDRA_BORDER_STYLES : BORDER_STYLES))),
+          el('label', { class: 'field' }, 'Colour', colorPicker('PRbcr', 'PRbcg', 'PRbcb', i))),
+        el('div', { class: 'nrow' }, num('Width', 'PRbsh', i), num('Height', 'PRbsv', i)),
+        bind('Border opacity', 'PRbal', i, null, null, 1, v => Math.round(v / 255 * 100) + '%'),
+        has('PRshp') ? el('label', { class: 'field' }, 'Shadow position', enumSelect('PRshp', i, SHADOW_POSITIONS)) : null,
+        has('PRflg') ? flagBox('Rounded corners', s, c, l, PE_FLAG.ROUND_BORDER_CORNER) : null,
+        has('CTsbc') ? bind('Corner radius (global)', 'CTsbc', [], 0, 250, 1) : null),
+
+      section('trans', 'Transitions',
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Opening', enumSelect('PRotr', i, enumLabels('PRotr', TRANSITIONS))),
+          el('label', { class: 'field' }, 'Direction', enumSelect('PRowa', i, enumLabels('PRowa', TRANSITION_WAYS)))),
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Closing', enumSelect('PRctr', i, enumLabels('PRctr', TRANSITIONS))),
+          el('label', { class: 'field' }, 'Direction', enumSelect('PRcwa', i, enumLabels('PRcwa', TRANSITION_WAYS))))),
+
+      // Midra gives each layer its own opening/closing duration; LiveCore instead slides
+      // the layer's window inside the screen's overall take duration.
+      has('PRodu')
+        ? section('timing', 'Timing',
+          bind('Opening', 'PRodu', i, 0, 255, 1, v => (v / 10).toFixed(1) + 's'),
+          bind('Closing', 'PRcdu', i, 0, 255, 1, v => (v / 10).toFixed(1) + 's'))
+        : section('timing', 'Timing & speed',
+          el('div', { class: 'nrow' }, num('Open start', 'PRoso', i), num('Open end', 'PRoeo', i)),
+          el('div', { class: 'nrow' }, num('Close start', 'PRcso', i), num('Close end', 'PRceo', i)),
+          el('div', { class: 'hint', text: 'Offsets sit inside the take duration, so a layer can lead or trail the others.' }),
+          bind('Speed point 1', 'PRtba', i, 0, 255, 1),
+          bind('Speed point 2', 'PRtbb', i, 0, 255, 1)),
+
+      has('PRbah') ? section('fly', 'Flying curve',
+        el('div', { class: 'row wrap' },
+          flagBox('Bezier 1 point', s, c, l, PE_FLAG.FLY_BEZIER_1PT),
+          flagBox('Bezier 2 points', s, c, l, PE_FLAG.FLY_BEZIER_2PT),
+          flagBox('Parabolic', s, c, l, PE_FLAG.FLY_BEZIER_DEVIANT)),
+        el('div', { class: 'nrow' }, num('Pt1 H', 'PRbah', i, { step: 16 }), num('Pt1 V', 'PRbav', i, { step: 16 })),
+        el('div', { class: 'nrow' }, num('Pt2 H', 'PRbbh', i, { step: 16 }), num('Pt2 V', 'PRbbv', i, { step: 16 }))) : null,
+
+      // Midra exposes the same effects as plain variables rather than PRflg bits.
+      has('PRflg')
+        ? section('effects', 'Effects',
+          el('div', { class: 'row wrap' },
+            flagBox('Force transition', s, c, l, PE_FLAG.FORCE_TRANSITION),
+            flagBox('Force cross-transition', s, c, l, PE_FLAG.FORCE_CROSS),
+            flagBox('Smooth move', s, c, l, PE_FLAG.SMOOTH_TRANSITION)),
+          el('div', { class: 'row wrap' },
+            flagBox('Flip H', s, c, l, PE_FLAG.FLIP_H),
+            flagBox('Flip V', s, c, l, PE_FLAG.FLIP_V)),
+          el('div', { class: 'row wrap' },
+            flagBox('Black & white', s, c, l, PE_FLAG.BLACK_N_WHITE),
+            flagBox('Negative', s, c, l, PE_FLAG.NEGATIVE),
+            flagBox('Sepia', s, c, l, PE_FLAG.SEPIA),
+            flagBox('Solarise', s, c, l, PE_FLAG.SOLAR)),
+          has('STsls') ? bind('Strobe', 'STsls', [s, l], 0, 60, 1, v => v ? v + ' fps' : 'off') : null,
+          has('Plsgr') ? num('Layer group', 'Plsgr', [s, l]) : null)
+        : section('effects', 'Effects',
+          el('div', { class: 'row wrap' },
+            has('PRftr') ? boolVar('Force transition', 'PRftr', i) : null,
+            has('PRsmm') ? boolVar('Smooth move', 'PRsmm', i) : null),
+          has('PRfli') ? el('label', { class: 'field' }, 'Flip', enumSelect('PRfli', i, ['None', 'Horizontal', 'Vertical', 'Both'])) : null,
+          has('GCfrl') ? el('div', { class: 'row' },
+            el('button', {
+              class: 'ws-mini' + (store.val('GCfrl', s, l) === 1 ? ' on' : ''),
+              onclick: () => store.set('GCfrl', [s, l], store.val('GCfrl', s, l) === 1 ? 0 : 1),
+            }, '❄ Freeze layer')) : null));
+  }
+
+  // ================= memories =================
+  const memFilter = { v: MEM_FILTER_ALL };
+  let memScope = 'screen';     // 'screen' | 'master'
+  let memSel = null;
+  let memSaveMode = false;
+  let memScreen = 0;
+  let memOpen = true;          // the memory grid folds away to give the canvases room
+  let filterOpen = false;
+
+  function memoryBar() {
+    if (store.meta?.platform !== 'livecore') return midraMemoryBar();
+    if (!store.byMnem.has('PMsav')) return null;
+    const N = 144, PER_ROW = 24;
+    const isMaster = memScope === 'master';
+    const used = (i) => isMaster ? store.val('PSval', i) === 1 : (store.val('PMscw', i) || 0) > 0;
+    const grid = el('div', { class: 'ws-mem' });
+    for (let i = 0; i < N; i++) {
+      const v = used(i), label = readLabel(isMaster ? 'LBPSe' : 'LBPMe', [i]);
+      grid.append(el('button', {
+        class: 'ws-mslot' + (v ? ' valid' : '') + (memSel === i ? ' sel' : '') + (memSaveMode ? ' arm' : ''),
+        title: `${isMaster ? 'Master memory' : 'Memory'} ${i + 1}${label ? ' — ' + label : ''}${v ? '' : ' — empty'}`,
+        onclick: () => memClick(i),
+      }, el('span', { class: 'num', text: i + 1 }), label ? el('span', { class: 'mlbl', text: label }) : null));
+    }
+    const chip = (label, on, fn) => el('button', { class: 'ws-mini' + (on ? ' on' : ''), onclick: fn }, label);
+    const nFilters = MEM_FILTERS.filter(([, b]) => flagOn(memFilter.v, b)).length;
+    return el('div', { class: 'panel ws-membar' + (memOpen ? '' : ' shut') },
+      el('div', { class: 'ws-membar-head' },
+        el('button', { class: 'ws-mini', title: memOpen ? 'Hide memories' : 'Show memories', onclick: () => { memOpen = !memOpen; store.notify(); } }, memOpen ? '▾' : '▸'),
+        el('div', { class: 'seg' },
+          el('button', { class: !isMaster ? 'on recall' : '', onclick: () => { memScope = 'screen'; memSel = null; store.notify(); } }, 'Screen'),
+          el('button', { class: isMaster ? 'on recall' : '', onclick: () => { memScope = 'master'; memSel = null; store.notify(); } }, 'Master')),
+        !isMaster ? screenSelect(memScreen, v => { memScreen = v; store.notify(); }) : null,
+        chip(memSaveMode ? 'SAVE — pick a slot' : 'Save mode', memSaveMode, () => { memSaveMode = !memSaveMode; store.notify(); }),
+        chip(`Filter: ${nFilters === MEM_FILTERS.length ? 'all' : nFilters}`, filterOpen, () => { filterOpen = !filterOpen; store.notify(); }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: isMaster ? 'a master memory recalls every screen at once' : 'click loads to preview · save mode stores the on-air look' })),
+      filterOpen ? el('div', { class: 'ws-filters' },
+        ...MEM_FILTERS.map(([label, bit]) =>
+          chip(label, flagOn(memFilter.v, bit), () => { memFilter.v = flagSet(memFilter.v, bit, !flagOn(memFilter.v, bit)); store.notify(); })),
+        chip('All', memFilter.v === MEM_FILTER_ALL, () => { memFilter.v = MEM_FILTER_ALL; store.notify(); })) : null,
+      memOpen ? grid : null,
+      memOpen && memSel != null ? memDetail(memSel, isMaster) : null);
+  }
+
+  function memClick(i) {
+    const isMaster = memScope === 'master';
+    memSel = i;
+    if (memSaveMode) { isMaster ? saveMaster(i) : saveScreenMem(i); memSaveMode = false; }
+    else { isMaster ? loadMaster(i, false) : loadScreenMem(i, false); }
+    store.notify();
+  }
+  function saveScreenMem(i) {
+    store.set('PMscf', [], memScreen);
+    store.set('PMprf', [], 0);              // save the bank that is on air
+    store.set('PMmet', [], i);
+    store.set('PMsav', [], 1);
+    setTimeout(() => { store.get('PMscw', [i]); store.get('PMmly', [i]); fetchLabel('LBPMe', [i]); }, 400);
+    flash(`Saved ${screenLabel(memScreen)} program into memory ${i + 1}`);
+  }
+  function loadScreenMem(i, andTake) {
+    store.set('PMcat', [], memFilter.v);
+    store.set('PMscf', [], memScreen);
+    store.set('PMprf', [], 1);              // land it in the bank that is not on air
+    store.set('PMmet', [], i);
+    store.set(andTake ? 'PMlot' : 'PMloa', [], 1);
+    setTimeout(() => { for (let l = 0; l < layerSlots(); l++) for (const c of [0, 1]) for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv']) store.get(m, [memScreen, c, l]); store.scan('GCsta'); }, 500);
+    flash(`${andTake ? 'Loaded + took' : 'Loaded to preview'} memory ${i + 1}`);
+  }
+  function saveMaster(i) {
+    store.set('PSprf', [], 0);
+    store.set('PSmet', [], i);
+    store.set('PSsav', [], 1);
+    setTimeout(() => { store.get('PSval', [i]); fetchLabel('LBPSe', [i]); }, 400);
+    flash(`Saved every screen into master memory ${i + 1}`);
+  }
+  function loadMaster(i, andTake) {
+    store.set('PSmet', [], i);
+    store.set('PSprf', [], 1);
+    store.set(andTake ? 'PSlot' : 'PSloa', [], 1);
+    setTimeout(() => { enter(); store.notify(); }, 600);
+    flash(`${andTake ? 'Loaded + took' : 'Loaded to preview'} master memory ${i + 1}`);
+  }
+  function eraseMem(i, isMaster) {
+    if (isMaster) { store.set('PSmet', [], i); store.set('PSres', [], 1); setTimeout(() => store.get('PSval', [i]), 400); }
+    else { store.set('PMmet', [], i); store.set('PMres', [], 1); setTimeout(() => store.get('PMscw', [i]), 400); }
+    flash(`Erased ${isMaster ? 'master ' : ''}memory ${i + 1}`);
+  }
+  function memDetail(i, isMaster) {
+    const lm = isMaster ? 'LBPSe' : 'LBPMe';
+    const valid = isMaster ? store.val('PSval', i) === 1 : (store.val('PMscw', i) || 0) > 0;
+    return el('div', { class: 'ws-memdetail' },
+      el('span', { class: 'ws-memname', text: `${isMaster ? 'Master memory' : 'Memory'} ${i + 1}` }),
+      el('input', {
+        id: 'memlabel', type: 'text', class: 'lbl-in', maxlength: LABEL_LEN,
+        placeholder: 'label', value: readLabel(lm, [i]),
+        onchange: (e) => { writeLabel(lm, [i], e.target.value); setTimeout(() => fetchLabel(lm, [i]), 300); },
+      }),
+      el('div', { class: 'spacer' }),
+      valid ? el('button', { class: 'btn recall', onclick: () => isMaster ? loadMaster(i, false) : loadScreenMem(i, false) }, 'Load to preview') : null,
+      valid ? el('button', { class: 'btn take', onclick: () => isMaster ? loadMaster(i, true) : loadScreenMem(i, true) }, 'Load + take') : null,
+      el('button', { class: 'btn save', onclick: () => isMaster ? saveMaster(i) : saveScreenMem(i) }, 'Save here'),
+      valid ? el('button', { class: 'btn ghost', onclick: () => eraseMem(i, isMaster) }, 'Erase') : null);
+  }
+
+  // Midra keeps eight presets in the unit itself (the RCS2's other 56 slots live on the
+  // control computer, not the device). Save is a device request; recall re-applies the
+  // stored geometry to the preview context, which a take then commits.
+  function midraMemoryBar() {
+    if (!store.byMnem.has('PMpst')) return null;
+    const N = 8;
+    const grid = el('div', { class: 'ws-mem' });
+    for (let i = 0; i < N; i++) {
+      const v = store.val('PMpst', i) === 1;
+      grid.append(el('button', {
+        class: 'ws-mslot' + (v ? ' valid' : '') + (memSel === i ? ' sel' : '') + (memSaveMode ? ' arm' : ''),
+        title: `Preset ${i + 1}${v ? '' : ' — empty'}`,
+        onclick: () => {
+          memSel = i;
+          if (memSaveMode) { saveMidra(i); memSaveMode = false; }
+          else if (v) { ensureMidraSlot(i); setTimeout(() => recallMidra(i), 450); }
+          store.notify();
+        },
+      }, el('span', { class: 'num', text: i + 1 })));
+    }
+    const used = store.val('PMpst', memSel) === 1;
+    return el('div', { class: 'panel ws-membar' },
+      el('div', { class: 'ws-membar-head' },
+        el('h2', 'Presets'),
+        el('button', { class: 'ws-mini' + (memSaveMode ? ' on' : ''), onclick: () => { memSaveMode = !memSaveMode; store.notify(); } },
+          memSaveMode ? 'SAVE — pick a slot' : 'Save mode'),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: 'eight presets live in the unit · click one to load it into preview' })),
+      grid,
+      memSel != null ? el('div', { class: 'ws-memdetail' },
+        el('span', { class: 'ws-memname', text: `Preset ${memSel + 1}` }),
+        el('div', { class: 'spacer' }),
+        used ? el('button', { class: 'btn recall', onclick: () => { ensureMidraSlot(memSel); setTimeout(() => recallMidra(memSel), 450); } }, 'Load to preview') : null,
+        used ? el('button', { class: 'btn take', onclick: () => { ensureMidraSlot(memSel); setTimeout(() => { recallMidra(memSel); setTimeout(() => doTake(0, ttime), 300); }, 450); } }, 'Load + take') : null,
+        el('button', { class: 'btn save', onclick: () => saveMidra(memSel) }, 'Save here'),
+        used && store.byMnem.has('CTpmr') ? el('button', {
+          class: 'btn ghost',
+          onclick: () => { store.set('CTpmr', [memSel], 1); setTimeout(() => store.get('PMpst', [memSel]), 400); flash(`Erased preset ${memSel + 1}`); },
+        }, 'Erase') : null) : null);
+  }
+  function saveMidra(i) {
+    store.set('GCsrq', [2, i], 1);
+    setTimeout(() => store.get('PMpst', [i]), 400);
+    flash(`Stored the live layout in preset ${i + 1}`);
+  }
+  /** Pull a stored preset's per-layer content so it can be re-applied. */
+  function ensureMidraSlot(i) {
+    for (let s = 0; s < screenCount(); s++) {
+      store.get('PMssh', [i, s]); store.get('PMssv', [i, s]); store.get('PMsml', [i, s]);
+      for (let l = 0; l < layerSlots(); l++)
+        for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv', 'PMalp']) store.get(m, [i, s, l]);
+    }
+  }
+  function recallMidra(i) {
+    if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);   // let preview edits stick
+    const c = 1;
+    for (let s = 0; s < screenCount(); s++)
+      for (let l = 0; l < layerSlots(); l++) {
+        const src = store.val('PMinp', i, s, l);
+        if (src == null) continue;
+        store.set('PRsih', [s, c, l], store.val('PMsih', i, s, l) || 0);
+        store.set('PRsiv', [s, c, l], store.val('PMsiv', i, s, l) || 0);
+        store.set('PRpoh', [s, c, l], store.val('PMpoh', i, s, l) ?? B);
+        store.set('PRpov', [s, c, l], store.val('PMpov', i, s, l) ?? B);
+        if (store.byMnem.has('PMalp')) store.set('PRalp', [s, c, l], store.val('PMalp', i, s, l) ?? 255);
+        store.set('PRinp', [s, c, l], src);
+      }
+    flash(`Loaded preset ${i + 1} into preview`);
+  }
+
+  // ================= page =================
   function render() {
     const all = active();
     const screens = all.filter(s => !hidden.has(s));
-    requestAnimationFrame(fitCanvases);   // size the previews once this tree is on the page
-    const togglePgm = () => { const next = !showPgm; if (!next && !showPvw) return; showPgm = next; store.notify(); };
-    const togglePvw = () => { const next = !showPvw; if (!next && !showPgm) return; showPvw = next; store.notify(); };
+    requestAnimationFrame(fitCanvases);
     return el('div', { class: 'ws-page' },
       el('div', { class: 'panel ws-bar' },
         el('div', { class: 'ws-toggles' },
           el('span', { class: 'ws-bar-lbl', text: 'Show' }),
-          el('button', { class: 'ws-tog pgm' + (showPgm ? ' on' : ''), onclick: togglePgm }, 'Program'),
-          el('button', { class: 'ws-tog pvw' + (showPvw ? ' on' : ''), onclick: togglePvw }, 'Preview')),
+          el('button', { class: 'ws-tog pgm' + (showLive ? ' on' : ''), onclick: () => { if (showLive && !showEdit) return; showLive = !showLive; store.notify(); } }, 'Program'),
+          el('button', { class: 'ws-tog pvw' + (showEdit ? ' on' : ''), onclick: () => { if (showEdit && !showLive) return; showEdit = !showEdit; store.notify(); } }, 'Preview')),
         all.length > 1 ? el('div', { class: 'ws-toggles' },
           el('span', { class: 'ws-bar-lbl', text: 'Screens' }),
           ...all.map(s => el('button', {
             class: 'ws-tog' + (!hidden.has(s) ? ' on' : ''),
-            title: (hidden.has(s) ? 'Show' : 'Hide') + ` Screen ${s + 1}`,
+            title: (hidden.has(s) ? 'Show ' : 'Hide ') + screenLabel(s),
             onclick: () => { if (hidden.has(s)) hidden.delete(s); else if (screens.length > 1) hidden.add(s); store.notify(); },
           }, `${s + 1}`))) : null,
-        el('span', { class: 'ws-armed hint', text: armed != null ? `${sourceName(armed)} armed — click a layer or slot` : 'Arm a source, then place it on any screen' }),
+        el('label', { class: 'field slider ws-ttime' },
+          el('span', {}, 'Take time', el('b', { class: 'sv', text: (ttime / 1000).toFixed(1) + 's' })),
+          el('input', {
+            type: 'range', min: 0, max: 3000, step: 100, value: ttime,
+            onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+            oninput: (e) => { ttime = +e.target.value; e.target.parentNode.querySelector('.sv').textContent = (ttime / 1000).toFixed(1) + 's'; },
+          })),
+        flashMsg ? el('span', { class: 'ws-flash', text: flashMsg }) : null,
         el('div', { class: 'spacer' }),
-        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s)) }, 'Take all')),
+        el('button', { class: 'btn pvw', onclick: () => screens.forEach(s => doCut(s)) }, 'Cut all'),
+        el('button', { class: 'btn pgm', onclick: () => screens.forEach(s => doTake(s, ttime)) }, 'Take all')),
       el('div', { class: 'ws-body' },
         sourceRail(),
         el('div', { class: 'ws-screens' },
-          ...(screens.length ? screens.map(screenCard) : [el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens selected.' }))]))),
-      memoryStrip());
+          ...(screens.length ? screens.map(screenCard)
+            : [el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No screens configured — set one up in the Screens view.' }))])),
+        inspector()),
+      memoryBar());
   }
   return { enter, render };
 })();

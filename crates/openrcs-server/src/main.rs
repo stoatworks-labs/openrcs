@@ -39,7 +39,7 @@ enum ClientMsg {
 #[derive(Serialize)]
 #[serde(tag = "t", rename_all = "lowercase")]
 enum ServerMsg {
-    Meta { platform: String, port: u16, vars: Vec<VarMeta> },
+    Meta { platform: String, port: u16, host: String, vars: Vec<VarMeta> },
     Snap { items: Vec<(String, Vec<i64>, i64)> },
     Val { m: String, i: Vec<i64>, v: i64 },
     Err { code: u16 },
@@ -203,6 +203,13 @@ async fn client(socket: WebSocket, hub: Arc<Hub>) {
     let meta = ServerMsg::Meta {
         platform: platform_name(hub.platform).into(),
         port: hub.platform.port(),
+        // just the host: the browser fetches source thumbnails from the device's own
+        // HTTP server, which is a different origin from this bridge
+        host: hub
+            .device_addr
+            .rsplit_once(':')
+            .map(|(h, _)| h.to_string())
+            .unwrap_or_else(|| hub.device_addr.clone()),
         vars,
     };
     if send(&mut tx, &meta).await.is_err() {
