@@ -44,8 +44,9 @@ function deviceModel() {
 
 // ---------- platform capabilities (LiveCore vs Midra) ----------
 // Derived from the variable table the device advertised, so the same UI drives
-// both platforms. LiveCore takes with GCtku/GCtfr on a group index; Midra takes
-// with GCtak per screen. Midra has no PRlay (layer-select) and its source
+// both platforms. LiveCore takes by sweeping the T-bar (GCtba) on a group index
+// (see animateTbar); Midra takes with GCtak per screen. Midra has no PRlay
+// (layer-select) and its source
 // assignment is device-managed (a direct PRinp write reverts).
 const screenCount = () => store.byMnem.get('SCmly')?.dims[0] || store.byMnem.get('PRinp')?.dims[0] || 8;
 const layerSlots = () => { const d = store.byMnem.get('PRinp')?.dims; return (d && d[d.length - 1]) || 24; };
@@ -79,6 +80,29 @@ const midTransition = (s) => {
   return v === GRP_FROM_DOWN || v === GRP_FROM_UP;
 };
 /** Take: transition to whichever bank is not currently live. */
+// The device's own auto-take verbs (GCtku/GCtkd) do NOT animate on real
+// LiveCore hardware — firing one leaves the group stuck in EFFECT_FROM_* with
+// the T-bar frozen (confirmed on a NeXtage 16, sole session, both with and
+// without AUTO_TAKE). The manual T-bar (GCtba) is the mechanism that actually
+// transitions, so a take is a client-driven sweep of GCtba from the live end to
+// the target end over the transition time; a cut jumps straight there.
+const GCTBA_MAX = 65535;
+const _tbarAnim = {};   // group -> interval id, so a new take cancels a running one
+function stopTbarAnim(g) { if (_tbarAnim[g]) { clearInterval(_tbarAnim[g]); delete _tbarAnim[g]; } }
+function animateTbar(g, to, ttime) {
+  stopTbarAnim(g);
+  // Where the bar is now: the cached value, or inferred from the live bank.
+  const from = store.val('GCtba', g) ?? (groupLiveCtx(g) === 1 ? GCTBA_MAX : 0);
+  if (!ttime || ttime <= 0 || from === to) { store.set('GCtba', [g], to); return; }
+  const start = performance.now();
+  const tick = () => {
+    const t = Math.min(1, (performance.now() - start) / ttime);
+    store.set('GCtba', [g], Math.round(from + (to - from) * t));
+    if (t >= 1) stopTbarAnim(g);
+  };
+  _tbarAnim[g] = setInterval(tick, 45);   // ~22 fps; final tick lands exactly on `to`
+  tick();
+}
 function doTake(screen, ttime) {
   CONFIDENCE.autoSnapshot('before take');            // opt-in undo point, no-op unless armed
   if (!hasBanks()) {                                   // Midra: one-way take per screen
@@ -86,23 +110,22 @@ function doTake(screen, ttime) {
     store.set('GCtak', [screen], 1);
     return;
   }
-  const g = groupOf(screen), to = editCtx(screen);
-  // The T-bar and the auto take drive the same transition engine. If the bar is parked
-  // at the end we are heading for, the take has no travel left and the group sits in
-  // EFFECT_FROM_* for ever, so park the bar at the live end before starting.
-  if (store.byMnem.has('GCtba')) store.set('GCtba', [g], to === 1 ? 0 : 65535);
-  if (ttime != null) store.set(to === 1 ? 'GCtup' : 'GCtdn', [g], ttime);
-  store.set(to === 1 ? 'GCtku' : 'GCtkd', [g], 1);
+  const g = groupOf(screen), to = editCtx(screen);    // to = bank we're bringing live
+  animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
 }
-/** Cut: go straight there. TAKE_FORCE completes whatever transition is running. */
+/** Cut: jump the bar straight to the target end. */
 function doCut(screen) {
   CONFIDENCE.autoSnapshot('before cut');
   if (!hasBanks()) { store.set('GCtak', [screen], 1); return; }
-  doTake(screen, 0);
-  setTimeout(() => store.set('GCtfr', [groupOf(screen)], 1), 60);
+  const g = groupOf(screen), to = editCtx(screen);
+  animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
 }
-/** Complete a transition that is sitting half-done. */
-function forceTake(screen) { if (store.byMnem.has('GCtfr')) store.set('GCtfr', [groupOf(screen)], 1); }
+/** Complete a transition immediately by snapping the bar to the target end. */
+function forceTake(screen) {
+  if (!hasBanks()) return;
+  const g = groupOf(screen), to = editCtx(screen);
+  animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+}
 /** Manual T-bar, 0 = the DOWN bank (PA) fully on, 65535 = the UP bank (PB). */
 function setTbar(screen, v) { if (store.byMnem.has('GCtba')) store.set('GCtba', [groupOf(screen)], v); }
 function tbarValue(screen) { return store.val('GCtba', groupOf(screen)) ?? 0; }
@@ -132,12 +155,14 @@ const groupLiveCtx = (g) => hasBanks() ? ((store.val('GCsta', g) === GRP_AT_UP |
 const groupTransitioning = (g) => { const v = store.val('GCsta', g); return v === GRP_FROM_DOWN || v === GRP_FROM_UP; };
 function groupTake(g, ttime) {
   if (!hasBanks()) return;
-  const to = 1 - groupLiveCtx(g);
-  if (store.byMnem.has('GCtba')) store.set('GCtba', [g], to === 1 ? 0 : 65535);
-  if (ttime != null) store.set(to === 1 ? 'GCtup' : 'GCtdn', [g], ttime);
-  store.set(to === 1 ? 'GCtku' : 'GCtkd', [g], 1);
+  const to = 1 - groupLiveCtx(g);          // target bank: opposite of what's live
+  animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
 }
-function groupCut(g) { groupTake(g, 0); setTimeout(() => { if (store.byMnem.has('GCtfr')) store.set('GCtfr', [g], 1); }, 60); }
+function groupCut(g) {
+  if (!hasBanks()) return;
+  const to = 1 - groupLiveCtx(g);
+  animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+}
 const groupTbar = (g, v) => { if (store.byMnem.has('GCtba')) store.set('GCtba', [g], v); };
 const groupStepBack = (g) => { if (store.byMnem.has('GCstb')) store.set('GCstb', [g], 1); };
 const commitGroups = () => { if (store.byMnem.has('GCupd')) store.set('GCupd', [], 1); };
