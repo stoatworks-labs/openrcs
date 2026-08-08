@@ -155,10 +155,22 @@ class Store {
     this._pending = false;
     // Plan mode: while on, sets stage into planState instead of hitting the
     // device, and reads prefer the staged value — so a whole look can be built
-    // offline and pushed on connect. See pushPlan / clearPlan.
+    // offline and pushed on connect. Persisted, so a reload keeps staged work.
+    // See pushPlan / clearPlan.
     this.plan = false;
     this.planState = new Map();       // "MNEM|i,i" -> staged value
+    this._loadPlan();
     this.connect();
+  }
+  _loadPlan() {
+    try {
+      const p = JSON.parse(localStorage.getItem('openrcs.plan') || '{}');
+      this.plan = !!p.on;
+      for (const [k, v] of (p.entries || [])) this.planState.set(k, v);
+    } catch { /* first run / private mode */ }
+  }
+  _persistPlan() {
+    try { localStorage.setItem('openrcs.plan', JSON.stringify({ on: this.plan, entries: [...this.planState] })); } catch { /* quota/private */ }
   }
   connect() {
     // The hosted demo has no bridge server to reach — a browser cannot open a
@@ -214,6 +226,7 @@ class Store {
   set(m, idx, v) {
     if (this.plan) {                 // stage, don't send
       this.planState.set(keyOf(m, idx), v);
+      this._persistPlan();
       this.pushLog('pl', `${m} ${[...idx, v].join(',')}`);
       this.notify();
       return;
@@ -226,7 +239,7 @@ class Store {
   raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
 
   // ---- plan mode ----
-  setPlan(on) { this.plan = !!on; this.notify(); }
+  setPlan(on) { this.plan = !!on; this._persistPlan(); this.notify(); }
   planList() {
     const out = [];
     for (const [k, v] of this.planState) {
@@ -235,7 +248,7 @@ class Store {
     }
     return out;
   }
-  clearPlan() { this.planState.clear(); this.notify(); }
+  clearPlan() { this.planState.clear(); this._persistPlan(); this.notify(); }
   // Send every staged value to the device for real, then clear the plan.
   async pushPlan(onProgress) {
     const wasPlan = this.plan;
@@ -250,8 +263,14 @@ class Store {
     }
     this.planState.clear();
     this.plan = wasPlan;
+    this._persistPlan();
     this.notify();
     return entries.length;
+  }
+  // Stage the current look (from cache) as a starting point for a plan.
+  seedPlanFromLook() {
+    if (!this.plan) this.setPlan(true);
+    for (const [m, idx, v] of captureFromCache(['look']).values) this.set(m, idx, v);
   }
 
   subscribe(fn) { this.listeners.add(fn); }
@@ -1592,6 +1611,7 @@ VIEWS.plan = (() => {
         el('div', { class: 'row', style: 'align-items:center' },
           el('h2', `Staged changes (${list.length})`),
           el('div', { class: 'spacer' }),
+          el('button', { class: 'btn ghost', onclick: () => store.seedPlanFromLook(), title: 'Stage the current on-screen look as a starting point' }, 'Seed from look'),
           el('button', { class: 'btn pgm', onclick: push, disabled: (!list.length || !store.connected || busy) ? true : undefined },
             store.connected ? 'Push to device' : 'Push (no device)'),
           list.length ? el('button', { class: 'btn ghost', onclick: () => store.clearPlan() }, 'Discard') : null),
