@@ -438,6 +438,9 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .src-sw.shot { width: 32px; height: 18px; background-size: cover; background-position: center; }
 .lrect.shot { background-size: cover; background-position: center; }
 .src-tile { cursor: grab; }
+/* a source with no signal: the device will refuse to put it on a layer */
+.src-tile.nosig { color: var(--muted); border-style: dashed; }
+.src-tile.nosig .src-ix { color: var(--armed); }
 .src-tile:active { cursor: grabbing; }
 .src-nm { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src-ix { flex: 0 0 auto; font: 600 10px var(--mono); color: var(--faint); }

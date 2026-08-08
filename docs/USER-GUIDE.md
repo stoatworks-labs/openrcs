@@ -81,10 +81,12 @@ with the button top-left (it stays collapsed) for more space still.
   that from the device rather than assuming, so the ON AIR tag always follows the
   real output. If a transition stalls, a **···** button appears to complete it.
 
-- **Unavailable sources are flagged.** A layer pointed at an input the frame does
-  not have can never open, and a take waiting on it never lands — openrcs marks
-  those layers amber and offers to clear them, rather than letting you discover it
-  mid-show.
+- **Unusable sources are flagged.** A layer pointed at an input the frame does not
+  have can never open, and a take waiting on it never lands — openrcs marks those
+  layers amber and offers to clear them, rather than letting you discover it
+  mid-show. On a Midra the same marking covers inputs with no signal, which the
+  device silently refuses to put on a layer at all; if a drop does not take, the
+  page says so instead of pretending it worked.
 - **Memories** along the bottom. On LiveCore that is the device's 144 **screen
   memories** and 144 **master memories**, with save mode, load, load-and-take,
   erase, editable labels, and the per-category **filter** so a recall can bring in

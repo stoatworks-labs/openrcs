@@ -611,18 +611,32 @@ function availableInputs() {
   for (let i = 0; i < d; i++) if (store.val('INava', i) === 1) n++;
   return n || d;
 }
+/** Does this input have a signal? Unknown counts as yes — never cry wolf. */
+function inputHasSignal(i) {
+  const def = store.byMnem.get('ISfwi');
+  if (!def) return true;
+  const plugs = def.dims[1] ?? 1;
+  let known = false;
+  for (let p = 0; p < plugs; p++) {
+    const w = store.val('ISfwi', i, p);
+    if (w == null) continue;
+    known = true;
+    if (w > 0) return true;
+  }
+  return !known;
+}
 
 // LiveCore layer sources (INPUTLAYER): 0 none, 1–24 live inputs, 25–32 large stills,
 // 33–40 reduced stills, 41 colour.
 //
-// Midra numbers its inputs from 1, but what sits above the frame's input count — the
-// frame, logo and colour sources — has not been confirmed against hardware (a Pulse2
-// with eight inputs happily reports a layer on source 9). Those are shown by number
-// rather than given a name we would be guessing at.
+// Midra's live-layer source list runs black, then one entry per input in order, then
+// colour last — recovered from the MIDRA firmware's own string table, where a Pulse2
+// reads "Black, Input1-4, HDMI1-2, SDI1-4, Color" for exactly the 0..11 PRinp range.
+// An input the frame does not have still occupies its slot in that list.
 function sourceName(n) {
   if (n == null) return '·';
   if (n === 0) return '— none —';
-  if (isMidra()) return n <= availableInputs() ? 'IN ' + n : 'Source ' + n;
+  if (isMidra()) return n >= srcMaxOf() ? 'Colour' : 'IN ' + n;
   if (n === 41) return 'Colour';
   if (n >= 33 && n <= 40) return rstillLabel(n - 33) || 'R.Still ' + (n - 32);
   if (n >= 25 && n <= 32) return stillLabel(n - 25) || 'Still ' + (n - 24);
@@ -637,9 +651,13 @@ function sourceName(n) {
  */
 function sourceAvailable(n) {
   if (!n) return true;
-  // Midra: only the inputs are known ground; the sources above them are unconfirmed,
-  // so claiming one is missing would be a guess dressed up as a warning.
-  if (isMidra()) return n > availableInputs() ? true : store.val('INava', n - 1) !== 0;
+  // Midra refuses to open a live layer on an input with no signal — the write is
+  // dropped without a NAK — so "usable" here means fitted *and* locked to a source.
+  // Colour is generated internally and is always available.
+  if (isMidra()) {
+    if (n >= srcMaxOf()) return true;
+    return store.val('INava', n - 1) !== 0 && inputHasSignal(n - 1);
+  }
   if (store.meta?.platform !== 'livecore') return true;
   if (n === 41) return true;                                    // colour is always there
   if (n >= 33 && n <= 40) return store.val('RSval', n - 33) !== 0;
@@ -2214,6 +2232,8 @@ VIEWS.workspace = (() => {
   function enter() {
     if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
+    // signal presence per input, so a source that cannot be placed reads as such
+    if (store.byMnem.has('ISfwi')) store.scan('ISfwi');
     for (const m of ['GCsta', 'Plngr', 'GCtba', 'GCtup', 'GCtdn']) if (store.byMnem.has(m)) store.scan(m);
     if (store.meta?.platform === 'livecore') for (const m of ['LSval', 'RSval']) if (store.byMnem.has(m)) store.scan(m);
     for (let s = 0; s < screenCount(); s++) {
@@ -2291,16 +2311,17 @@ VIEWS.workspace = (() => {
   /** Put a source on a layer, giving it a sensible box if it has none yet. */
   function assign(s, c, l, src, at) {
     store.set('PRinp', [s, c, l], src);
-    // Midra decides for itself whether a layer may take a source — a write to a slot the
-    // device has not allocated is silently dropped rather than NAKed. Read it back so a
-    // rejection shows up instead of looking like it worked.
+    // Midra drops a write it will not honour — an input with no signal, most often —
+    // without sending a NAK, so read it back rather than assume it landed.
     if (isMidra()) {
-      store.get('PRinp', [s, c, l]);
       setTimeout(() => {
         store.get('PRinp', [s, c, l]);
         setTimeout(() => {
-          if ((store.val('PRinp', s, c, l) || 0) !== src)
-            flash(`The device would not put ${sourceName(src)} on L${l + 1} — that layer is not available for a source`);
+          if ((store.val('PRinp', s, c, l) || 0) !== src) {
+            const why = src && src < srcMaxOf() && !inputHasSignal(src - 1)
+              ? 'there is no signal on it' : 'the device refused it';
+            flash(`${sourceName(src)} did not go on L${l + 1} — ${why}`);
+          }
         }, 350);
       }, 350);
     }
@@ -2479,9 +2500,12 @@ VIEWS.workspace = (() => {
   function srcTile(n) {
     const name = sourceName(n), kind = sourceKind(n);
     const snap = snapshotUrl(n);
+    const usable = sourceAvailable(n);
     return el('button', {
-      class: 'src-tile' + (armed === n ? ' armed' : '') + ' k-' + kind,
-      title: n ? `${name} — drag onto a layer, or click to arm` : 'Clear the layer',
+      class: 'src-tile' + (armed === n ? ' armed' : '') + ' k-' + kind + (usable ? '' : ' nosig'),
+      title: !n ? 'Clear the layer'
+        : usable ? `${name} — drag onto a layer, or click to arm`
+        : `${name} — no signal, so the device will not put it on a layer`,
       ...dragProps(n),
       onclick: () => { armed = armed === n ? null : n; store.notify(); },
     },
@@ -2494,7 +2518,7 @@ VIEWS.workspace = (() => {
       n ? el('span', { class: 'src-ix', text: srcBadge(n, kind) }) : null);
   }
   function srcBadge(n, kind) {
-    if (isMidra()) return n <= availableInputs() ? 'IN' + n : String(n);
+    if (isMidra()) return n >= srcMaxOf() ? 'COL' : 'IN' + n;
     if (kind === 'still') return 'ST' + (n - 24);
     if (kind === 'rstill') return 'RS' + (n - 32);
     if (kind === 'colour') return '';
@@ -2525,10 +2549,14 @@ VIEWS.workspace = (() => {
   function sourceRail() {
     const live = store.meta?.platform === 'livecore';
     if (!live) {
-      // Midra: the inputs the frame reports, plus anything already on a layer (which
-      // covers the frame/logo sources we cannot name yet).
-      const nIn = availableInputs(), extra = [...sourcesInUse()].filter(n => n > nIn).sort((a, b) => a - b);
-      const nums = [...Array.from({ length: nIn }, (_, i) => i + 1), ...extra];
+      // Midra: every input slot the frame has, then colour last. Slots the frame does
+      // not carry are dropped, but anything already sitting on a layer stays listed.
+      const slots = store.byMnem.get('INava')?.dims[0] ?? inputCount();
+      const inUse = sourcesInUse();
+      const nums = [];
+      for (let i = 1; i <= slots && i < srcMaxOf(); i++)
+        if (store.val('INava', i - 1) !== 0 || inUse.has(i)) nums.push(i);
+      nums.push(srcMaxOf());                                    // colour
       return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
         el('div', { class: 'src-list' }, srcTile(0), ...nums.map(srcTile)),
         el('div', { class: 'ws-rail-foot hint', text: armed != null ? `${sourceName(armed)} armed` : 'Drag onto a layer' }));

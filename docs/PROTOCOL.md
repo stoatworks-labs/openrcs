@@ -177,23 +177,25 @@ speed, flying curve, native background and mask — 4095 for all of them.
 These names come from the enumerations in the device's own Web RCS rather than
 from guesswork; see the note on recovering them in the research repository.
 
-## Midra layer allocation — unresolved
+## Midra sources and the silent write
 
-On a Pulse2, `PRinp[screen, preset, slot]` exposes eight layer slots but only
-slot 0 accepted a source, and a write to any other slot is **silently dropped**:
-no `E` code, the old value simply stays. Re-arming `CTpmu`, writing a single
-value, and giving the layer valid on-screen geometry all failed to make a second
-change stick. Whatever allocates a Midra layer has not been identified —
-`CTqfr`/`CTqfa` answer `E10` on this firmware. Any client must read back after
-writing `PRinp` on Midra rather than trusting the absence of a NAK.
+A Midra's live-layer source list is contiguous: index 0 is black, then one entry per
+input in order, and colour last. On a Pulse2 that is exactly the `PRinp` range 0…11 —
+`Black, Input1-4, HDMI1-2, SDI1-4, Color` — so **source n is input n**, and there is
+nothing exotic above the input count. Separate lists exist for the other layer kinds
+(`Black, Frame1-8` and `Black, Logo1-8`), and the layer slots themselves are named
+`Frame, LayerA, LayerB, LayerC, Win.1-4, Logo1, Logo2`.
 
-Midra source numbering above the frame's input count is also unconfirmed: a
-Pulse2 with eight inputs (`INava` 1–8, and no plugs at all on 9/10 per `INpav`)
-was found with a layer sitting on source 9, so 9–11 are the frame, logo and
-colour sources in an order nobody has pinned down yet.
+These names come from the MIDRA updater's own firmware image rather than guesswork:
+the installer is Inno Setup, and `app/MICRO/Firmware/Calimero_AppliMain_Data.hex`
+converted from Intel HEX to a flat binary carries the device's UI string table.
+`Device.xml` in the same installer also gives the model map — device type 259 is the
+PLS350, sold as the Pulse². It is the Midra counterpart of the Web RCS `.swf` that
+supplies the LiveCore enumerations.
 
-## The data
-
-The full variable tables are in [`../protocol/`](../protocol) as JSON, and
-generated into the crate as `tables.rs`. Each entry carries its mnemonic, reply
-mnemonic, symbolic name, group, dimensions, min/max/default, and read-only flag.
+**A `PRinp` write the device will not honour is dropped with no `E` code.** The cause
+is not layer allocation — every one of the eight slots accepts a write, verified by
+setting them all to colour. It is the **source**: a Midra refuses to put a live layer
+on an input with no signal, and colour, being generated internally, always lands. So
+a client must read `PRinp` back after writing it; the absence of a NAK means nothing.
+`ISfwi`/`ISfhe` report the signal, and are the right thing to check first.

@@ -39,19 +39,14 @@ Concrete device capabilities not yet given a dedicated surface:
   canvas, and the two monitor outputs in a monitoring screen (`MONITORING_SCREEN`).
 - **Confidence memories** (`CM*`) and per-screen **Confidential** (`CO*`) — the
   fullscreen/mosaic core is done; these two grids are not yet exposed.
-- **Cut & fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` (mask curve) are known,
-  but the rest of the RCS's Cut & Fill panel has no obvious mnemonics yet.
 
 ## Open questions on hardware
 
-- **Midra layer allocation.** On a Pulse2 only layer slot 0 accepted a `PRinp`
-  write; the others are silently dropped, with no `E` code. Whatever the RCS2
-  does to open a Midra layer is not yet known, so the Workspace reads back after
-  every Midra source write and says so when the device refuses. Capturing RCS2's
-  own traffic against a device is the way to settle it.
-- **Midra source numbering** above the frame's input count. A Pulse2 with eight
-  inputs was found with a layer on source 9, so 9–11 are frame/logo/colour in
-  some order. openrcs shows them as "Source n" rather than guess.
+- **Thumbnails for anything but inputs.** The LiveCore serves `capture_in_N` only;
+  screens, outputs and previews 404 even with their snapshot slots enabled, and a
+  Midra serves no HTTP at all.
+- **Cut & Fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` are known, but the rest of
+  the RCS's Cut & Fill panel has no obvious mnemonics.
 
 ## Beyond the stock control software
 
@@ -123,6 +118,6 @@ PixelHue's **Pixel Flow** (a layer-based canvas with a clean touch UI). openrcs
 borrows the ideas that its LiveCore/Midra targets can actually execute.
 
 Everything above is gated on hardware access for the features that touch signal
-paths (capture, EDID). The LiveCore enum meanings are no longer a guess — they
-were recovered from the device's own Web RCS and are documented in
-[PROTOCOL.md](PROTOCOL.md); the Midra table still has the gaps listed above.
+paths (capture, EDID). The enum meanings on both platforms are no longer guesses:
+the LiveCore's came from its Web RCS and the Midra's from its updater firmware,
+and both are documented in [PROTOCOL.md](PROTOCOL.md).
