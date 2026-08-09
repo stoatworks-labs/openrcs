@@ -54,6 +54,14 @@ const srcMaxOf = () => store.byMnem.get('PRinp')?.max ?? 41;
 const inputCount = () => store.byMnem.get('INava')?.dims[0] || 24;
 const outputCount = () => store.byMnem.get('OUava')?.dims[0] || 8;
 const hasPRlay = () => store.byMnem.has('PRlay');
+// Physical connector behind each INplg value. Fixed per platform: every LiveCore
+// input card carries the same six plugs, every Midra input the same five.
+const PLUG_NAMES = {
+  livecore: ['Analog (HD15)', 'DVI-A', 'DVI-D', 'SDI', 'HDMI', 'DisplayPort'],
+  midra: ['Analog (HD15)', 'DVI', 'SDI', 'HDMI', 'HDBaseT'],
+};
+const plugName = (p) => PLUG_NAMES[store.meta?.platform]?.[p] ?? 'Plug ' + (p + 1);
+const plugCount = () => store.byMnem.get('INpav')?.dims[1] || ((store.byMnem.get('INplg')?.max ?? 5) + 1);
 // A layer shows because it has a source. PRlay is the RCS's multi-layer *edit
 // selection*, not visibility — reading it as "shown" hides live layers.
 const layerShown = (s, ctx, l) => (store.val('PRinp', s, ctx, l) || 0) > 0;
@@ -2314,7 +2322,7 @@ VIEWS.inputs = (() => {
   const hasProc = () => store.byMnem.has('IEbri');   // input processing (both platforms)
   const PROC = ['IEbri', 'IEcon', 'IEclr', 'IEhue', 'IEugr', 'IEugg', 'IEugb', 'IEchs', 'IEcvs', 'IEche', 'IEcve'];
   function enter() {
-    for (const m of ['INava', 'INplg', 'INfrz', 'INffz', 'INbla', 'INpat']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['INava', 'INplg', 'INpav', 'INfrz', 'INffz', 'INbla', 'INpat']) if (store.byMnem.has(m)) store.scan(m);
     for (const m of ['ISspr', 'ISsva', 'IScfo', 'ISswi', 'ISshe']) if (store.byMnem.has(m)) store.scan(m);
     if (sel != null && hasProc()) { const p = store.val('INplg', sel) ?? 0; for (const m of PROC) store.get(m, [sel, p]); }
   }
@@ -2329,12 +2337,27 @@ VIEWS.inputs = (() => {
     return el('tr', { class: (avail ? '' : 'dim') + (sel === i ? ' sel-row' : ''), style: hasProc() ? 'cursor:pointer' : '', onclick: hasProc() ? () => { sel = i; enter(); store.notify(); } : null },
       el('td', { text: 'IN ' + (i + 1) }),
       el('td', {}, boolChip(avail ? 1 : 0, 'ready', 'unused')),
-      el('td', { class: 'val', text: 'P' + (plug + 1) }),
+      el('td', {}, plugSelect(i, plug)),
       el('td', {}, boolChip(valid === 1 ? 1 : present === 1 ? 0 : (present == null ? null : 0), 'valid', present === 1 ? 'unstable' : 'no signal')),
       el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
       el('td', {},
         el('button', { class: 'btn ghost' + (frozen ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('INfrz', [i], frozen ? 0 : 1); } }, 'Freeze'),
         el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: (e) => { e.stopPropagation(); store.set('INbla', [i], black ? 0 : 1); } }, 'Black')));
+  }
+  // Active-plug selector. Plugs without a connector fitted (INpav=0) are listed
+  // but disabled; a fresh cache reads INpav as null, which counts as available.
+  function plugSelect(i, plug) {
+    const s = el('select', {
+      onclick: (e) => e.stopPropagation(),
+      onchange: (e) => { store.set('INplg', [i], +e.target.value); if (sel === i) enter(); },
+    });
+    for (let p = 0; p < plugCount(); p++) {
+      const o = el('option', { value: p, text: plugName(p) });
+      if (store.val('INpav', i, p) === 0) o.disabled = true;
+      if (p === plug) o.selected = true;
+      s.append(o);
+    }
+    return s;
   }
   function resetProc(i, p) {
     const d = { IEbri: 128, IEcon: 128, IEclr: 128, IEhue: 180, IEugr: 128, IEugg: 128, IEugb: 128, IEchs: 0, IEcvs: 0, IEche: 0, IEcve: 0 };
@@ -2344,7 +2367,7 @@ VIEWS.inputs = (() => {
   function settings() {
     const i = sel, p = store.val('INplg', i) ?? 0, idx = [i, p];
     return el('div', { class: 'panel' },
-      el('div', { class: 'row' }, el('h2', `Input ${i + 1} · plug ${p + 1} adjustment`), el('div', { class: 'spacer' }),
+      el('div', { class: 'row' }, el('h2', `Input ${i + 1} · ${plugName(p)} adjustment`), el('div', { class: 'spacer' }),
         el('button', { class: 'btn ghost', onclick: () => resetProc(i, p) }, 'Reset')),
       el('div', { class: 'grid2' },
         bind('Brightness', 'IEbri', idx, 0, 255), bind('Contrast', 'IEcon', idx, 0, 255),
@@ -2367,7 +2390,7 @@ VIEWS.inputs = (() => {
       sel != null && hasProc() ? settings() : null,
       el('div', { class: 'panel', style: 'overflow:auto' },
         el('table', { class: 'grid' },
-          el('thead', {}, el('tr', {}, ...['Input', 'State', 'Plug', 'Signal', 'Size', ''].map(h => el('th', { text: h })))),
+          el('thead', {}, el('tr', {}, ...['Input', 'State', 'Connector', 'Signal', 'Size', ''].map(h => el('th', { text: h })))),
           el('tbody', {}, ...rows))));
   }
   return { enter, render };
@@ -2855,7 +2878,7 @@ VIEWS.edid = (() => {
   }
   function writeEdid() {
     if (!gen) return;
-    if (!confirm(`Write a custom ${gen.H}×${gen.V}@${gen.R} EDID to IN ${cIn + 1} · plug ${cPlug + 1}?\nThis overwrites that input's stored EDID.`)) return;
+    if (!confirm(`Write a custom ${gen.H}×${gen.V}@${gen.R} EDID to IN ${cIn + 1} · ${plugName(cPlug)}?\nThis overwrites that input's stored EDID.`)) return;
     for (let i = 0; i < 256; i++) store.set('EIdat', [cIn, cPlug, i], gen.bytes[i]);
     store.set('EIstr', [cIn, cPlug], 1);
     writeStatus = 'written — 256 bytes sent + stored';
@@ -2870,7 +2893,7 @@ VIEWS.edid = (() => {
   function customPanel() {
     const isCustom = cPreset === EDID_PRESETS.length - 1;
     const inputs = Array.from({ length: NIN() }, (_, i) => [i, 'IN ' + (i + 1)]);
-    const plugs = Array.from({ length: inPlugs() }, (_, i) => [i, 'Plug ' + (i + 1)]);
+    const plugs = Array.from({ length: inPlugs() }, (_, i) => [i, plugName(i)]);
     const presets = EDID_PRESETS.map(([l], i) => [i, l]);
     const refreshes = [24, 25, 30, 50, 60].map(r => [r, r + ' Hz']);
     const preview = gen ? (() => {
@@ -2935,9 +2958,9 @@ VIEWS.edid = (() => {
       el('td', { class: 'val', text: fmt(store.val('EOhcd', ...idx)) }),
       el('td', el('button', { class: 'btn ghost', onclick: () => { store.set('EOred', idx, 1); store.scan('EOhcd'); store.scan('EOval'); } }, 'Read EDID')));
   }
-  function plugSeg(cur, set, n) {
+  function plugSeg(cur, set, n, name) {
     const s = el('div', { class: 'seg' });
-    for (let p = 0; p < n; p++) s.append(el('button', { class: p === cur ? 'on take' : '', onclick: () => { set(p); store.notify(); } }, 'Plug ' + (p + 1)));
+    for (let p = 0; p < n; p++) s.append(el('button', { class: p === cur ? 'on take' : '', onclick: () => { set(p); store.notify(); } }, name ? name(p) : 'Plug ' + (p + 1)));
     return s;
   }
   function render() {
@@ -2946,7 +2969,7 @@ VIEWS.edid = (() => {
         el('span', { class: 'hint', text: 'Preferred formats on inputs, and the EDID reported by attached displays' })),
       el('div', { class: 'panel' }, el('h2', 'Inputs'),
         el('div', { class: 'row' },
-          el('label', { class: 'field' }, 'Connector', plugSeg(inPlug, p => inPlug = p, inPlugs())),
+          el('label', { class: 'field' }, 'Connector', plugSeg(inPlug, p => inPlug = p, inPlugs(), plugName)),
           el('div', { class: 'spacer' }),
           el('span', { class: 'hint', text: 'Set a preferred format, Store to apply, Factory to revert' })),
         el('div', { style: 'overflow:auto' },
