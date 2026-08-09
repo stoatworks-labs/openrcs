@@ -30,19 +30,19 @@ describe compatibility.
 
 ## Download
 
-**[v0.3.0](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.3.0)** — prebuilt for macOS, Windows and Linux. Pick your platform:
+**[v0.4.0](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.4.0)** — prebuilt for macOS, Windows and Linux. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Apple Silicon, Intel</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Apple Silicon · .dmg disk image (CLI) | [`openrcs-server-0.3.0-macos-aarch64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-aarch64-cli.dmg) | 1.5 MB |
-| Intel · .dmg disk image (CLI) | [`openrcs-server-0.3.0-macos-x86_64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-x86_64-cli.dmg) | 1.5 MB |
-| Apple Silicon · .pkg installer (CLI) | [`openrcs-server-0.3.0-macos-aarch64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-aarch64-cli.pkg) | 1.0 MB |
-| Intel · .pkg installer (CLI) | [`openrcs-server-0.3.0-macos-x86_64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-x86_64-cli.pkg) | 1.0 MB |
-| Apple Silicon · .tar.gz archive | [`openrcs-server-0.3.0-macos-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-aarch64.tar.gz) | 991 KB |
-| Intel · .tar.gz archive | [`openrcs-server-0.3.0-macos-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-macos-x86_64.tar.gz) | 1.0 MB |
+| Apple Silicon · .dmg disk image (CLI) | [`openrcs-server-0.4.0-macos-aarch64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-aarch64-cli.dmg) | 1.5 MB |
+| Intel · .dmg disk image (CLI) | [`openrcs-server-0.4.0-macos-x86_64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-x86_64-cli.dmg) | 1.5 MB |
+| Apple Silicon · .pkg installer (CLI) | [`openrcs-server-0.4.0-macos-aarch64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-aarch64-cli.pkg) | 1.0 MB |
+| Intel · .pkg installer (CLI) | [`openrcs-server-0.4.0-macos-x86_64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-x86_64-cli.pkg) | 1.1 MB |
+| Apple Silicon · .tar.gz archive | [`openrcs-server-0.4.0-macos-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-aarch64.tar.gz) | 1.0 MB |
+| Intel · .tar.gz archive | [`openrcs-server-0.4.0-macos-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-macos-x86_64.tar.gz) | 1.0 MB |
 
 </details>
 
@@ -51,10 +51,10 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`openrcs-server-0.3.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-windows-x86_64-setup.exe) | 698 KB |
-| ARM64 · .exe installer | [`openrcs-server-0.3.0-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-windows-aarch64-setup.exe) | 640 KB |
-| x64 · .zip archive | [`openrcs-server-0.3.0-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-windows-x86_64.zip) | 840 KB |
-| ARM64 · .zip archive | [`openrcs-server-0.3.0-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-windows-aarch64.zip) | 808 KB |
+| x64 · .exe installer | [`openrcs-server-0.4.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-windows-x86_64-setup.exe) | 711 KB |
+| ARM64 · .exe installer | [`openrcs-server-0.4.0-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-windows-aarch64-setup.exe) | 652 KB |
+| x64 · .zip archive | [`openrcs-server-0.4.0-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-windows-x86_64.zip) | 856 KB |
+| ARM64 · .zip archive | [`openrcs-server-0.4.0-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-windows-aarch64.zip) | 822 KB |
 
 </details>
 
@@ -63,8 +63,8 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .tar.gz archive | [`openrcs-server-0.3.0-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-linux-x86_64.tar.gz) | 959 KB |
-| ARM64 · .tar.gz archive | [`openrcs-server-0.3.0-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.3.0/openrcs-server-0.3.0-linux-aarch64.tar.gz) | 927 KB |
+| x64 · .tar.gz archive | [`openrcs-server-0.4.0-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-linux-x86_64.tar.gz) | 975 KB |
+| ARM64 · .tar.gz archive | [`openrcs-server-0.4.0-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.4.0/openrcs-server-0.4.0-linux-aarch64.tar.gz) | 944 KB |
 
 </details>
 
