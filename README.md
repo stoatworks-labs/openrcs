@@ -116,14 +116,20 @@ The UI is **platform-aware** — it reads the variable table the device advertis
 and shows only the views that processor supports. It centres on a **Workspace**
 working page — sources (inputs and stills), every screen editable side by side
 in program, preview or both at once, one-click layout presets, and memories on a
-single window-filling page — backed by a **Stage** overview, a graphical
-**Layers** editor (drag/resize, source, opacity, border, crop, layer transitions,
-built-in layouts), **Memories**, **Live** (take, master fade or freeze),
-**Inputs**, **Outputs**, **Screens**, **Stills**, a live **Tally**,
+single window-filling page — backed by a **Stage** overview and a **Wall** map
+that places each screen at its real output position; a graphical **Layers**
+editor (drag/resize, source, opacity, border, crop, layer transitions, built-in
+layouts); **Destinations** that take, cut and T-bar whole screen groups at once;
+**Memories**, **Cues** (a show script with per-cue autofollow), **Keys**
+(one-tap macros) and **Live**; a big-target **Show mode** for front-of-house; and
+**Shows** — capture the device's whole state to a portable file and restore it,
+with an instant **Confidence** undo and an offline **Plan** mode that stages a
+look with no device attached and pushes it on connect. Setup covers **Inputs**,
+**Outputs**, **Screens**, **Stills**, a live **Tally**, **Capture**,
 **Multiviewer** and **Soft edge** designers, **EDID** management with a
-custom-EDID writer, **GPIO**, **System**, an **Inspector** over every device
-variable, and a raw-protocol **Console**. It's a dependency-free vanilla
-ES-module app served by the server — no build step.
+custom-EDID writer, **GPIO** and **System**; **Tools** add an **Inspector** over
+every device variable and a raw-protocol **Console**. It's a dependency-free
+vanilla ES-module app served by the server — no build step.
 
 ## Using the crate
 

@@ -37,6 +37,30 @@ single shape.
 
 ![openrcs driving a Pulse2 (Midra) — the nav shows only the views this unit supports, and Live offers a per-screen Freeze instead of a master fade](screenshots/midra.png)
 
+## New in this release
+
+- **Show mode** — a stripped, big-target front-of-house surface: large CUT ALL /
+  TAKE ALL, a TAKE tile per destination, and a grid of master-memory recall tiles.
+  The one to drive a show from a touchscreen at front-of-house.
+- **Wall** — where each screen sits in the output. Every screen is placed in the
+  output-tile grid at its real position; drag to rearrange, then apply.
+- **Destinations** — take, cut, T-bar and step-back whole **screen groups** as one
+  destination, with a grouping editor and a TAKE ALL GROUPS.
+- **Shows** — capture the device's writable state (the live look, the memory
+  banks, input or output setup) to a portable JSON file and restore it. Restore
+  re-reads the device first and writes only what differs. Also hosts
+  **Confidence**, an instant cache-based undo that can auto-snapshot before every
+  take.
+- **Plan** — build a look with no device attached (reads preview your staged
+  values), then push it to the processor on connect. Staged work persists across
+  a reload; "Seed from look" starts from the current on-screen state.
+- **Cues** now chain: mark a cue **autofollow** and it runs the next one after a
+  per-cue wait, with a **HOLD** to pause and per-cue notes.
+
+On LiveCore, a **take** now animates the T-bar directly rather than firing the
+device's own take verbs — on real hardware those leave the group stuck
+mid-transition, so openrcs sweeps the bar over the transition time instead.
+
 ## Workspace
 
 ![The working page — sources, live screens and memories on one page](screenshots/workspace.png)
