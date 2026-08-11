@@ -1,0 +1,44 @@
+name: ci
+
+# Until this existed the repo had no workflow with a `pull_request` trigger at
+# all — only a tag-driven release — so Dependabot bumps arrived with no status
+# check to gate a merge on and simply accumulated. Both open bumps are cargo
+# ones (axum, tower-http), which is what this exercises.
+#
+# `cargo fmt --check` is deliberately not a step: it is already failing on main
+# (crates/openrcs-proto/examples/probe.rs among others), and gating every bump
+# on pre-existing formatting drift would block the PRs this workflow exists to
+# unblock. Run `cargo fmt --all` once, then add the step.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test
+
+      # openrcs-proto is the public protocol crate and must stay no_std-able.
+      # That only breaks when a dependency quietly pulls std back in, which is
+      # precisely the kind of thing a Dependabot bump does — and nothing else
+      # in this workflow would notice.
+      - name: no_std still builds
+        run: cargo build --no-default-features
