@@ -224,7 +224,14 @@ pub fn platform_name(p: Platform) -> &'static str {
 // be capable of poking a live processor even by accident.
 
 const DISCOVER_CONNECT_TIMEOUT: Duration = Duration::from_millis(400);
-const DISCOVER_GREETING_WINDOW: Duration = Duration::from_millis(700);
+/// How long to wait for a processor to introduce itself.
+///
+/// Measured, not guessed: a real NeXtage 16 sent its `ITcct` **1161 ms** after
+/// the connection was accepted. An earlier 700 ms window found that box and
+/// then failed to identify it, which is the worst of both — it looks like the
+/// scan half-worked. This only applies to hosts that answered at all, and the
+/// sweep is concurrent, so widening it costs the sweep almost nothing.
+const DISCOVER_GREETING_WINDOW: Duration = Duration::from_millis(2000);
 const DISCOVER_CONCURRENCY: usize = 64;
 
 /// Probe every host on this machine's /24 for a processor, reporting each hit
@@ -284,8 +291,14 @@ async fn probe(ip: Ipv4Addr, port: u16) -> Option<Option<&'static str>> {
         .ok()?
         .ok()?;
 
-    // Both families announce themselves unprompted on connect, so the dialect
-    // can be identified without sending anything.
+    // Listen for an unprompted greeting. Not every processor sends one — a
+    // Pulse2 was measured silent for four seconds on a fresh connection — so
+    // an unidentified answer is a normal result, not a failure. It is still
+    // the useful half: finding the address is the hard part on a keypad, and
+    // the platform is a two-button choice the operator already knows.
+    //
+    // Staying passive is the point. Sending a probe would identify everything,
+    // and would also mean writing to a processor that might be live in a show.
     let mut buf = [0u8; 512];
     let n = match timeout(DISCOVER_GREETING_WINDOW, stream.read(&mut buf)).await {
         Ok(Ok(n)) => n,
@@ -294,8 +307,16 @@ async fn probe(ip: Ipv4Addr, port: u16) -> Option<Option<&'static str>> {
     Some(classify(&String::from_utf8_lossy(&buf[..n])))
 }
 
-/// LiveCore pushes `ITcct` (and answers `PDEV`); Midra pushes `DEV`. Test for
-/// the LiveCore markers first — `PDEV` contains `DEV`.
+/// Identify a platform from whatever it volunteered.
+///
+/// Test the LiveCore markers first: `PDEV` contains `DEV`, so the naive order
+/// reads a LiveCore box as a Midra one.
+///
+/// `DEV` is included because a Midra answers `?` with it — but do not read that
+/// as a greeting. Measured on a real Pulse2: **it sends nothing at all on
+/// connect**, and the `DEV=259` that earlier notes describe as an unsolicited
+/// push on connect is the reply to the UI's own `get('?')`. Midra therefore
+/// scans as found-but-unidentified.
 fn classify(greeting: &str) -> Option<&'static str> {
     if greeting.contains("PDEV") || greeting.contains("ITcct") {
         Some("livecore")
@@ -417,14 +438,18 @@ mod tests {
     }
 
     #[test]
-    fn a_midra_greeting_is_recognised() {
+    fn a_midra_reply_is_recognised() {
+        // Not a greeting: a real Pulse2 is silent on connect, and this is what
+        // it answers `?` with. Kept because a device that has been spoken to
+        // by something else may still have it in flight.
         assert_eq!(classify("DEV259\r\n"), Some("midra"));
     }
 
     #[test]
     fn silence_identifies_nothing() {
-        // Something answered on the port but said nothing we know. It is still
-        // reported as found — just unlabelled — so the operator can try it.
+        // The normal Midra result, measured on real hardware: it answered the
+        // connection and volunteered nothing. Reported as found but unlabelled
+        // so the operator can pick the platform and try it.
         assert_eq!(classify(""), None);
         assert_eq!(classify("SSH-2.0-OpenSSH_9.2\r\n"), None);
     }
