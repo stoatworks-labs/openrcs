@@ -27,9 +27,12 @@ the platform and press **Connect**. The choice is written to a config file
 the next start, so this only has to be done once. Connection also retargets a
 running server — useful when one surface covers more than one processor.
 
-The scan is read-only: it opens a connection, listens for the greeting each
-platform sends unprompted, and never writes to anything it finds. A processor
-that already has a control session open elsewhere may not answer it.
+The scan is read-only: it opens a connection, listens for anything the
+processor volunteers, and never writes to what it finds — so it is safe to run
+on a live network. Some processors identify themselves that way and some say
+nothing at all; a result listed as **unidentified** was found and answered, it
+just did not name its platform, so pick that yourself and connect. A processor
+that already has a control session open elsewhere may not answer at all.
 
 **No command line?** The [tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)
 (macOS, Windows, Linux) bundles the server in a menu-bar app: enter the switcher's

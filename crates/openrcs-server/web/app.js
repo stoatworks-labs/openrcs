@@ -4316,7 +4316,7 @@ VIEWS.connection = (() => {
         },
       },
         el('span', { class: 'addr', text: addr }),
-        el('span', { class: 'plat', text: p ? p.toUpperCase() : 'unidentified' }))));
+        el('span', { class: 'plat', text: p ? p.toUpperCase() : 'pick platform' }))));
   }
 
   function statusPanel() {
@@ -4362,7 +4362,13 @@ VIEWS.connection = (() => {
               onclick: () => store.discover(),
             }, store.scanning ? 'Scanning…' : 'Scan'),
             el('span', { class: 'hint', text: 'Looks for processors on this bridge’s network' })),
-          foundList())),
+          foundList(),
+          // Measured on real hardware: a Pulse2 answers the connection and
+          // says nothing. Without this line, a found-but-unlabelled row reads
+          // as a half-failure rather than the normal Midra result.
+          store.found.size
+            ? el('div', { class: 'hint pad', text: 'Not every processor names its platform. Tap one, set the platform, and connect.' })
+            : null)),
       el('div', { class: 'split' },
         el('div', { class: 'panel' }, el('h2', 'Address'),
           el('div', { class: 'addr-display', text: entry || '—' }),
