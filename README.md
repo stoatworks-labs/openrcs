@@ -112,6 +112,11 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 # ...or --platform midra ; then open http://127.0.0.1:8730/
 ```
 
+`--device` is optional: without it the server starts unconfigured and the
+**Connection** view sets the processor from the UI — keypad or network scan —
+remembering it for next time. That makes the server usable on a machine with no
+convenient command line, such as a dedicated control panel.
+
 The UI is **platform-aware** — it reads the variable table the device advertises
 and shows only the views that processor supports. It centres on a **Workspace**
 working page — sources (inputs and stills), every screen editable side by side

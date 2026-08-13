@@ -19,6 +19,18 @@ Use `--platform midra` for the Midra family. The header shows the device model,
 platform and a connection indicator; every view updates live as the device — or
 another operator — changes state.
 
+`--device` is optional. Started without one, the server comes up unconfigured
+and shows only the **Connection** view: enter the processor's address on the
+on-screen keypad, or press **Scan** to look for processors on the network, pick
+the platform and press **Connect**. The choice is written to a config file
+(`~/.config/openrcs/config.json` by default, or `--config <file>`) and used on
+the next start, so this only has to be done once. Connection also retargets a
+running server — useful when one surface covers more than one processor.
+
+The scan is read-only: it opens a connection, listens for the greeting each
+platform sends unprompted, and never writes to anything it finds. A processor
+that already has a control session open elsewhere may not answer it.
+
 **No command line?** The [tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)
 (macOS, Windows, Linux) bundles the server in a menu-bar app: enter the switcher's
 IP, pick the model, click **Start**, then **Open**. Nothing else to install.

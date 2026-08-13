@@ -192,8 +192,34 @@ class Store {
     // See pushPlan / clearPlan.
     this.plan = false;
     this.planState = new Map();       // "MNEM|i,i" -> staged value
+    // Connection setup (the appliance case: no keyboard, no shell, so the
+    // processor is chosen from the UI). Empty on a bridge started with --device.
+    this.found = new Map();           // discovered "host:port" -> platform | null
+    this.scanning = false;
+    this.setupError = null;
     this._loadPlan();
     this.connect();
+  }
+
+  // False only when the bridge has no processor yet. Undefined — an older
+  // bridge, or the hosted demo — counts as configured, so nothing changes for
+  // them.
+  get configured() { return !this.meta || this.meta.configured !== false; }
+
+  // Point the bridge at a processor. The server persists it and re-seeds us.
+  setup(device, platform) {
+    this.setupError = null;
+    this.send({ t: 'setup', device, platform });
+    this.notify();
+  }
+
+  // Ask the bridge to sweep its own network for processors. Read-only at the
+  // far end — see the server's discovery notes.
+  discover() {
+    this.found.clear();
+    this.scanning = true;
+    this.send({ t: 'discover' });
+    this.notify();
   }
   _loadPlan() {
     try {
@@ -217,14 +243,36 @@ class Store {
   }
   onMsg(m) {
     switch (m.t) {
-      case 'meta':
+      case 'meta': {
+        // A second meta means the bridge is pointed somewhere else now. Every
+        // view keeps its own cached idea of the device — fetched slots,
+        // capability probes, selected screens — and a platform change swaps the
+        // variable table underneath all of it. Reloading is the one reset that
+        // cannot miss a corner of that state.
+        if (this.meta && (this.meta.device !== m.device || this.meta.platform !== m.platform)) {
+          location.reload();
+          return;
+        }
         this.meta = m;
+        this.byMnem.clear();
+        this.byGroup.clear();
+        this.state.clear();
         for (const v of m.vars) {
           this.byMnem.set(v.m, v);
           if (!this.byGroup.has(v.group)) this.byGroup.set(v.group, []);
           this.byGroup.get(v.group).push(v);
         }
         onReady();
+        break;
+      }
+      case 'found':
+        this.found.set(m.addr, m.platform || null);
+        break;
+      case 'scanned':
+        this.scanning = false;
+        break;
+      case 'setuperr':
+        this.setupError = m.reason;
         break;
       case 'snap':
         for (const [mn, i, v] of m.items) this.state.set(keyOf(mn, i), v);
@@ -333,7 +381,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -353,12 +401,15 @@ window.addEventListener('hashchange', () => {
 function onReady() {
   store.get('?');            // DEV
   store.get('!');            // DEV_PLATFORM -> PDEV
-  VIEWS[currentView].enter?.();
+  VIEWS[effectiveView()].enter?.();
 }
 
 function header() {
-  const model = deviceModel();
-  const plat = store.meta ? store.meta.platform : '';
+  // Before a processor is chosen there is no model and no platform. Showing the
+  // default table's platform there would be a confident lie on a panel whose
+  // whole state is "not set up yet".
+  const model = store.configured ? deviceModel() : 'no processor';
+  const plat = store.configured && store.meta ? store.meta.platform : '';
   return el('header', { class: 'head' },
     el('button', {
       class: 'nav-toggle', title: navCollapsed ? 'Show menu' : 'Hide menu',
@@ -368,7 +419,7 @@ function header() {
     el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
     el('div', { class: 'dev-id' },
       el('div', { class: 'model', text: model }),
-      el('div', { class: 'sub', text: `${plat.toUpperCase()} · :${store.meta?.port ?? ''}` })),
+      el('div', { class: 'sub', text: plat ? `${plat.toUpperCase()} · :${store.meta?.port ?? ''}` : 'not configured' })),
     el('div', { class: 'spacer' }),
     store.plan
       ? el('button', { class: 'chip plan', title: 'Plan mode — edits are staged, not sent. Open Plan to push.',
@@ -385,7 +436,7 @@ const NAV = [
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
-  ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
+  ['connection', 'Connection'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'],
@@ -408,10 +459,17 @@ const VIEW_REQUIRES = {
   wall: 'OSpoh',           // screen output-position map (LiveCore)
 };
 const viewSupported = (id) => {
+  // Until a processor is chosen there is nothing for any other view to draw,
+  // and every one of them would render an empty shell.
+  if (!store.configured) return id === 'connection';
   const req = VIEW_REQUIRES[id];
   if (!req || !store.meta) return true;
   return typeof req === 'function' ? req() : store.byMnem.has(req);
 };
+
+// What is actually on screen. A stale hash (or a bookmark) must not strand an
+// unconfigured appliance on a blank view it cannot navigate away from.
+const effectiveView = () => (store.configured ? currentView : 'connection');
 
 function nav() {
   const n = el('nav', { class: 'nav' });
@@ -422,7 +480,7 @@ function nav() {
     if (!viewSupported(id)) continue;
     if (section && !sectionShown) { n.append(el('div', { class: 'nav-sec', text: section })); sectionShown = true; }
     n.append(el('button', {
-      class: id === currentView ? 'active' : '',
+      class: id === effectiveView() ? 'active' : '',
       onclick: () => switchView(id),
     }, label));
   }
@@ -443,7 +501,7 @@ function render() {
   root.replaceChildren(
     header(),
     nav(),
-    el('main', { class: 'main' }, VIEWS[currentView].render()),
+    el('main', { class: 'main' }, VIEWS[effectiveView()].render()),
   );
 
   if (fid) {
@@ -4195,6 +4253,134 @@ VIEWS.console = (() => {
           el('button', { class: 'btn', onclick: () => { if (input.trim()) { store.raw(input.trim()); store.notify(); } } }, 'Send'))));
   }
   return { render };
+})();
+
+// ---------- Connection ----------
+//
+// Which processor the bridge talks to, set from the surface itself.
+//
+// This exists for the appliance: a panel with a touchscreen, no keyboard and no
+// shell. Everything here is therefore tappable — the address is entered on a
+// keypad rather than in a text field, and the scan list is the path anyone will
+// actually use. On a desktop the same view is just a nicer way to retarget than
+// restarting the bridge with different arguments.
+VIEWS.connection = (() => {
+  let entry = null;             // keypad buffer; null until seeded from meta
+  let plat = null;              // 'livecore' | 'midra'
+  let seeded = false;
+
+  const isDemo = () => !!globalThis.OPENRCS_DEMO_DEVICE;
+
+  function enter() {
+    if (seeded) return;
+    seeded = true;
+    entry = store.meta?.device || '';
+    plat = store.meta?.platform || 'livecore';
+  }
+
+  const tap = (ch) => { if (entry.length < 64) entry += ch; store.notify(); };
+  const back = () => { entry = entry.slice(0, -1); store.notify(); };
+  const clear = () => { entry = ''; store.notify(); };
+
+  function keypad() {
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', ':'];
+    return el('div', { class: 'keypad' },
+      keys.map(k => el('button', { class: 'key', onclick: () => tap(k) }, k)),
+      el('button', { class: 'key wide', onclick: back }, '⌫'),
+      el('button', { class: 'key wide', onclick: clear }, 'Clear'));
+  }
+
+  function platformPicker() {
+    const pick = (p) => { plat = p; store.notify(); };
+    return el('div', { class: 'seg big' },
+      el('button', { class: plat === 'livecore' ? 'on recall' : '', onclick: () => pick('livecore') }, 'LiveCore'),
+      el('button', { class: plat === 'midra' ? 'on recall' : '', onclick: () => pick('midra') }, 'Midra'));
+  }
+
+  function foundList() {
+    if (store.scanning && store.found.size === 0) {
+      return el('div', { class: 'hint pad', text: 'Scanning the local network…' });
+    }
+    if (store.found.size === 0) {
+      return el('div', { class: 'hint pad', text: 'No scan yet. Scan looks for processors on this bridge’s own network.' });
+    }
+    return el('div', { class: 'found' },
+      [...store.found].map(([addr, p]) => el('button', {
+        class: 'found-row' + (addr === entry ? ' sel' : ''),
+        onclick: () => {
+          entry = addr;
+          // Trust the greeting when it identified itself; leave the operator's
+          // choice alone when it did not.
+          if (p) plat = p;
+          store.notify();
+        },
+      },
+        el('span', { class: 'addr', text: addr }),
+        el('span', { class: 'plat', text: p ? p.toUpperCase() : 'unidentified' }))));
+  }
+
+  function statusPanel() {
+    const dev = store.meta?.device;
+    return el('div', { class: 'panel' }, el('h2', 'Current'),
+      el('div', { class: 'kv' },
+        el('span', { class: 'k', text: 'Processor' }),
+        el('span', { class: 'v val', text: dev || (isDemo() ? 'simulated' : 'not set') })),
+      el('div', { class: 'kv' },
+        el('span', { class: 'k', text: 'Platform' }),
+        // The bridge serves a default variable table before it is configured;
+        // reporting that table's platform as the device's would be wrong.
+        el('span', { class: 'v val', text: store.configured ? (store.meta?.platform || '').toUpperCase() || '·' : '·' })),
+      el('div', { class: 'kv' },
+        el('span', { class: 'k', text: 'Link' }),
+        el('div', { class: 'chip ' + (store.connected ? 'on' : 'off') },
+          el('span', { class: 'dot' }), store.connected ? 'ONLINE' : 'OFFLINE')),
+      !store.configured
+        ? el('div', { class: 'hint pad', text: 'No processor set. Enter its address, or scan for one.' })
+        : null,
+      store.configured && !store.connected
+        ? el('div', { class: 'hint pad', text: 'Set, but not answering. Check the address, the cabling and that nothing else holds a control session.' })
+        : null);
+  }
+
+  function render() {
+    if (entry === null) enter();
+    const canConnect = entry.trim().length > 0 && !isDemo();
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Connection' }),
+        el('span', { class: 'hint', text: 'Which processor this surface controls' })),
+      isDemo()
+        ? el('div', { class: 'panel' }, el('h2', 'Demonstration'),
+            el('div', { class: 'hint pad', text: 'This is a simulated device in a browser. A real bridge is what connects to a processor, so there is nothing to point anywhere here.' }))
+        : null,
+      el('div', { class: 'split' },
+        statusPanel(),
+        el('div', { class: 'panel' }, el('h2', 'Find'),
+          el('div', { class: 'row' },
+            el('button', {
+              class: 'btn', disabled: store.scanning || isDemo(),
+              onclick: () => store.discover(),
+            }, store.scanning ? 'Scanning…' : 'Scan'),
+            el('span', { class: 'hint', text: 'Looks for processors on this bridge’s network' })),
+          foundList())),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Address'),
+          el('div', { class: 'addr-display', text: entry || '—' }),
+          keypad(),
+          el('div', { class: 'hint pad', text: 'The control port is added automatically. A hostname needs the bridge’s --device option.' })),
+        el('div', { class: 'panel' }, el('h2', 'Platform'),
+          platformPicker(),
+          el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu.' }),
+          store.setupError
+            ? el('div', { class: 'hint pad bad', text: `Rejected: ${store.setupError}` })
+            : null,
+          el('button', {
+            class: 'btn primary big', disabled: !canConnect,
+            onclick: () => store.setup(entry.trim(), plat),
+          }, 'Connect'))));
+  }
+
+  return { enter, render };
 })();
 
 render();

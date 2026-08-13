@@ -666,3 +666,38 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .diff-missing { color: var(--faint); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- Connection (appliance setup) ----
+   Sized for a finger on a 1080p touch panel, not a mouse: every target here is
+   at least 44px. Nothing in this view is reachable by hover only. */
+.addr-display {
+  font-family: var(--mono); font-size: 26px; letter-spacing: 1px;
+  background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r);
+  padding: 12px 14px; margin-bottom: 10px; min-height: 54px;
+  display: flex; align-items: center; color: var(--text);
+}
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.keypad .key {
+  background: var(--raised); border: 1px solid var(--line-hi); border-radius: var(--r);
+  min-height: 52px; font-size: 20px; font-weight: 600; font-family: var(--mono);
+  color: var(--text);
+}
+.keypad .key:active { background: var(--accent-dim); border-color: var(--accent); }
+.keypad .key.wide { grid-column: span 1; font-family: var(--sans); font-size: 14px; }
+.keypad .key.wide:last-child { grid-column: span 2; }
+
+.btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+.btn.primary:disabled { opacity: .4; }
+.seg.big button { padding: 12px 22px; font-size: 14px; min-height: 46px; }
+
+.found { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.found-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r);
+  padding: 12px 14px; min-height: 48px; text-align: left; color: var(--text);
+}
+.found-row.sel { border-color: var(--accent); background: var(--accent-dim); }
+.found-row .addr { font-family: var(--mono); font-size: 15px; }
+.found-row .plat { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
+.hint.pad { display: block; margin-top: 10px; line-height: 1.5; }
+.hint.bad { color: var(--pgm); }
