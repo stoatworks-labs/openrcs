@@ -14,6 +14,7 @@
 //! Setup view, then remembers that across restarts.
 
 mod hub;
+mod tailnet;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -45,6 +46,14 @@ enum ClientMsg {
     Setup { device: String, platform: String },
     /// Sweep the local network for processors.
     Discover,
+    /// Look at or change this host's tailnet membership. Ignored unless the
+    /// server was started with --tailnet.
+    Tailnet {
+        /// `status`, `up`, `down` or `hostname`.
+        action: String,
+        #[serde(default)]
+        value: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -61,6 +70,9 @@ enum ServerMsg {
         /// False until a processor has been chosen. The UI shows Setup and
         /// nothing else while this is false.
         configured: bool,
+        /// Whether this host's tailnet membership is ours to manage. False on
+        /// every ordinary install; the UI hides the whole view.
+        tailnet: bool,
         vars: Vec<VarMeta>,
     },
     Snap { items: Vec<(String, Vec<i64>, i64)> },
@@ -73,6 +85,16 @@ enum ServerMsg {
     Scanned,
     /// Setup was rejected — the address did not parse.
     Setuperr { reason: String },
+    /// This host's tailnet membership, and the outcome of the last change to
+    /// it. `err` empty means the action succeeded.
+    Tailnet {
+        #[serde(flatten)]
+        status: tailnet::Status,
+        err: String,
+        /// True while a change is in flight, so the surface can disable its own
+        /// buttons rather than queue a second `up` behind the first.
+        busy: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -92,6 +114,7 @@ struct Config {
     listen: SocketAddr,
     web_dir: String,
     config_path: PathBuf,
+    tailnet: bool,
 }
 
 /// What the Setup view writes, so a configured appliance comes back configured
@@ -108,6 +131,7 @@ fn parse_args() -> Config {
     let mut listen: SocketAddr = "127.0.0.1:8730".parse().unwrap();
     let mut web_dir = default_web_dir();
     let mut config_path = default_config_path();
+    let mut tailnet = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -125,6 +149,7 @@ fn parse_args() -> Config {
                     listen = v.parse().unwrap_or(listen);
                 }
             }
+            "--tailnet" => tailnet = true,
             "--web" => web_dir = args.next().unwrap_or(web_dir),
             "--config" => {
                 if let Some(v) = args.next() {
@@ -133,16 +158,21 @@ fn parse_args() -> Config {
             }
             "-h" | "--help" => {
                 eprintln!("openrcs-server [--device host:port] [--platform livecore|midra] \
-                           [--listen host:port] [--web dir] [--config file]");
+                           [--listen host:port] [--web dir] [--config file] [--tailnet]");
                 eprintln!();
                 eprintln!("  --device is optional. Without it the server starts unconfigured");
                 eprintln!("  and takes its target from --config, or from the Setup view.");
+                eprintln!();
+                eprintln!("  --tailnet adds a Tailnet view that can connect, disconnect and");
+                eprintln!("  rename THIS HOST on your tailnet. Only for a box the surface owns,");
+                eprintln!("  i.e. an appliance. Anyone who can reach the UI can use it, so do");
+                eprintln!("  not combine it with a --listen beyond loopback unless you mean to.");
                 std::process::exit(0);
             }
             other => eprintln!("ignoring unknown arg {other}"),
         }
     }
-    Config { device, platform, listen, web_dir, config_path }
+    Config { device, platform, listen, web_dir, config_path, tailnet }
 }
 
 fn default_config_path() -> PathBuf {
@@ -215,11 +245,28 @@ fn default_web_dir() -> String {
     here.to_string_lossy().into_owned()
 }
 
+/// One tailnet result: where the host ended up, and what went wrong getting
+/// there. `busy` brackets a change so a surface can grey its own buttons
+/// instead of queueing a second `up` behind the first.
+#[derive(Clone)]
+struct TailnetUpdate {
+    status: tailnet::Status,
+    err: String,
+    busy: bool,
+}
+
 /// Everything a websocket client needs: the link to the processor, and where
 /// to write a setup change so it survives a reboot.
 struct App {
     hub: Arc<Hub>,
     config_path: PathBuf,
+    /// Set by --tailnet. Every tailnet message is dropped when false, so the
+    /// gate is enforced at the server and not merely in the UI that hides it.
+    tailnet: bool,
+    /// Tailnet results, fanned out to every open surface rather than just the
+    /// one that pressed the button — two panels on one appliance should not
+    /// disagree about whether it is connected.
+    tailnet_tx: tokio::sync::broadcast::Sender<TailnetUpdate>,
     /// One sweep at a time. A second Scan tap while the first is running would
     /// otherwise double the traffic and interleave two sets of results.
     scanning: AtomicBool,
@@ -246,6 +293,8 @@ async fn main() {
     let app = Arc::new(App {
         hub: hub.clone(),
         config_path: cfg.config_path.clone(),
+        tailnet: cfg.tailnet,
+        tailnet_tx: tokio::sync::broadcast::channel(8).0,
         scanning: AtomicBool::new(false),
     });
 
@@ -275,6 +324,9 @@ async fn main() {
     println!("  config   {}", cfg.config_path.display());
     println!("  web UI   http://{}/", cfg.listen);
     println!("  serving  {}", if from_disk { cfg.web_dir.as_str() } else { "embedded UI" });
+    if cfg.tailnet {
+        println!("  tailnet  managed from the UI (--tailnet)");
+    }
 
     let listener = tokio::net::TcpListener::bind(cfg.listen).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -324,7 +376,7 @@ fn content_type(path: &str) -> &'static str {
 ///
 /// Sent on connect and again after every retarget: a new target can mean a
 /// different platform, so the table itself changes and the cache is empty.
-async fn seed<S>(tx: &mut S, hub: &Arc<Hub>) -> Result<(), ()>
+async fn seed<S>(tx: &mut S, hub: &Arc<Hub>, tailnet: bool) -> Result<(), ()>
 where
     S: SinkExt<Message> + Unpin,
 {
@@ -354,6 +406,7 @@ where
             .unwrap_or_else(|| device.clone()),
         device,
         configured: hub.is_configured(),
+        tailnet,
         vars,
     };
     send(tx, &meta).await?;
@@ -366,20 +419,44 @@ async fn client(socket: WebSocket, app: Arc<App>) {
     let hub = app.hub.clone();
 
     // 1. hand the browser the variable table and the current state.
-    if seed(&mut tx, &hub).await.is_err() {
+    if seed(&mut tx, &hub, app.tailnet).await.is_err() {
         return;
     }
 
     // 2. fan device events out to this browser.
     let mut events = hub.subscribe();
     let hub_out = hub.clone();
+    let tailnet_on = app.tailnet;
+    let mut tailnet_rx = app.tailnet_tx.subscribe();
     let pump_out = async move {
         loop {
-            match events.recv().await {
+            // Two sources, one socket: the processor's events and this host's
+            // own tailnet results.
+            let ev = tokio::select! {
+                ev = events.recv() => ev,
+                update = tailnet_rx.recv() => {
+                    match update {
+                        Ok(u) => {
+                            let msg = ServerMsg::Tailnet {
+                                status: u.status,
+                                err: u.err,
+                                busy: u.busy,
+                            };
+                            if send(&mut tx, &msg).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(_) => {}
+                    }
+                    continue;
+                }
+            };
+            match ev {
                 Ok(DeviceEvent::Retargeted) => {
                     // Everything the browser holds now describes a different
                     // device. Re-seed rather than patch.
-                    if seed(&mut tx, &hub_out).await.is_err() {
+                    if seed(&mut tx, &hub_out, tailnet_on).await.is_err() {
                         break;
                     }
                 }
@@ -447,6 +524,36 @@ fn handle_client_msg(app: &Arc<App>, txt: &str) {
                     hub.report_setup_error(reason);
                 }
             }
+        }
+        ClientMsg::Tailnet { action, value } => {
+            // Enforced here, not only by the UI hiding the view: a browser can
+            // send whatever it likes down an open socket.
+            if !app.tailnet {
+                return;
+            }
+            let app = app.clone();
+            tokio::spawn(async move {
+                let mutating = action != "status";
+                if mutating {
+                    let _ = app.tailnet_tx.send(TailnetUpdate {
+                        status: tailnet::status().await,
+                        err: String::new(),
+                        busy: true,
+                    });
+                }
+                let err = match action.as_str() {
+                    "status" => String::new(),
+                    "up" => tailnet::connect(&value).await.err().unwrap_or_default(),
+                    "down" => tailnet::disconnect().await.err().unwrap_or_default(),
+                    "hostname" => tailnet::rename(&value).await.err().unwrap_or_default(),
+                    other => format!("unknown tailnet action {other:?}"),
+                };
+                let _ = app.tailnet_tx.send(TailnetUpdate {
+                    status: tailnet::status().await,
+                    err,
+                    busy: false,
+                });
+            });
         }
         ClientMsg::Discover => {
             if app.scanning.swap(true, Ordering::SeqCst) {

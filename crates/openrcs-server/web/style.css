@@ -686,6 +686,21 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .keypad .key.wide { grid-column: span 1; font-family: var(--sans); font-size: 14px; }
 .keypad .key.wide:last-child { grid-column: span 2; }
 
+/* ---- Tailnet (appliance only) ----
+   Same rules as the keypad above: finger-sized, nothing hover-only. Wider and
+   shorter keys than the numeric pad because there are ten to a row rather than
+   three, and a 1080p panel is the smallest thing this has to fit. */
+.textpad { display: flex; flex-direction: column; gap: 8px; }
+.textpad-row { display: flex; gap: 6px; justify-content: center; }
+.textpad .key {
+  background: var(--raised); border: 1px solid var(--line-hi); border-radius: var(--r);
+  min-height: 48px; flex: 1 1 0; min-width: 0;
+  font-size: 18px; font-weight: 600; font-family: var(--mono); color: var(--text);
+}
+.textpad .key:active { background: var(--accent-dim); border-color: var(--accent); }
+.textpad .key.on { background: var(--accent-dim); border-color: var(--accent); }
+.textpad .key.wide { flex: 2 1 0; font-family: var(--sans); font-size: 14px; }
+
 .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
 .btn.primary:disabled { opacity: .4; }
 .seg.big button { padding: 12px 22px; font-size: 14px; min-height: 46px; }
