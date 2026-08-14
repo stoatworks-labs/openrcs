@@ -197,6 +197,11 @@ class Store {
     this.found = new Map();           // discovered "host:port" -> platform | null
     this.scanning = false;
     this.setupError = null;
+    // Tailnet, only on a bridge started with --tailnet (an appliance that owns
+    // the box it runs on). Everything here stays inert otherwise.
+    this.tailnetStatus = null;        // {state, name, addr} once the server answers
+    this.tailnetErr = '';
+    this.tailnetBusy = false;
     this._loadPlan();
     this.connect();
   }
@@ -210,6 +215,20 @@ class Store {
   setup(device, platform) {
     this.setupError = null;
     this.send({ t: 'setup', device, platform });
+    this.notify();
+  }
+
+  // True only when the bridge was started with --tailnet. An older bridge has
+  // no such field, so this is false and the view never appears.
+  get tailnetEnabled() { return !!this.meta?.tailnet; }
+
+  // Look at or change the tailnet membership of the host running the bridge.
+  // Results arrive as a 'tailnet' message and are broadcast to every open
+  // surface, not just this one.
+  tailnet(action, value = '') {
+    this.tailnetErr = '';
+    if (action !== 'status') this.tailnetBusy = true;
+    this.send({ t: 'tailnet', action, value });
     this.notify();
   }
 
@@ -273,6 +292,11 @@ class Store {
         break;
       case 'setuperr':
         this.setupError = m.reason;
+        break;
+      case 'tailnet':
+        this.tailnetStatus = { state: m.state || '', name: m.name || '', addr: m.addr || '' };
+        this.tailnetErr = m.err || '';
+        this.tailnetBusy = !!m.busy;
         break;
       case 'snap':
         for (const [mn, i, v] of m.items) this.state.set(keyOf(mn, i), v);
@@ -436,7 +460,7 @@ const NAV = [
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
-  ['connection', 'Connection'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
+  ['connection', 'Connection'], ['tailnet', 'Tailnet'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'],
@@ -459,8 +483,12 @@ const VIEW_REQUIRES = {
   wall: 'OSpoh',           // screen output-position map (LiveCore)
 };
 const viewSupported = (id) => {
-  // Until a processor is chosen there is nothing for any other view to draw,
-  // and every one of them would render an empty shell.
+  // Not a capability of the processor like the rest of this table — it is a
+  // property of the machine the bridge runs on, and it is off unless that
+  // machine is an appliance the surface owns. Checked before `configured`,
+  // because getting a panel back onto the tailnet is exactly the thing you may
+  // need to do before it can reach any processor at all.
+  if (id === 'tailnet') return store.tailnetEnabled;
   if (!store.configured) return id === 'connection';
   const req = VIEW_REQUIRES[id];
   if (!req || !store.meta) return true;
@@ -469,7 +497,12 @@ const viewSupported = (id) => {
 
 // What is actually on screen. A stale hash (or a bookmark) must not strand an
 // unconfigured appliance on a blank view it cannot navigate away from.
-const effectiveView = () => (store.configured ? currentView : 'connection');
+const effectiveView = () => {
+  if (store.configured) return currentView;
+  // Unconfigured, so everything else is an empty shell — except Tailnet, which
+  // is how a panel that cannot see its processor gets reachable again.
+  return currentView === 'tailnet' && store.tailnetEnabled ? 'tailnet' : 'connection';
+};
 
 function nav() {
   const n = el('nav', { class: 'nav' });
@@ -4253,6 +4286,136 @@ VIEWS.console = (() => {
           el('button', { class: 'btn', onclick: () => { if (input.trim()) { store.raw(input.trim()); store.notify(); } } }, 'Send'))));
   }
   return { render };
+})();
+
+// ---------- Tailnet ----------
+//
+// Present only on a bridge started with --tailnet: an appliance that owns the
+// box it runs on. On any ordinary install this view does not exist, because
+// connecting and disconnecting the host's VPN is not something a control
+// surface for a video processor should be able to do.
+//
+// The question it answers, in this order: what is this panel called on the
+// tailnet, is it on, and if not, which reason. That is otherwise unanswerable
+// from a box with a touchscreen, no keyboard and no shell.
+//
+// Text entry is a tapped keyboard for the same reason the Connection view uses
+// a keypad — there is no physical one. Auth keys are long, so the honest advice
+// is in the hint: seed the key at build time, or use the CLI over SSH. This is
+// the path for when neither happened and somebody is standing in front of it.
+VIEWS.tailnet = (() => {
+  let field = null;              // 'name' | 'key' | null — which pad is open
+  let entry = '';
+  let shift = false;
+  let asked = false;
+
+  function enter() {
+    // One status request per visit. The server broadcasts every change after
+    // that, so polling would only add traffic to a box that has better uses
+    // for it.
+    if (!asked) { asked = true; store.tailnet('status'); }
+  }
+
+  const open = (which) => {
+    field = which;
+    entry = which === 'name' ? (store.tailnetStatus?.name || '').split('.')[0] : '';
+    shift = false;
+    store.notify();
+  };
+  const close = () => { field = null; entry = ''; store.notify(); };
+
+  const tap = (ch) => { if (entry.length < 200) entry += ch; store.notify(); };
+  const back = () => { entry = entry.slice(0, -1); store.notify(); };
+
+  // A tapped keyboard. Digits and lower case cover a hostname; Shift and the
+  // symbol row exist for auth keys, which are mixed case with hyphens.
+  function textpad() {
+    const rows = field === 'name'
+      ? ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm-']
+      : ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm-_'];
+    return el('div', { class: 'textpad' },
+      rows.map(r => el('div', { class: 'textpad-row' },
+        [...r].map(c => el('button', {
+          class: 'key', onclick: () => tap(shift ? c.toUpperCase() : c),
+        }, shift ? c.toUpperCase() : c)))),
+      el('div', { class: 'textpad-row' },
+        el('button', { class: shift ? 'key on' : 'key', onclick: () => { shift = !shift; store.notify(); } }, '⇧'),
+        el('button', { class: 'key wide', onclick: back }, '⌫'),
+        el('button', { class: 'key wide', onclick: () => { entry = ''; store.notify(); } }, 'Clear')));
+  }
+
+  function editor() {
+    const isName = field === 'name';
+    return el('div', { class: 'panel' },
+      el('h2', isName ? 'Rename this panel' : 'Auth key'),
+      el('div', { class: 'addr-display', text: entry || '—' }),
+      textpad(),
+      el('div', { class: 'hint pad', text: isName
+        ? 'Letters, digits and hyphens. This becomes the name you reach it by.'
+        : 'Starts with tskey-. Long to tap: prefer seeding it into the image, or use the CLI over SSH.' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn', onclick: close }, 'Cancel'),
+        el('button', {
+          class: 'btn primary big', disabled: !entry.trim() || store.tailnetBusy,
+          onclick: () => { store.tailnet(isName ? 'hostname' : 'up', entry.trim()); close(); },
+        }, isName ? 'Rename' : 'Join')));
+  }
+
+  function statusPanel() {
+    const st = store.tailnetStatus;
+    const state = st?.state || '';
+    const on = state === 'Running';
+    // Every one of these means something different, and "not connected" for all
+    // of them is what makes this hard to diagnose from the far end.
+    const explain = {
+      Running: 'On the tailnet.',
+      NeedsLogin: 'Logged out — this panel has no identity yet. Join it with an auth key.',
+      Stopped: 'Disconnected. It still has its identity, so Connect brings it straight back.',
+      NoState: 'The daemon is running but has never joined.',
+      '': 'tailscaled is not answering. That is a different fault from being logged out — the service may not be running.',
+    }[state] ?? state;
+
+    return el('div', { class: 'panel' }, el('h2', 'This panel'),
+      el('div', { class: 'row' },
+        el('div', { class: 'chip ' + (on ? 'on' : 'off') },
+          el('span', { class: 'dot' }), on ? 'ONLINE' : (state || 'UNKNOWN'))),
+      el('div', { class: 'kv' },
+        el('div', { class: 'k', text: 'name' }),
+        el('div', { class: 'v', text: st?.name || '—' })),
+      el('div', { class: 'kv' },
+        el('div', { class: 'k', text: 'address' }),
+        el('div', { class: 'v', text: st?.addr || '—' })),
+      el('div', { class: 'hint pad', text: explain }),
+      store.tailnetErr
+        ? el('div', { class: 'hint pad bad', text: store.tailnetErr })
+        : null);
+  }
+
+  function actions() {
+    const st = store.tailnetStatus;
+    const on = st?.state === 'Running';
+    const busy = store.tailnetBusy;
+    return el('div', { class: 'panel' }, el('h2', 'Actions'),
+      el('div', { class: 'row wrap' },
+        el('button', { class: 'btn', disabled: busy, onclick: () => store.tailnet('status') },
+          busy ? 'Working…' : 'Refresh'),
+        on
+          ? el('button', { class: 'btn', disabled: busy, onclick: () => store.tailnet('down') }, 'Disconnect')
+          : el('button', { class: 'btn primary', disabled: busy, onclick: () => store.tailnet('up') }, 'Connect'),
+        el('button', { class: 'btn', disabled: busy, onclick: () => open('name') }, 'Rename'),
+        el('button', { class: 'btn', disabled: busy, onclick: () => open('key') }, 'Enter auth key')),
+      el('div', { class: 'hint pad', text: on
+        ? 'Disconnect keeps this panel’s identity — it does not have to be re-added to the tailnet.'
+        : 'Connect reuses the identity this panel already has. Without one, enter an auth key.' }));
+  }
+
+  function render() {
+    if (field) return el('div', { class: 'view' }, editor());
+    return el('div', { class: 'view' },
+      el('div', { class: 'split' }, statusPanel(), actions()));
+  }
+
+  return { enter, render };
 })();
 
 // ---------- Connection ----------

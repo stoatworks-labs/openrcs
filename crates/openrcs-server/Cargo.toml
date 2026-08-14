@@ -8,7 +8,9 @@ repository.workspace = true
 
 [dependencies]
 openrcs-proto = { path = "../openrcs-proto" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+# "process" is for the optional --tailnet view, which shells out to the
+# tailscale CLI rather than reimplementing tailscaled's local API.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process"] }
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["fs", "set-header"] }
 serde = { version = "1", features = ["derive"] }

@@ -117,6 +117,34 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 remembering it for next time. That makes the server usable on a machine with no
 convenient command line, such as a dedicated control panel.
 
+### Running it on a dedicated panel
+
+`--tailnet` adds one more view, and it is **off unless you ask for it**. It
+shows what the *host running the server* is called on your
+[Tailscale](https://tailscale.com) tailnet, whether it is connected, and lets
+you connect, disconnect and rename it — from the touchscreen, with an on-screen
+keyboard.
+
+That is only useful, and only appropriate, on a box the control surface owns:
+an appliance with no keyboard and no shell, where "why can't I reach this panel"
+is otherwise unanswerable without carrying a laptop to it. On an ordinary
+install the flag is off, the view does not exist, and the server ignores the
+messages behind it — the gate is enforced at the server, not by a UI that hides
+a button.
+
+```bash
+openrcs-server --tailnet --listen 127.0.0.1:8730
+```
+
+Two things worth knowing before turning it on:
+
+- **The surface has no authentication.** Anyone who can reach the UI can take
+  that host off the tailnet. Pair `--tailnet` with a loopback `--listen`, which
+  is the default, unless you have a reason not to.
+- **The server does not need to be root, but it does need to be the operator.**
+  `tailscale up --operator=<user>` grants the account the server runs as; without
+  it the view renders and every button returns "access denied".
+
 The UI is **platform-aware** — it reads the variable table the device advertises
 and shows only the views that processor supports. It centres on a **Workspace**
 working page — sources (inputs and stills), every screen editable side by side
