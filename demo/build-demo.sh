@@ -31,6 +31,19 @@ done
 # the commit that will contain it, so a `git rev-parse HEAD` stamp is always one
 # commit stale. A content hash changes exactly when the assets change, which is
 # the only thing the query string is for.
+# The version the footer reports, for data-version below. The demo's "report a
+# bug" form sends it, and triage renders it as the build a report came from.
+# Read from the workspace manifest rather than written in below, where it would
+# go stale the moment a release is tagged. Scoped to [workspace.package] so a
+# dependency's version cannot be picked up instead.
+version="v$(awk '
+  /^\[/ { inpkg = ($0 ~ /^\[(workspace\.)?package\]/) }
+  inpkg && /^version[[:space:]]*=/ && match($0, /"[^"]+"/) {
+    print substr($0, RSTART + 1, RLENGTH - 2); exit
+  }
+' "$here/../Cargo.toml")"
+[ "$version" = "v" ] && { echo "no version in Cargo.toml" >&2; exit 1; }
+
 stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
               "$here/demo-footer.js" "$here/support-footer.js" "$here/fixtures.json" \
          | shasum -a 256 | cut -c1-8)"
@@ -65,11 +78,12 @@ cat > "$dist/index.html" <<HTML
 <script src="support-footer.js?v=$stamp" defer
         data-app="openrcs"
         data-repo="https://github.com/stoatworks-labs/openrcs"
+        data-version="$version"
         data-note="This is a demo running a simulated device in your browser — no processor is involved, and nothing you do here leaves the tab."
 ></script>
 </body>
 </html>
 HTML
 
-echo "built $dist"
+echo "built $dist ($version)"
 ls -la "$dist"
