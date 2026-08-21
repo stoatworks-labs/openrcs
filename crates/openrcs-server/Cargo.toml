@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 openrcs-proto = { path = "../openrcs-proto" }
+openrcs-awj = { path = "../openrcs-awj" }
 # "process" is for the optional --tailnet view, which shells out to the
 # tailscale CLI rather than reimplementing tailscaled's local API.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process"] }

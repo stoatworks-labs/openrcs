@@ -34,7 +34,22 @@ const MODELS = {
 const MIDRA_MODELS = {
   259: 'Pulse2',
 };
+// Model names the LivePremier reports for itself. NLC is the family prefix on
+// every one of them, so the map is by the part that differs.
+const AWJ_MODELS = {
+  NLC_C: 'Aquilon C', NLC_CPLUS: 'Aquilon C+', NLC_CMAX: 'Aquilon Cmax',
+  NLC_CMINI: 'Aquilon Cmini',
+  NLC_RS1: 'Aquilon RS1', NLC_RS2: 'Aquilon RS2', NLC_RS3: 'Aquilon RS3',
+  NLC_RS4: 'Aquilon RS4', NLC_RS5: 'Aquilon RS5', NLC_RS6: 'Aquilon RS6',
+  NLC_RSALPHA: 'Aquilon RS alpha',
+};
+
 function deviceModel() {
+  if (isAwj()) {
+    const dev = store.pval(LP.model());
+    if (typeof dev !== 'string') return '—';
+    return AWJ_MODELS[dev] || dev;
+  }
   const pdev = store.val('PDEV');
   if (pdev != null) return MODELS[pdev] || `device ${pdev}`;
   const dev = store.val('DEV');
@@ -179,6 +194,11 @@ const commitGroups = () => { if (store.byMnem.has('GCupd')) store.set('GCupd', [
 class Store {
   constructor() {
     this.state = new Map();          // "MNEM|i,i" -> value
+    // LivePremier addresses everything by path and answers with arbitrary
+    // JSON, so it gets its own map rather than being squeezed into state's
+    // mnemonic+index key. Only one of the two is ever in use.
+    this.paths = new Map();          // AWJ path -> JSON value
+    this.awjErr = null;              // {code, msg} of the last NAK
     this.byMnem = new Map();         // mnemonic -> def
     this.byGroup = new Map();        // group -> [def]
     this.meta = null;
@@ -301,6 +321,19 @@ class Store {
       case 'snap':
         for (const [mn, i, v] of m.items) this.state.set(keyOf(mn, i), v);
         break;
+      case 'psnap':
+        for (const [path, v] of m.items) this.paths.set(path, v);
+        break;
+      case 'pval':
+        this.paths.set(m.p, m.v);
+        this.pushLog('rx', `${m.p} = ${JSON.stringify(m.v)}`);
+        break;
+      case 'perr':
+        // E12 is how the device says "no such path on this build", which the
+        // connect-time inventory provokes on purpose. Logged, not raised.
+        this.awjErr = { code: m.code, msg: m.msg };
+        this.pushLog('er', `${m.code} ${m.msg}`);
+        break;
       case 'val':
         this.state.set(keyOf(m.m, m.i), m.v);
         this.pushLog('rx', `${m.m}${m.i.length ? ' ' + m.i.join(',') : ''} = ${m.v}`);
@@ -340,6 +373,20 @@ class Store {
     this.pushLog('tx', `${m} ${[...idx, v].join(',')}`);
   }
   get(m, idx = []) { this.send({ t: 'get', m, i: idx }); }
+
+  // ---- LivePremier (AWJ). Addressed by path; values are JSON.
+  pval(path, fallback = undefined) {
+    const v = this.paths.get(path);
+    return v === undefined ? fallback : v;
+  }
+  pget(path) { this.send({ t: 'pget', p: path }); }
+  pset(path, v) {
+    this.send({ t: 'pset', p: path, v });
+    this.pushLog('tx', `${path} = ${JSON.stringify(v)}`);
+  }
+  // Nothing about state changes reaches us until this is written: the device's
+  // subscription list starts empty. Prefix matched, so one path per subtree.
+  psub(paths) { this.send({ t: 'psub', paths }); }
   scan(m) { this.send({ t: 'scan', m }); }
   raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
 
@@ -405,7 +452,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['lpscreens', 'lppresets', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -423,8 +470,10 @@ window.addEventListener('hashchange', () => {
 });
 
 function onReady() {
-  store.get('?');            // DEV
-  store.get('!');            // DEV_PLATFORM -> PDEV
+  if (!isAwj()) {
+    store.get('?');          // DEV
+    store.get('!');          // DEV_PLATFORM -> PDEV
+  }
   VIEWS[effectiveView()].enter?.();
 }
 
@@ -457,6 +506,8 @@ function header() {
 }
 
 const NAV = [
+  { section: 'LivePremier' },
+  ['lpscreens', 'Screens'], ['lppresets', 'Presets'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -490,6 +541,11 @@ const viewSupported = (id) => {
   // need to do before it can reach any processor at all.
   if (id === 'tailnet') return store.tailnetEnabled;
   if (!store.configured) return id === 'connection';
+  // The two families share the shell — header, nav, Connection — and nothing
+  // else. A view built on the mnemonic variable table has nothing to render on
+  // a processor that has no such table, so each family sees only its own.
+  const lp = id.startsWith('lp');
+  if (isAwj() !== lp) return isAwj() ? id === 'connection' : !lp;
   const req = VIEW_REQUIRES[id];
   if (!req || !store.meta) return true;
   return typeof req === 'function' ? req() : store.byMnem.has(req);
@@ -498,6 +554,11 @@ const viewSupported = (id) => {
 // What is actually on screen. A stale hash (or a bookmark) must not strand an
 // unconfigured appliance on a blank view it cannot navigate away from.
 const effectiveView = () => {
+  // A hash, a bookmark or a retarget can leave the surface on a view this
+  // family does not have. Fall back to its first rather than to a blank frame.
+  if (store.configured && !viewSupported(currentView)) {
+    return isAwj() ? 'lpscreens' : 'stage';
+  }
   if (store.configured) return currentView;
   // Unconfigured, so everything else is an empty shell — except Tailnet, which
   // is how a panel that cannot see its processor gets reachable again.
@@ -518,7 +579,12 @@ function nav() {
     }, label));
   }
   n.append(el('div', { class: 'grow' }));
-  n.append(el('div', { class: 'foot', text: store.meta ? `${store.byMnem.size} vars` : 'connecting…' }));
+  n.append(el('div', {
+    class: 'foot',
+    text: !store.meta ? 'connecting…'
+      : isAwj() ? `${store.paths.size} properties`
+      : `${store.byMnem.size} vars`,
+  }));
   return n;
 }
 
@@ -2343,6 +2409,207 @@ VIEWS.wall = (() => {
       el('div', { class: 'panel' },
         el('div', { class: 'hint', text: 'Positions are in output tiles (OSpoh/OSpov); size is SCsih/SCsiv. Apply commits the layout with a global output update.' })));
   }
+  return { enter, render };
+})();
+
+
+// ================= LivePremier (AWJ) =================
+//
+// A different processor generation with a different protocol, so these views
+// share no state with the mnemonic ones above: they read store.paths, not
+// store.state, and they are the only views shown when the bridge is pointed at
+// a LivePremier.
+//
+// THE PATHS BELOW MUST MATCH crates/openrcs-awj/src/paths.rs. Two builders for
+// one protocol is a duplication with a real failure mode — a path that is right
+// in one and stale in the other fails as an E12 at runtime, not at build time.
+
+const isAwj = () => store.meta?.platform === 'livepremier';
+
+const LP_SCREENS = 24;
+const LP_PRESET_PAGE = 50;      // matches the server's connect-time inventory
+
+const LP = {
+  model: () => 'DeviceObject/system/$device/@items/1/@props/dev',
+  label: (s) => `DeviceObject/$screen/@items/S${s}/control/@props/label`,
+  isUsed: (s) => `DeviceObject/$screenAuxGroup/@items/S${s}/status/@props/isUsed`,
+  transition: (s) => `DeviceObject/$screenAuxGroup/@items/S${s}/status/@props/transition`,
+  takeStatus: (s) => `DeviceObject/$screenAuxGroup/@items/S${s}/status/@props/take`,
+  takeTime: (s, up) => `DeviceObject/$screenAuxGroup/@items/S${s}/control/@props/take${up ? 'Up' : 'Down'}Time`,
+  letter: (s, which) => `DeviceObject/$screenAuxGroup/@items/S${s}/control/@props/preset${which}`,
+  take: (s) => `DeviceObject/$screenAuxGroup/@items/S${s}/control/@props/xTake`,
+  cut: (s) => `DeviceObject/$screenAuxGroup/@items/S${s}/control/@props/xCut`,
+  presetValid: (n) => `DeviceObject/presetBank/$bank/@items/${n}/status/@props/isValid`,
+  presetLabel: (n) => `DeviceObject/presetBank/$bank/@items/${n}/control/@props/label`,
+  loadScreen: (slot, s, target) =>
+    `DeviceObject/presetBank/control/load/$slot/@items/${slot}/$screen/@items/S${s}/$preset/@items/${target}/@props/xRequest`,
+  layerSource: (s, letter, layer) =>
+    `DeviceObject/$screen/@items/S${s}/$preset/@items/${letter}/$layer/@items/${layer}/source/@props/inputNum`,
+  // One prefix covers every screen's control and status: the device pushes a
+  // change whose path STARTS WITH a subscribed string.
+  SUB_SCREENS: 'DeviceObject/$screenAuxGroup',
+};
+
+// Every transition state names the end the T-bar is at or came from, so the
+// rule is the DOWN/UP suffix. Testing only for AT_UP gets the four in-flight
+// states backwards, invisibly, for exactly the length of a transition.
+const lpProgramIsDown = (t) => typeof t === 'string' && t.endsWith('DOWN');
+
+// The letter addressing a side of a screen. A device reports its own, and does
+// not always use A and B, so these are read rather than assumed.
+function lpLetter(s, which /* 'program' | 'preview' */) {
+  const t = store.pval(LP.transition(s));
+  const down = store.pval(LP.letter(s, 'Down'), 'A');
+  const up = store.pval(LP.letter(s, 'Up'), 'B');
+  const wantDown = which === 'program' ? lpProgramIsDown(t) : !lpProgramIsDown(t);
+  return wantDown ? down : up;
+}
+
+const lpUsedScreens = () =>
+  Array.from({ length: LP_SCREENS }, (_, i) => i + 1).filter(s => store.pval(LP.isUsed(s)) === true);
+
+const lpSeconds = (tenths) => (tenths == null ? '·' : (tenths / 10).toFixed(1));
+
+// ---------- LivePremier: Screens ----------
+VIEWS.lpscreens = (() => {
+  let live = false;      // whether we have written a subscription list
+
+  function setLive(on) {
+    live = on;
+    // An empty list turns pushes off again — the device filters by prefix, and
+    // nothing matches nothing.
+    store.psub(on ? [LP.SUB_SCREENS] : []);
+    store.notify();
+  }
+
+  function enter() {
+    // The server inventories on connect; this covers a view opened later, or
+    // after a device has been away.
+    for (const s of lpUsedScreens()) {
+      store.pget(LP.transition(s));
+      store.pget(LP.takeStatus(s));
+    }
+  }
+
+  function row(s) {
+    const t = store.pval(LP.transition(s));
+    const taking = store.pval(LP.takeStatus(s));
+    const moving = typeof taking === 'string' && taking !== 'OFF';
+    const up = store.pval(LP.takeTime(s, true));
+    const down = store.pval(LP.takeTime(s, false));
+    return el('tr', {},
+      el('td', { text: `S${s}` }),
+      el('td', { text: store.pval(LP.label(s)) || '—' }),
+      el('td', { class: 'val', text: t == null ? '·' : String(t) }),
+      el('td', { class: 'val', text: `${lpLetter(s, 'program')} / ${lpLetter(s, 'preview')}` }),
+      el('td', { class: 'val', text: `${lpSeconds(up)} / ${lpSeconds(down)} s` }),
+      el('td', {},
+        moving
+          ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), String(taking).toLowerCase())
+          : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'idle')),
+      el('td', {},
+        el('button', { class: 'btn pgm', onclick: () => store.pset(LP.take(s), true) }, 'Take'),
+        el('button', { class: 'btn ghost', onclick: () => store.pset(LP.cut(s), true) }, 'Cut')));
+  }
+
+  function render() {
+    const used = lpUsedScreens();
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Screens' }),
+        el('span', { class: 'hint', text: 'Screens in use, and the transition each is holding' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('button', {
+            class: live ? 'btn primary' : 'btn',
+            onclick: () => setLive(!live),
+          }, live ? 'Live updates on' : 'Live updates off'),
+          el('span', {
+            class: 'hint',
+            text: live
+              ? 'The device is pushing screen changes to this bridge.'
+              : 'This processor tells a client nothing until asked to. Until this is on, what you see is what was last read.',
+          })),
+        used.length
+          ? el('table', { class: 'grid' },
+              el('thead', {}, el('tr', {}, ...['Screen', 'Label', 'Transition', 'PGM / PRW', 'Take up / down', 'State', ''].map(h => el('th', { text: h })))),
+              el('tbody', {}, ...used.map(row)))
+          : el('div', { class: 'hint pad', text: store.connected ? 'No screen on this device is in use.' : 'Waiting for the processor.' })));
+  }
+
+  return { enter, render };
+})();
+
+// ---------- LivePremier: Presets ----------
+VIEWS.lppresets = (() => {
+  let pages = 1;                 // how much of the bank has been asked for
+  let target = 'PREVIEW';
+  let screen = null;             // null = every screen in use
+
+  function fetchPage(page) {
+    const from = page * LP_PRESET_PAGE + 1;
+    for (let n = from; n < from + LP_PRESET_PAGE; n++) {
+      store.pget(LP.presetValid(n));
+      store.pget(LP.presetLabel(n));
+    }
+  }
+
+  function enter() {
+    if (screen === null) screen = lpUsedScreens()[0] ?? 1;
+  }
+
+  function recall(slot) {
+    const screens = screen === 'all' ? lpUsedScreens() : [screen];
+    // Recalls are silent — the device answers a write with nothing — so the
+    // surface reads the affected screen back rather than assuming it landed.
+    for (const s of screens) {
+      store.pset(LP.loadScreen(slot, s, target), true);
+      store.pget(LP.transition(s));
+    }
+  }
+
+  function slotTile(n) {
+    const valid = store.pval(LP.presetValid(n)) === true;
+    const label = store.pval(LP.presetLabel(n));
+    return el('button', {
+      class: 'slot' + (valid ? ' valid' : ''),
+      disabled: !valid,
+      title: valid ? `Recall ${n} to ${target.toLowerCase()}` : `Slot ${n} is empty`,
+      onclick: () => valid && recall(n),
+    },
+      el('span', { class: 'num', text: String(n) }),
+      valid ? el('span', { class: 'lbl', text: label || 'preset' }) : null);
+  }
+
+  function render() {
+    const slots = [];
+    for (let n = 1; n <= pages * LP_PRESET_PAGE; n++) slots.push(slotTile(n));
+    const used = lpUsedScreens();
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Presets' }),
+        el('span', { class: 'hint', text: 'Screen preset bank — a slot the device reports as empty cannot be recalled' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { text: 'To ' }),
+          el('select', {
+            onchange: (e) => { target = e.target.value; store.notify(); },
+          }, ...['PREVIEW', 'PROGRAM'].map(v => el('option', { value: v, selected: v === target, text: v.toLowerCase() }))),
+          el('label', { text: ' on ' }),
+          el('select', {
+            onchange: (e) => { screen = e.target.value === 'all' ? 'all' : Number(e.target.value); store.notify(); },
+          },
+            ...used.map(s => el('option', { value: String(s), selected: s === screen, text: `S${s} ${store.pval(LP.label(s)) || ''}`.trim() })),
+            el('option', { value: 'all', selected: screen === 'all', text: 'every screen in use' }))),
+        el('div', { class: 'mem-grid' }, ...slots),
+        el('div', { class: 'row' },
+          el('button', {
+            class: 'btn',
+            onclick: () => { fetchPage(pages); pages += 1; store.notify(); },
+          }, `Read slots ${pages * LP_PRESET_PAGE + 1}–${(pages + 1) * LP_PRESET_PAGE}`),
+          el('span', { class: 'hint', text: 'The bank holds 1000 slots and each costs two reads, so it is paged rather than read whole.' }))));
+  }
+
   return { enter, render };
 })();
 
@@ -4429,7 +4696,7 @@ VIEWS.tailnet = (() => {
 // restarting the bridge with different arguments.
 VIEWS.connection = (() => {
   let entry = null;             // keypad buffer; null until seeded from meta
-  let plat = null;              // 'livecore' | 'midra'
+  let plat = null;              // 'livecore' | 'midra' | 'livepremier'
   let seeded = false;
 
   const isDemo = () => !!globalThis.OPENRCS_DEMO_DEVICE;
@@ -4457,7 +4724,8 @@ VIEWS.connection = (() => {
     const pick = (p) => { plat = p; store.notify(); };
     return el('div', { class: 'seg big' },
       el('button', { class: plat === 'livecore' ? 'on recall' : '', onclick: () => pick('livecore') }, 'LiveCore'),
-      el('button', { class: plat === 'midra' ? 'on recall' : '', onclick: () => pick('midra') }, 'Midra'));
+      el('button', { class: plat === 'midra' ? 'on recall' : '', onclick: () => pick('midra') }, 'Midra'),
+      el('button', { class: plat === 'livepremier' ? 'on recall' : '', onclick: () => pick('livepremier') }, 'LivePremier'));
   }
 
   function foundList() {

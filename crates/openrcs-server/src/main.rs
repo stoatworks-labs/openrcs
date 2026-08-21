@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use hub::{platform_name, DeviceEvent, Hub, Target};
+use hub::{DeviceEvent, Family, Hub, Target};
 
 #[derive(Deserialize)]
 #[serde(tag = "t", rename_all = "lowercase")]
@@ -42,6 +42,13 @@ enum ClientMsg {
     Get { m: String, #[serde(default)] i: Vec<i64> },
     Scan { m: String },
     Raw { d: String },
+    /// Read one AWJ property.
+    Pget { p: String },
+    /// Write one AWJ property.
+    Pset { p: String, v: serde_json::Value },
+    /// Replace this link's AWJ subscription list. An empty list turns pushes
+    /// off again.
+    Psub { #[serde(default)] paths: Vec<String> },
     /// Point the bridge at a processor, and remember it.
     Setup { device: String, platform: String },
     /// Sweep the local network for processors.
@@ -78,6 +85,13 @@ enum ServerMsg {
     Snap { items: Vec<(String, Vec<i64>, i64)> },
     Val { m: String, i: Vec<i64>, v: i64 },
     Err { code: u16 },
+    /// AWJ cache, for a browser that has just connected.
+    Psnap { items: Vec<(String, serde_json::Value)> },
+    /// An AWJ value: a reply to a read, or a subscribed property that moved.
+    Pval { p: String, v: serde_json::Value },
+    /// An AWJ NAK. `E12` is routine — it is how the device says a path does
+    /// not exist on this build — so the surface reports rather than alarms.
+    Perr { code: String, msg: String },
     Status { connected: bool },
     /// A processor answered the discovery sweep.
     Found { addr: String, platform: Option<String> },
@@ -110,7 +124,7 @@ struct VarMeta {
 
 struct Config {
     device: Option<String>,
-    platform: Option<Platform>,
+    platform: Option<Family>,
     listen: SocketAddr,
     web_dir: String,
     config_path: PathBuf,
@@ -139,8 +153,7 @@ fn parse_args() -> Config {
             "--device" => device = args.next().or(device),
             "--platform" => {
                 platform = match args.next().as_deref() {
-                    Some("midra") => Some(Platform::Midra),
-                    Some(_) => Some(Platform::LiveCore),
+                    Some(name) => Some(Family::parse(name)),
                     None => platform,
                 }
             }
@@ -157,7 +170,8 @@ fn parse_args() -> Config {
                 }
             }
             "-h" | "--help" => {
-                eprintln!("openrcs-server [--device host:port] [--platform livecore|midra] \
+                eprintln!("openrcs-server [--device host:port] \
+                           [--platform livecore|midra|livepremier] \
                            [--listen host:port] [--web dir] [--config file] [--tailnet]");
                 eprintln!();
                 eprintln!("  --device is optional. Without it the server starts unconfigured");
@@ -196,7 +210,7 @@ fn load_config(path: &std::path::Path) -> StoredConfig {
 fn save_config(path: &std::path::Path, target: &Target) {
     let stored = StoredConfig {
         device: Some(target.addr.clone()),
-        platform: Some(platform_name(target.platform).to_string()),
+        platform: Some(target.family.name().to_string()),
     };
     let Ok(json) = serde_json::to_string_pretty(&stored) else { return };
     if let Some(dir) = path.parent() {
@@ -210,18 +224,15 @@ fn save_config(path: &std::path::Path, target: &Target) {
     }
 }
 
-fn parse_platform(s: &str) -> Platform {
-    match s {
-        "midra" => Platform::Midra,
-        _ => Platform::LiveCore,
-    }
+fn parse_platform(s: &str) -> Family {
+    Family::parse(s)
 }
 
 /// Normalise what the Setup keypad produced into `host:port`.
 ///
 /// A bare address is the common case — nobody wants to tap a port number on a
-/// keypad — so the platform's own port is filled in.
-fn normalise_device(input: &str, platform: Platform) -> Result<String, String> {
+/// keypad — so the family's own port is filled in.
+fn normalise_device(input: &str, family: Family) -> Result<String, String> {
     let s = input.trim();
     if s.is_empty() {
         return Err("no address".into());
@@ -231,7 +242,7 @@ fn normalise_device(input: &str, platform: Platform) -> Result<String, String> {
             let port: u16 = p.parse().map_err(|_| format!("bad port {p:?}"))?;
             (h, port)
         }
-        None => (s, platform.port()),
+        None => (s, family.port()),
     };
     if host.is_empty() {
         return Err("no host".into());
@@ -284,10 +295,19 @@ async fn main() {
     let platform = cfg
         .platform
         .or_else(|| stored.platform.as_deref().map(parse_platform));
-    let target = addr.map(|addr| Target {
-        addr,
-        platform: platform.unwrap_or(Platform::LiveCore),
-    });
+    let family = platform.unwrap_or(Family::Mnemonic(Platform::LiveCore));
+    // Fill in the port here too, not only on the Setup path. The families do
+    // not share one, so `--device 192.0.2.10` is ambiguous until the family is
+    // known — and answering it with "invalid socket address" on every reconnect
+    // tells the operator nothing about what to type instead.
+    let target = match addr.map(|addr| normalise_device(&addr, family)) {
+        Some(Ok(addr)) => Some(Target { addr, family }),
+        Some(Err(reason)) => {
+            eprintln!("ignoring device address: {reason}");
+            None
+        }
+        None => None,
+    };
 
     let hub = Hub::start(target.clone());
     let app = Arc::new(App {
@@ -318,7 +338,7 @@ async fn main() {
 
     println!("openrcs-server");
     match &target {
-        Some(t) => println!("  device   {} ({})", t.addr, platform_name(t.platform)),
+        Some(t) => println!("  device   {} ({})", t.addr, t.family.name()),
         None => println!("  device   unconfigured — set one in the Setup view"),
     }
     println!("  config   {}", cfg.config_path.display());
@@ -380,24 +400,33 @@ async fn seed<S>(tx: &mut S, hub: &Arc<Hub>, tailnet: bool) -> Result<(), ()>
 where
     S: SinkExt<Message> + Unpin,
 {
-    let platform = hub.platform();
-    let vars: Vec<VarMeta> = platform
-        .vars()
-        .iter()
-        .map(|v| VarMeta {
-            m: v.mnemonic,
-            name: v.name,
-            group: v.group,
-            dims: v.dims,
-            min: v.min,
-            max: v.max,
-            ro: v.read_only,
+    let family = hub.family();
+    // LivePremier has no variable table to hand over: it is addressed by path,
+    // and its model cannot be enumerated from the device at all. The surface
+    // for that family is built from named paths instead, so this is empty by
+    // design rather than by omission.
+    let vars: Vec<VarMeta> = hub
+        .platform()
+        .map(|platform| {
+            platform
+                .vars()
+                .iter()
+                .map(|v| VarMeta {
+                    m: v.mnemonic,
+                    name: v.name,
+                    group: v.group,
+                    dims: v.dims,
+                    min: v.min,
+                    max: v.max,
+                    ro: v.read_only,
+                })
+                .collect()
         })
-        .collect();
+        .unwrap_or_default();
     let device = hub.device_addr();
     let meta = ServerMsg::Meta {
-        platform: platform_name(platform).into(),
-        port: platform.port(),
+        platform: family.name().into(),
+        port: family.port(),
         // just the host: the browser fetches source thumbnails from the device's own
         // HTTP server, which is a different origin from this bridge
         host: device
@@ -411,7 +440,8 @@ where
     };
     send(tx, &meta).await?;
     send(tx, &ServerMsg::Status { connected: hub.is_connected() }).await?;
-    send(tx, &ServerMsg::Snap { items: hub.snapshot() }).await
+    send(tx, &ServerMsg::Snap { items: hub.snapshot() }).await?;
+    send(tx, &ServerMsg::Psnap { items: hub.awj_snapshot() }).await
 }
 
 async fn client(socket: WebSocket, app: Arc<App>) {
@@ -464,6 +494,8 @@ async fn client(socket: WebSocket, app: Arc<App>) {
                     let msg = match ev {
                         DeviceEvent::Value(m, i, v) => ServerMsg::Val { m, i, v },
                         DeviceEvent::Error(code) => ServerMsg::Err { code },
+                        DeviceEvent::AwjValue(p, v) => ServerMsg::Pval { p, v },
+                        DeviceEvent::AwjError(code, msg) => ServerMsg::Perr { code, msg },
                         DeviceEvent::Connected(c) => ServerMsg::Status { connected: c },
                         DeviceEvent::Discovered(addr, platform) => ServerMsg::Found {
                             addr,
@@ -511,11 +543,11 @@ fn handle_client_msg(app: &Arc<App>, txt: &str) {
     let to_u32 = |v: &[i64]| v.iter().map(|&x| x.max(0) as u32).collect::<Vec<_>>();
     match msg {
         ClientMsg::Setup { device, platform } => {
-            let platform = parse_platform(&platform);
-            match normalise_device(&device, platform) {
+            let family = parse_platform(&platform);
+            match normalise_device(&device, family) {
                 Ok(addr) => {
-                    let target = Target { addr, platform };
-                    println!("setup: {} ({})", target.addr, platform_name(platform));
+                    let target = Target { addr, family };
+                    println!("setup: {} ({})", target.addr, family.name());
                     save_config(&app.config_path, &target);
                     hub.retarget(Some(target));
                 }
@@ -523,6 +555,21 @@ fn handle_client_msg(app: &Arc<App>, txt: &str) {
                     eprintln!("setup rejected: {reason}");
                     hub.report_setup_error(reason);
                 }
+            }
+        }
+        ClientMsg::Pget { p } => {
+            if let Err(e) = hub.awj_get(&p) {
+                eprintln!("{e}");
+            }
+        }
+        ClientMsg::Pset { p, v } => {
+            if let Err(e) = hub.awj_set(&p, &v) {
+                eprintln!("{e}");
+            }
+        }
+        ClientMsg::Psub { paths } => {
+            if let Err(e) = hub.awj_subscribe(&paths) {
+                eprintln!("{e}");
             }
         }
         ClientMsg::Tailnet { action, value } => {
@@ -594,40 +641,69 @@ where
 mod tests {
     use super::*;
 
+    const LIVECORE: Family = Family::Mnemonic(Platform::LiveCore);
+
     #[test]
     fn bare_address_gets_the_platform_port() {
         // The keypad case: an operator taps four octets and nothing else.
         assert_eq!(
-            normalise_device("192.0.2.10", Platform::LiveCore).unwrap(),
+            normalise_device("192.0.2.10", LIVECORE).unwrap(),
             format!("192.0.2.10:{}", Platform::LiveCore.port())
         );
         assert_eq!(
-            normalise_device("192.0.2.10", Platform::Midra).unwrap(),
+            normalise_device("192.0.2.10", Family::Mnemonic(Platform::Midra)).unwrap(),
             format!("192.0.2.10:{}", Platform::Midra.port())
         );
+        // A LivePremier is not on 10500 and never has been.
+        assert_eq!(
+            normalise_device("192.0.2.10", Family::Awj).unwrap(),
+            "192.0.2.10:10606"
+        );
+    }
+
+    #[test]
+    fn a_hostname_is_left_alone_apart_from_its_port() {
+        // Not every target is dotted quad: a bridge on a desk is as likely to
+        // be pointed at a name.
+        assert_eq!(
+            normalise_device("aquilon.local", Family::Awj).unwrap(),
+            "aquilon.local:10606"
+        );
+    }
+
+    #[test]
+    fn a_platform_name_round_trips_through_the_browser_protocol() {
+        for name in ["livecore", "midra", "livepremier"] {
+            assert_eq!(Family::parse(name).name(), name);
+        }
+        // Anything else falls back rather than failing setup.
+        assert_eq!(Family::parse("nonsense").name(), "livecore");
     }
 
     #[test]
     fn an_explicit_port_is_kept() {
         assert_eq!(
-            normalise_device(" 192.0.2.10:15500 ", Platform::LiveCore).unwrap(),
+            normalise_device(" 192.0.2.10:15500 ", LIVECORE).unwrap(),
             "192.0.2.10:15500"
         );
     }
 
     #[test]
     fn nonsense_is_rejected_rather_than_dialled() {
-        assert!(normalise_device("", Platform::LiveCore).is_err());
-        assert!(normalise_device("192.0.2.10:", Platform::LiveCore).is_err());
-        assert!(normalise_device("192.0.2.10:donkey", Platform::LiveCore).is_err());
-        assert!(normalise_device(":10500", Platform::LiveCore).is_err());
+        assert!(normalise_device("", LIVECORE).is_err());
+        assert!(normalise_device("192.0.2.10:", LIVECORE).is_err());
+        assert!(normalise_device("192.0.2.10:donkey", LIVECORE).is_err());
+        assert!(normalise_device(":10500", LIVECORE).is_err());
     }
 
     #[test]
     fn stored_config_round_trips() {
         let dir = std::env::temp_dir().join(format!("openrcs-test-{}", std::process::id()));
         let path = dir.join("config.json");
-        let target = Target { addr: "192.0.2.10:10500".into(), platform: Platform::Midra };
+        let target = Target {
+            addr: "192.0.2.10:10500".into(),
+            family: Family::Mnemonic(Platform::Midra),
+        };
         save_config(&path, &target);
         let back = load_config(&path);
         assert_eq!(back.device.as_deref(), Some("192.0.2.10:10500"));
