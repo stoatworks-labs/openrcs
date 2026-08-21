@@ -53,10 +53,18 @@ std binary and may use crates. Keep the split.
   the `LP` table in `web/app.js` — because the browser builds the paths it
   writes. Change one, change the other: a stale path fails as an `E12` at
   runtime, not as a build error.
-- **Only reads are hardware-verified on LivePremier.** The inventory, screen
-  state and preset bank have been read from an Aquilon C on 6.2.73; take, cut,
-  preset recall and the subscription list have not been fired at a device. Do
-  not describe them as verified.
+- **LivePremier reads are hardware-verified; writes are simulator-only.** The
+  inventory, screen state and preset bank have been read from an Aquilon C on
+  6.2.73. Take, cut, preset recall and the subscription list have been exercised
+  end to end against the **LivePremier simulator** only. Do not describe the
+  write half as hardware-verified.
+- **The simulator does not reproduce every device behaviour.** A preset recall
+  on real hardware overwrites the screen's `takeUpTime` with the duration stored
+  in the preset; on the simulator it does not. Order-of-operations for anything
+  that sequences presets cannot be settled there.
+- **An `x`-prefixed property is a trigger, not a flag** — `xTake` stays `true`
+  after firing, and writing `true` again fires again. Never diff-then-skip a
+  write on one.
 - **Use vendor names nominatively only** — to state compatibility, never as
   branding or in a way implying endorsement.
 
