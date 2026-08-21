@@ -16,6 +16,10 @@
 //!   use*; [`screen_is_used`] answers that.
 //! - **Layer parameters are addressed by preset letter**, not by "preview".
 //!   See [`crate::Letters`].
+//! - **An `x`-prefixed property is a trigger, not a flag.** `xTake` reads back
+//!   `true` and *stays* `true` after the transition finishes; writing `true`
+//!   again fires it again. So a client must never skip a write because the
+//!   value it holds already matches — the write is the command, not the value.
 
 use alloc::format;
 use alloc::string::String;
@@ -122,11 +126,16 @@ pub fn screen_preset_letter(screen: u8, which: &str) -> String {
 }
 
 /// Fire a TAKE on one screen. Write `true`; the device answers nothing.
+///
+/// A trigger, not a flag: it stays `true` afterwards, and writing `true` to an
+/// already-`true` `xTake` fires a second transition.
 pub fn screen_take(screen: u8) -> String {
     format!("DeviceObject/$screenAuxGroup/@items/S{screen}/control/@props/xTake")
 }
 
-/// Cut, i.e. take with no transition.
+/// Cut, i.e. take with no transition. Same trigger semantics as
+/// [`screen_take`], and measurably instant — a cut moved `transition` in 25 ms
+/// where a take with a 1.0 s fade took ~1050 ms.
 pub fn screen_cut(screen: u8) -> String {
     format!("DeviceObject/$screenAuxGroup/@items/S{screen}/control/@props/xCut")
 }
@@ -144,6 +153,9 @@ pub fn screen_take_time(screen: u8, up: bool) -> String {
 
 /// Apply pending layer changes. Required after changing layer parameters —
 /// without it a foreground layer change may not be considered.
+///
+/// A preset recall raises this itself: recalling one was observed pushing this
+/// property straight back to a subscribed client.
 pub fn global_update() -> String {
     String::from("DeviceObject/$screenAuxGroup/control/@props/xUpdate")
 }

@@ -93,10 +93,15 @@ JSON over TCP 10606, from Analog Way's published Programmer's Guide rather than
 from reverse engineering — and the surface gains two views for it: screens in
 use with their transition state and take times, and the screen preset bank.
 Reading has been exercised against an **Aquilon C** on firmware 6.2.73: model,
-labels, transition, preset letters and bank validity all come back clean. The
-controls that write — take, cut, preset recall, and the subscription list behind
-"Live updates" — have **not** been fired at a device yet. Treat that half as
-untested.
+labels, transition, preset letters and bank validity all come back clean.
+
+The controls that write — take, cut, preset recall, and the subscription list
+behind "Live updates" — have been exercised end to end against the **LivePremier
+simulator**, not against a device: subscribing, a take (the transition reaching
+`AT_UP` about a second later, and the surface's own program/preview letters
+following it), an instant cut, and a preset saved and recalled onto preview. A
+simulator is not a processor, and it is known not to reproduce every device
+behaviour, so treat that half as unproven on real hardware.
 
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
