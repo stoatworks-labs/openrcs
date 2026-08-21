@@ -1,0 +1,24 @@
+[package]
+name = "openrcs-awj"
+description = "Wire protocol for Analog Way LivePremier series video processors (AWJ)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["std"]
+std = ["serde_json/std"]
+
+[dependencies]
+# AWJ values are arbitrary JSON, so unlike openrcs-proto this crate cannot be
+# dependency-free. It stays no_std: serde_json builds against alloc alone.
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# the tests parse messages back with the full std build
+serde_json = "1"
+
+[[example]]
+name = "awjprobe"
+required-features = ["std"]

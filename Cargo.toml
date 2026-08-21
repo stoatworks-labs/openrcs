@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/openrcs-proto", "crates/openrcs-server"]
+members = ["crates/openrcs-awj", "crates/openrcs-proto", "crates/openrcs-server"]
 
 [workspace.package]
 version = "0.4.0"
