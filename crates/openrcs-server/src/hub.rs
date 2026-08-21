@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
+use openrcs_awj as awj;
 use openrcs_proto::{encode_get, encode_set, Decoder, Frame, Platform};
+use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -19,14 +21,54 @@ use tokio::time::{sleep, timeout, Duration};
 /// A single value the device reported, keyed by mnemonic + index tuple.
 pub type Key = (String, Vec<i64>);
 
-/// Where the bridge points: one processor, and the dialect it speaks.
+/// Which protocol a processor speaks.
+///
+/// The two are not dialects of one protocol — they share a company name and
+/// nothing else. Midra and LiveCore exchange terse ASCII mnemonics addressed by
+/// index; LivePremier exchanges JSON addressed by path. Everything that differs
+/// between them hangs off this enum rather than off a flag somewhere later.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    /// Midra or LiveCore, over TCP 10500.
+    Mnemonic(Platform),
+    /// LivePremier (Aquilon), over TCP 10606.
+    Awj,
+}
+
+impl Family {
+    pub fn port(self) -> u16 {
+        match self {
+            Family::Mnemonic(p) => p.port(),
+            Family::Awj => awj::PORT,
+        }
+    }
+
+    /// Wire name, as the browser protocol spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Family::Mnemonic(Platform::LiveCore) => "livecore",
+            Family::Mnemonic(Platform::Midra) => "midra",
+            Family::Awj => "livepremier",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "midra" => Family::Mnemonic(Platform::Midra),
+            "livepremier" => Family::Awj,
+            _ => Family::Mnemonic(Platform::LiveCore),
+        }
+    }
+}
+
+/// Where the bridge points: one processor, and the protocol it speaks.
 ///
 /// Optional, because an appliance boots before anyone has told it which
 /// processor it is in front of. An unconfigured hub serves the UI and waits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     pub addr: String,
-    pub platform: Platform,
+    pub family: Family,
 }
 
 /// Fanned out to every browser client.
@@ -36,6 +78,10 @@ pub enum DeviceEvent {
     Value(String, Vec<i64>, i64),
     /// A device error/NAK code.
     Error(u16),
+    /// An AWJ value update (path, value).
+    AwjValue(String, Value),
+    /// An AWJ NAK: code and the device's own message.
+    AwjError(String, String),
     /// Link up or down.
     Connected(bool),
     /// The hub now points somewhere else: the cache is empty and the variable
@@ -55,6 +101,10 @@ pub struct Hub {
     /// the appliance's whole setup flow is changing this at runtime.
     target: Mutex<Option<Target>>,
     state: Mutex<HashMap<Key, i64>>,
+    /// The AWJ cache. Separate from `state` rather than unified: a path-keyed
+    /// JSON value and an index-keyed integer have no useful common shape, and
+    /// only one of the two is ever in use.
+    awj_state: Mutex<HashMap<String, Value>>,
     to_device: mpsc::UnboundedSender<String>,
     events: broadcast::Sender<DeviceEvent>,
     connected: AtomicBool,
@@ -74,6 +124,7 @@ impl Hub {
         let hub = Arc::new(Hub {
             target: Mutex::new(target),
             state: Mutex::new(HashMap::new()),
+            awj_state: Mutex::new(HashMap::new()),
             to_device,
             events,
             connected: AtomicBool::new(false),
@@ -99,13 +150,22 @@ impl Hub {
         self.target.lock().unwrap().is_some()
     }
 
-    /// The dialect to encode in. An unconfigured hub still has to hand the
-    /// browser a variable table to render, so it answers with a default; no
-    /// command can reach a device in that state anyway.
-    pub fn platform(&self) -> Platform {
+    /// The protocol to encode in. An unconfigured hub still has to hand the
+    /// browser something to render, so it answers with a default; no command
+    /// can reach a device in that state anyway.
+    pub fn family(&self) -> Family {
         self.target()
-            .map(|t| t.platform)
-            .unwrap_or(Platform::LiveCore)
+            .map(|t| t.family)
+            .unwrap_or(Family::Mnemonic(Platform::LiveCore))
+    }
+
+    /// The mnemonic dialect, for the variable table the browser renders.
+    /// `None` on a family that has no variable table.
+    pub fn platform(&self) -> Option<Platform> {
+        match self.family() {
+            Family::Mnemonic(p) => Some(p),
+            Family::Awj => None,
+        }
     }
 
     /// `host:port` of the current target, or an empty string when unconfigured.
@@ -121,6 +181,7 @@ impl Hub {
     pub fn retarget(&self, target: Option<Target>) {
         *self.target.lock().unwrap() = target;
         self.state.lock().unwrap().clear();
+        self.awj_state.lock().unwrap().clear();
         self.connected.store(false, Ordering::Relaxed);
         self.generation.send_modify(|g| *g += 1);
         let _ = self.events.send(DeviceEvent::Retargeted);
@@ -143,7 +204,7 @@ impl Hub {
     /// Validate and send a set. Returns the encode error if the arguments are
     /// out of range, so the caller can report it to the browser.
     pub fn set(&self, mnem: &str, idx: &[u32], val: i64) -> Result<(), String> {
-        let plat = self.platform();
+        let plat = self.mnemonic_platform()?;
         let def = plat
             .lookup(mnem)
             .ok_or_else(|| format!("unknown mnemonic {mnem}"))?;
@@ -154,7 +215,7 @@ impl Hub {
 
     /// Request one variable.
     pub fn get(&self, mnem: &str, idx: &[u32]) -> Result<(), String> {
-        let plat = self.platform();
+        let plat = self.mnemonic_platform()?;
         let def = plat
             .lookup(mnem)
             .ok_or_else(|| format!("unknown mnemonic {mnem}"))?;
@@ -166,7 +227,7 @@ impl Hub {
     /// Request every index combination of a variable, capped so a huge array
     /// can't flood the link. Returns how many gets were issued.
     pub fn scan(&self, mnem: &str, cap: usize) -> Result<usize, String> {
-        let plat = self.platform();
+        let plat = self.mnemonic_platform()?;
         let def = plat
             .lookup(mnem)
             .ok_or_else(|| format!("unknown mnemonic {mnem}"))?;
@@ -199,19 +260,63 @@ impl Hub {
         Ok(n)
     }
 
+    fn mnemonic_platform(&self) -> Result<Platform, String> {
+        self.platform()
+            .ok_or_else(|| format!("{} speaks no mnemonics", self.family().name()))
+    }
+
+    /// Current AWJ cache as a flat list, for a newly connected browser.
+    pub fn awj_snapshot(&self) -> Vec<(String, Value)> {
+        let s = self.awj_state.lock().unwrap();
+        s.iter().map(|(p, v)| (p.clone(), v.clone())).collect()
+    }
+
+    /// Read one property.
+    pub fn awj_get(&self, path: &str) -> Result<(), String> {
+        self.expect_awj()?;
+        let _ = self.to_device.send(awj::encode_get(path));
+        Ok(())
+    }
+
+    /// Write one property. The device answers a write with nothing at all, so
+    /// the value is read back immediately: without that the surface would show
+    /// what it asked for rather than what happened.
+    pub fn awj_set(&self, path: &str, value: &Value) -> Result<(), String> {
+        self.expect_awj()?;
+        let _ = self.to_device.send(awj::encode_replace(path, value));
+        let _ = self.to_device.send(awj::encode_get(path));
+        Ok(())
+    }
+
+    /// Replace this connection's subscription filter list.
+    ///
+    /// Nothing about state changes reaches a client that has not written one —
+    /// the list starts empty — so this is what makes the surface live rather
+    /// than a snapshot. It is a `replace`, but of a per-connection filter, not
+    /// of anything the device puts on screen.
+    pub fn awj_subscribe(&self, paths: &[String]) -> Result<(), String> {
+        self.expect_awj()?;
+        let list = Value::Array(paths.iter().cloned().map(Value::String).collect());
+        let _ = self
+            .to_device
+            .send(awj::encode_replace(awj::paths::SUBSCRIPTIONS, &list));
+        Ok(())
+    }
+
+    fn expect_awj(&self) -> Result<(), String> {
+        match self.family() {
+            Family::Awj => Ok(()),
+            other => Err(format!("{} speaks no AWJ", other.name())),
+        }
+    }
+
     /// Send a raw line to the device (debug escape hatch).
     pub fn raw(&self, line: String) {
         let _ = self.to_device.send(line);
     }
 }
 
-/// Wire name for a platform, as the browser protocol spells it.
-pub fn platform_name(p: Platform) -> &'static str {
-    match p {
-        Platform::LiveCore => "livecore",
-        Platform::Midra => "midra",
-    }
-}
+
 
 // ---------------------------------------------------------------- discovery
 //
@@ -246,10 +351,9 @@ pub async fn discover(hub: Arc<Hub>) {
     // probing it.
     if let Some(t) = hub.target() {
         if hub.is_connected() {
-            let _ = hub.events.send(DeviceEvent::Discovered(
-                t.addr.clone(),
-                Some(platform_name(t.platform)),
-            ));
+            let _ = hub
+                .events
+                .send(DeviceEvent::Discovered(t.addr.clone(), Some(t.family.name())));
         }
     }
 
@@ -365,7 +469,15 @@ async fn device_loop(hub: Arc<Hub>, mut from_clients: mpsc::UnboundedReceiver<St
                 Ok(stream) => {
                     hub.connected.store(true, Ordering::Relaxed);
                     let _ = hub.events.send(DeviceEvent::Connected(true));
-                    if let Err(e) = pump(&hub, stream, &mut from_clients, &mut gen).await {
+                    let link = match target.family {
+                        Family::Mnemonic(_) => {
+                            pump(&hub, stream, &mut from_clients, &mut gen).await
+                        }
+                        Family::Awj => {
+                            pump_awj(&hub, stream, &mut from_clients, &mut gen).await
+                        }
+                    };
+                    if let Err(e) = link {
                         eprintln!("device link lost: {e}");
                     }
                     hub.connected.store(false, Ordering::Relaxed);
@@ -418,6 +530,94 @@ async fn pump(
                         }
                         Frame::Error(code) => {
                             let _ = hub.events.send(DeviceEvent::Error(code));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// How much of the preset bank the surface reads on connect.
+///
+/// The bank runs to 1000 slots and each costs two reads, so reading it whole
+/// would put 2000 messages between connecting and showing anything. The first
+/// page covers how a show is actually numbered; the browser asks for the rest.
+const AWJ_PRESET_PAGE: u16 = 50;
+
+/// Everything the surface needs before it can draw itself.
+///
+/// Sent as one burst rather than walked: a container read returns `{}` on this
+/// protocol, so there is no enumerating the model — the only way to learn what
+/// a device has is to ask for named leaves and see which answer.
+fn awj_inventory() -> Vec<String> {
+    use awj::paths;
+    let mut out = vec![paths::device_model(1)];
+    for s in 1..=24u8 {
+        out.push(paths::screen_is_used(s));
+        out.push(paths::screen_label(s));
+        out.push(paths::screen_transition(s));
+        out.push(paths::screen_take_status(s));
+        out.push(paths::screen_take_time(s, true));
+        out.push(paths::screen_take_time(s, false));
+        // The letters a layer is addressed by. They do not move at a take, but
+        // they are per-screen and a device does not always use A and B.
+        out.push(paths::screen_preset_letter(s, "Down"));
+        out.push(paths::screen_preset_letter(s, "Up"));
+    }
+    for slot in 1..=AWJ_PRESET_PAGE {
+        out.push(paths::preset_is_valid(slot));
+        out.push(paths::preset_label(slot));
+    }
+    out
+}
+
+async fn pump_awj(
+    hub: &Arc<Hub>,
+    stream: TcpStream,
+    from_clients: &mut mpsc::UnboundedReceiver<String>,
+    gen: &mut watch::Receiver<u64>,
+) -> std::io::Result<()> {
+    let (mut rd, mut wr) = stream.into_split();
+    let mut dec = awj::Decoder::new();
+    let mut buf = [0u8; 8192];
+
+    // Nothing arrives unbidden on this protocol — no greeting, and no state
+    // changes until a subscription list is written — so the link stays silent
+    // until we ask it something.
+    for path in awj_inventory() {
+        wr.write_all(awj::encode_get(&path).as_bytes()).await?;
+    }
+
+    loop {
+        tokio::select! {
+            _ = gen.changed() => return Ok(()),
+            line = from_clients.recv() => {
+                match line {
+                    Some(l) => wr.write_all(l.as_bytes()).await?,
+                    None => return Ok(()),
+                }
+            }
+            n = rd.read(&mut buf) => {
+                let n = n?;
+                if n == 0 {
+                    return Ok(()); // peer closed
+                }
+                for frame in dec.feed(&buf[..n]) {
+                    match frame {
+                        awj::Frame::Value { path, value } => {
+                            hub.awj_state.lock().unwrap()
+                                .insert(path.clone(), value.clone());
+                            let _ = hub.events.send(DeviceEvent::AwjValue(path, value));
+                        }
+                        awj::Frame::Error(e) => {
+                            // E12 is the ordinary answer to "this build has no
+                            // such path", which the inventory provokes by
+                            // design. Reported, not fatal.
+                            let _ = hub.events.send(DeviceEvent::AwjError(
+                                e.code.as_str().to_string(),
+                                e.message,
+                            ));
                         }
                     }
                 }

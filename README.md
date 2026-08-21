@@ -2,8 +2,10 @@
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The protocol was
-> reverse-engineered rather than taken from a published specification. Both the
-> LiveCore and Midra sides have since been validated against real hardware, but
+> reverse-engineered rather than taken from a published specification (the
+> LivePremier side is the exception — it follows the vendor's published
+> protocol guide). Both the LiveCore and Midra sides have since been validated
+> against real hardware, but
 > device behaviour varies with model, firmware and signal state — check against
 > your own processor before a show. See [Status](#status).
 
@@ -13,7 +15,8 @@ processors over their native TCP control protocol.
 It targets the Midra family (Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX,
 QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra) — a modern, dependency-light control surface for hardware whose original
-software is long out of date.
+software is long out of date — and has an early **LivePremier** (Aquilon) mode
+built on that family's own published protocol.
 
 ![The openrcs Workspace — the source palette, every screen editable side by side in program and preview, and memories, on one page](docs/screenshots/workspace.png)
 
@@ -85,6 +88,16 @@ per-platform quirks are all confirmed on the wire. Per-variable ranges are still
 strong guidance rather than a guarantee, and a few behaviours depend on model,
 firmware or a live input signal.
 
+**LivePremier (Aquilon) is early.** `openrcs-awj` implements the AWJ protocol —
+JSON over TCP 10606, from Analog Way's published Programmer's Guide rather than
+from reverse engineering — and the surface gains two views for it: screens in
+use with their transition state and take times, and the screen preset bank.
+Reading has been exercised against an **Aquilon C** on firmware 6.2.73: model,
+labels, transition, preset letters and bank validity all come back clean. The
+controls that write — take, cut, preset recall, and the subscription list behind
+"Live updates" — have **not** been fired at a device yet. Treat that half as
+untested.
+
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
 ESP32) between the processor and its clients. The protocol engine is
@@ -108,9 +121,13 @@ Otherwise grab a prebuilt `openrcs-server` binary from the
 file), or run it from source:
 
 ```bash
-cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
-# ...or --platform midra ; then open http://127.0.0.1:8730/
+cargo run -p openrcs-server -- --device <processor-ip> --platform livecore
+# ...or --platform midra, or --platform livepremier for an Aquilon
+# then open http://127.0.0.1:8730/
 ```
+
+The port is optional — each family has its own (10500 for LiveCore and Midra,
+10606 for LivePremier) and it is filled in from `--platform`.
 
 `--device` is optional: without it the server starts unconfigured and the
 **Connection** view sets the processor from the UI — keypad or network scan —

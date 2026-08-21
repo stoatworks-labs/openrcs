@@ -462,6 +462,7 @@ version = "0.4.0"
 dependencies = [
  "axum",
  "futures-util",
+ "openrcs-awj",
  "openrcs-proto",
  "rust-embed",
  "serde",
