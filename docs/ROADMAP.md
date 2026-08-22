@@ -67,6 +67,12 @@ Concrete device capabilities not yet given a dedicated surface:
 
 - **Screen mapping** — place each screen at its real output position for the Stage
   canvas, and the two monitor outputs in a monitoring screen (`MONITORING_SCREEN`).
+- **Working area** — **shipped.** Neither platform can crop an output at HD, so
+  when only part of a screen is actually seen the constraint lives in openrcs
+  instead: a per-screen region that layouts divide and that no drag, resize,
+  numeric edit or memory recall can escape. The processor is never told. Set it
+  in Screens, drawn on the Layers, Workspace and Stage canvases, travels in a
+  show file. "Fit existing layers" pulls in what was already placed.
 - **Video out (Midra)** — **shipped.** Most Midra frames carry a second, separately
   scaled output, usually on an SDI plug (`DFvso`). `CTvom` picks what it is for —
   Recording, or a mirror of output 1 or 2, each gated on its own capability flag
@@ -93,6 +99,14 @@ Concrete device capabilities not yet given a dedicated surface:
   did not track either. Either the crop needs something else enabled first, or the
   status group means something other than it appears to. The panel draws the status
   rather than the staged numbers and says so, so nothing is claimed that was not seen.
+- **What `CTvom` really does, and why it matters.** It is not a mirror: it
+  *assigns the SDI plug to an output*. Watching `OUpls` while it changes, the
+  fourth plug moves — `CTvom=1` puts it on output 1 (`OUpls[0][3]=1`), `CTvom=2`
+  on output 2 (`OUpls[1][3]=3`), `CTvom=0` takes it back for the video out's own
+  SD recording feed. So on a frame whose outputs are DVI/VGA only, **the SDI
+  plug still carries a full-raster HD copy of an output** — it is the AoI that is
+  missing there, not the resolution. Confirmed on a Pulse2. The two plug-status
+  values (1 against 3) are not yet understood.
 - **A device-side layer load on Midra.** `GClrq` (`PRESET_LOAD_REQUEST`) is five
   dimensional — `[2, 8, 2, 2, 12]` — and that trailing 12 looks like a per-layer
   selector, which would make a layer recall something the device does rather than

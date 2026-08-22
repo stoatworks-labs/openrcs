@@ -742,3 +742,20 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
   cursor: nwse-resize; touch-action: none;
 }
 .btn.dim { opacity: .4; cursor: not-allowed; }
+
+/* ---- Working area: the region layers are confined to ---- */
+/* Drawn as a ground the layers sit on rather than a box over them, and inert to
+   the mouse — it is a constraint, not something to drag. The dimming outside is
+   done with a huge spread shadow rather than four filler divs, so it tracks the
+   rectangle without any extra geometry to keep in step. */
+.work-area {
+  position: absolute; box-sizing: border-box; pointer-events: none; z-index: 0;
+  border: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 0 9999px color-mix(in srgb, #000 55%, transparent);
+}
+.work-area-tag {
+  position: absolute; left: 0; bottom: 100%;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--accent) 85%, #fff);
+  background: #000a; padding: 1px 5px; border-radius: 3px 3px 0 0; white-space: nowrap;
+}

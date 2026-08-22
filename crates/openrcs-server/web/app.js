@@ -631,6 +631,84 @@ const MEM_FILTERS = [
 ];
 const MEM_FILTER_ALL = 4095;
 
+// ---------- working area ----------
+// Neither platform can crop an output. LiveCore's OUTPUT_AOI_SIZE has no Midra
+// counterpart at all, and the Midra video out's own area of interest exists only
+// in its recording mode, which is standard definition — so on a frame whose SDI
+// plug is carrying an output (CTvom 1 or 2) there is no hardware crop to be had
+// at HD. When the picture that matters is a region of a screen, the constraint
+// has to live on this side instead: openrcs composes inside the region and the
+// device is simply never told why its layers never go near the edges.
+//
+// A convention, not a device setting. Nothing is written to establish one, and a
+// screen without a working area behaves exactly as it did before.
+const WORK_AREA = (() => {
+  const KEY = 'openrcs.workarea';
+  let areas = {};                       // screen index -> {x, y, w, h}, screen pixels
+  try { areas = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { /* first run */ }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(areas)); } catch { /* quota/private */ } };
+
+  const get = (s) => areas[s] || null;
+  const has = (s) => !!areas[s];
+  const count = () => Object.keys(areas).length;
+  function set(s, rect) {
+    areas[s] = { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), h: Math.round(rect.h) };
+    persist();
+  }
+  function clear(s) { delete areas[s]; persist(); }
+
+  /**
+   * Fit a layer rectangle inside the screen's working area.
+   *
+   * Size is clamped before position, so a layer pushed at the boundary slides
+   * along it instead of shrinking — which is what dragging one into a corner
+   * should feel like. This is the backstop: every placement path in the two
+   * layer views funnels through setGeom, so nothing can escape the region even
+   * if it was positioned by a numeric field or a memory recall.
+   */
+  function fit(s, r) {
+    const a = get(s);
+    if (!a) return r;
+    const w = Math.min(r.w, a.w), h = Math.min(r.h, a.h);
+    return {
+      w, h,
+      left: Math.max(a.x, Math.min(a.x + a.w - w, r.left)),
+      top: Math.max(a.y, Math.min(a.y + a.h - h, r.top)),
+    };
+  }
+
+  const snapshot = () => ({ ...areas });
+  function restore(o) { if (o && typeof o === 'object') { areas = { ...o }; persist(); } }
+  return { get, has, set, clear, count, fit, snapshot, restore };
+})();
+
+/**
+ * The rectangle layers are composed into: the working area if the screen has
+ * one, otherwise the whole screen. Layout presets measure against this rather
+ * than the raster, so "Fill" fills the region that is actually seen.
+ */
+function workPx(s) {
+  const a = WORK_AREA.get(s);
+  if (a) return { x: a.x, y: a.y, w: a.w, h: a.h };
+  const w = store.val('SCssh', s) || 1920, h = store.val('SCssv', s) || 1080;
+  return { x: 0, y: 0, w, h };
+}
+
+/**
+ * The working area drawn over a screen canvas, as an overlay the mouse ignores.
+ * Positioned in percentages so it sits correctly on the pixel-scaled canvas in
+ * Layers and the percentage-laid-out ones in Workspace and Stage alike.
+ */
+function workOverlay(s, sw, sh, withTag = true) {
+  const a = WORK_AREA.get(s);
+  if (!a || !sw || !sh) return null;
+  const pc = (v, of) => (v / of * 100) + '%';
+  return el('div', {
+    class: 'work-area',
+    style: `left:${pc(a.x, sw)};top:${pc(a.y, sh)};width:${pc(a.w, sw)};height:${pc(a.h, sh)}`,
+  }, withTag ? el('span', { class: 'work-area-tag', text: `${a.w}×${a.h}` }) : null);
+}
+
 // ---------- layer memories ----------
 // Neither platform has a device-side layer bank: the device stores whole screen
 // presets (PM*) and nothing smaller. Every per-layer property is separately
@@ -1726,7 +1804,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // whatever the device actually has.
 const SHOW_SCOPES = [
   { id: 'look', label: 'Live look',
-    hint: 'The current on-screen composition — every layer’s source, geometry, opacity, border, crop and transitions, plus the native background.',
+    hint: 'The current on-screen composition — every layer’s source, geometry, opacity, border, crop and transitions, plus the native background and any working areas.',
     groups: ['PRESET', 'PRESET_NATIVE', 'MASTER_ALPHA', 'GRP_PRESET_ELEMENT'] },
   { id: 'memories', label: 'Memory banks',
     hint: 'The stored screen and master memories, and the layer bank. Large — a full bank is thousands of values and takes a moment to read.',
@@ -1805,6 +1883,9 @@ async function captureShow(scopeIds, onProgress) {
     // without the memories scope carries none, and leaves any existing bank
     // alone on restore.
     ...(scopeIds.includes('memories') ? { layerBank: LAYER_MEM.snapshot() } : {}),
+    // Also not device state, and travels with the look rather than the banks:
+    // a working area is a fact about how a screen is being used on this show.
+    ...(scopeIds.includes('look') ? { workAreas: WORK_AREA.snapshot() } : {}),
     values,
   };
 }
@@ -1838,6 +1919,7 @@ function showDiff(show) {
 // read-only. onProgress(fraction) runs across the values to write.
 async function restoreShow(show, onProgress) {
   if (show.layerBank) LAYER_MEM.restore(show.layerBank);
+  if (show.workAreas) WORK_AREA.restore(show.workAreas);
   const vals = show.values.filter(([m, idx, v]) => {
     const d = store.byMnem.get(m);
     return d && !d.ro && store.state.get(keyOf(m, idx)) !== v;
@@ -2456,6 +2538,7 @@ VIEWS.layers = (() => {
     return { left: cx - w / 2, top: cy - h / 2, w, h };
   }
   const setGeom = (l, r) => {
+    r = WORK_AREA.fit(screen, r);
     throttledSet('PRsih', [screen, ctxOf(), l], Math.round(r.w));
     throttledSet('PRsiv', [screen, ctxOf(), l], Math.round(r.h));
     throttledSet('PRpoh', [screen, ctxOf(), l], Math.round(r.left + r.w / 2 + POS_BIAS));
@@ -2466,6 +2549,7 @@ VIEWS.layers = (() => {
     const s = screenPx();
     const CW = 720, scale = CW / s.w, CH = s.h * scale;
     const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
+    cv.append(workOverlay(screen, s.w, s.h) || '');
     const n = count();
     for (let l = 0; l < n; l++) {
       const on = layerShown(screen, ctxOf(), l);
@@ -2523,12 +2607,12 @@ VIEWS.layers = (() => {
 
   // quick geometry presets for the selected layer
   function fit() {
-    const s = screenPx();
-    setGeom(sel, { left: 0, top: 0, w: s.w, h: s.h }); store.notify();
+    const a = workPx(screen);
+    setGeom(sel, { left: a.x, top: a.y, w: a.w, h: a.h }); store.notify();
   }
   function quad(ix) {
-    const s = screenPx(), w = s.w / 2, h = s.h / 2;
-    setGeom(sel, { left: (ix % 2) * w, top: (ix < 2 ? 0 : 1) * h, w, h }); store.notify();
+    const a = workPx(screen), w = a.w / 2, h = a.h / 2;
+    setGeom(sel, { left: a.x + (ix % 2) * w, top: a.y + (ix < 2 ? 0 : 1) * h, w, h }); store.notify();
   }
   // reorder the selected layer in the screen's z-stack (LAYER_SWAP)
   function reorder(dir) {
@@ -2662,6 +2746,7 @@ VIEWS.stage = (() => {
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
     const CW = 380, scale = CW / sw, CH = Math.round(sh * scale);
     const cv = el('div', { class: 'stage-screen', style: `width:${CW}px;height:${CH}px` });
+    cv.append(workOverlay(s, sw, sh, false) || '');
     const max = store.val('SCmly', s) || 0;
     for (let l = 0; l < max; l++) {
       const src = store.val('PRinp', s, ctx, l) || 0;
@@ -3018,24 +3103,120 @@ VIEWS.lppresets = (() => {
 
 // ---------- Screens ----------
 VIEWS.screens = (() => {
-  function enter() { store.scan('SCmly'); store.scan('OSsou'); store.scan('SCsih'); store.scan('SCsiv'); }
+  let sel = 0;
+  function enter() {
+    for (const m of ['SCmly', 'OSsou', 'SCsih', 'SCsiv', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
+  }
+  const screenPxOf = (s) => ({ w: store.val('SCssh', s) || 1920, h: store.val('SCssv', s) || 1080 });
+
+  // Common shapes to carve out of a screen, so the usual cases are one tap
+  // rather than four numbers. Each returns a rect in screen pixels.
+  const PRESETS = [
+    ['16:9 centred', (p) => insetToAspect(p, 16 / 9)],
+    ['4:3 centred', (p) => insetToAspect(p, 4 / 3)],
+    ['Left half', (p) => ({ x: 0, y: 0, w: Math.round(p.w / 2), h: p.h })],
+    ['Right half', (p) => ({ x: Math.round(p.w / 2), y: 0, w: Math.round(p.w / 2), h: p.h })],
+    ['Centre 80%', (p) => ({ x: Math.round(p.w * 0.1), y: Math.round(p.h * 0.1), w: Math.round(p.w * 0.8), h: Math.round(p.h * 0.8) })],
+  ];
+  function insetToAspect(p, ar) {
+    const w = Math.min(p.w, Math.round(p.h * ar)), h = Math.round(w / ar);
+    return { x: Math.round((p.w - w) / 2), y: Math.round((p.h - h) / 2), w, h };
+  }
+
+  /**
+   * Pull layers that were already placed back inside the region.
+   *
+   * Setting a working area deliberately does not move anything on its own —
+   * that would rearrange a live screen the moment the region was drawn. This is
+   * the same clamp applied on request, across every preset bank so a take does
+   * not bring an overhanging layer back.
+   */
+  function fitExisting(s) {
+    const banks = store.byMnem.get('PRinp')?.dims?.[1] ?? 3;
+    let moved = 0;
+    for (let c = 0; c < banks; c++) {
+      for (let l = 0; l < (store.val('SCmly', s) || layerSlots()); l++) {
+        if (!store.val('PRinp', s, c, l)) continue;           // nothing placed there
+        const w = store.val('PRsih', s, c, l) ?? 0, h = store.val('PRsiv', s, c, l) ?? 0;
+        const cx = (store.val('PRpoh', s, c, l) ?? POS_BIAS) - POS_BIAS;
+        const cy = (store.val('PRpov', s, c, l) ?? POS_BIAS) - POS_BIAS;
+        const r = WORK_AREA.fit(s, { left: cx - w / 2, top: cy - h / 2, w, h });
+        if (r.w === w && r.h === h && r.left === cx - w / 2 && r.top === cy - h / 2) continue;
+        store.set('PRsih', [s, c, l], Math.round(r.w));
+        store.set('PRsiv', [s, c, l], Math.round(r.h));
+        store.set('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + POS_BIAS));
+        store.set('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + POS_BIAS));
+        moved++;
+      }
+    }
+    store.notify();
+    return moved;
+  }
+
+  function areaEditor() {
+    const s = sel, p = screenPxOf(s), a = WORK_AREA.get(s);
+    const CW = 420, scale = CW / p.w;
+    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(p.h * scale)}px` });
+    cv.append(workOverlay(s, p.w, p.h) || el('span', { class: 'se-mid', text: 'whole screen' }));
+
+    const num = (label, key, max) => el('label', { class: 'field' }, label,
+      el('input', {
+        type: 'number', class: 'lbl-in', style: 'width:88px', min: 0, max,
+        value: a ? a[key] : (key === 'w' ? p.w : key === 'h' ? p.h : 0), disabled: !a,
+        onchange: (e) => {
+          const next = { ...(a || { x: 0, y: 0, w: p.w, h: p.h }) };
+          next[key] = Math.max(0, Math.min(max, Math.round(+e.target.value)));
+          WORK_AREA.set(s, next); store.notify();
+        },
+      }));
+
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('h2', `Working area — screen ${s + 1}`),
+        screenSelect(sel, (v) => { sel = v; store.notify(); }),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: `screen is ${p.w}×${p.h}` }),
+        a ? el('button', { class: 'btn ghost', onclick: () => fitExisting(s) }, 'Fit existing layers') : null,
+        a ? el('button', { class: 'btn ghost', onclick: () => { WORK_AREA.clear(s); store.notify(); } }, 'Use whole screen') : null),
+      el('div', { class: 'hint pad', text:
+        'Neither platform can crop an output, so this is openrcs’s own constraint rather than a device setting: '
+        + 'layers are kept inside the region and the processor is never told. Use it when only part of the screen is '
+        + 'actually seen — an LED wall inside a larger canvas, or an SDI feed that has to stay within a frame.' }),
+      el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
+        cv,
+        el('div', { style: 'flex:1' },
+          el('div', { class: 'row' }, ...PRESETS.map(([label, make]) =>
+            el('button', { class: 'ws-mini', onclick: () => { WORK_AREA.set(s, make(p)); store.notify(); } }, label))),
+          el('div', { class: 'grid2' },
+            num('X', 'x', p.w), num('Y', 'y', p.h),
+            num('Width', 'w', p.w), num('Height', 'h', p.h)),
+          el('div', { class: 'hint pad', text: a
+            ? 'Layouts divide this region, and a layer cannot be dragged, sized or recalled outside it. '
+              + 'Layers placed before the region was drawn are left where they are — “Fit existing layers” pulls them in.'
+            : 'No working area — layers use the whole screen. Pick a shape above to set one.' }))));
+  }
+
   function render() {
     const rows = [];
     for (let i = 0; i < screenCount(); i++) {
       const max = store.val('SCmly', i);
-      rows.push(el('tr', {},
+      const a = WORK_AREA.get(i);
+      rows.push(el('tr', { class: i === sel ? 'sel-row' : '', onclick: () => { sel = i; store.notify(); } },
         el('td', { text: 'Screen ' + (i + 1) }),
         el('td', { class: 'val', text: fmt(store.val('OSsou', i)) }),
         el('td', { class: 'val', text: `${fmt(store.val('SCsih', i))}×${fmt(store.val('SCsiv', i))}` }),
         el('td', { class: 'val', text: fmt(max) }),
+        el('td', { class: 'val', text: a ? `${a.w}×${a.h} @ ${a.x},${a.y}` : 'whole screen' }),
         el('td', {}, (max || 0) > 0 ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), 'active') : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'unused'))));
     }
     return el('div', {},
-      el('div', { class: 'view-head' }, el('h1', { text: 'Screens' }), el('span', { class: 'hint', text: 'Output screens and their layer capacity' })),
+      el('div', { class: 'view-head' }, el('h1', { text: 'Screens' }),
+        el('span', { class: 'hint', text: `Output screens and their layer capacity${WORK_AREA.count() ? ` · ${WORK_AREA.count()} with a working area` : ''}` })),
       el('div', { class: 'panel' },
         el('table', { class: 'grid' },
-          el('thead', {}, el('tr', {}, ...['Screen', 'Output', 'Size (mode)', 'Max layers', 'State'].map(h => el('th', { text: h })))),
-          el('tbody', {}, ...rows))));
+          el('thead', {}, el('tr', {}, ...['Screen', 'Output', 'Size (mode)', 'Max layers', 'Working area', 'State'].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))),
+      areaEditor());
   }
   return { enter, render };
 })();
@@ -4250,12 +4431,14 @@ VIEWS.workspace = (() => {
 
   // ---- geometry ----
   const setGeom = (s, c, l, r) => {
+    r = WORK_AREA.fit(s, r);
     throttledSet('PRsih', [s, c, l], Math.max(0, Math.round(r.w)));
     throttledSet('PRsiv', [s, c, l], Math.max(0, Math.round(r.h)));
     throttledSet('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
     throttledSet('PRpov', [s, c, l], Math.round(r.top + r.h / 2 + B));
   };
   const setGeomNow = (s, c, l, r) => {
+    r = WORK_AREA.fit(s, r);
     store.set('PRsih', [s, c, l], Math.max(0, Math.round(r.w)));
     store.set('PRsiv', [s, c, l], Math.max(0, Math.round(r.h)));
     store.set('PRpoh', [s, c, l], Math.round(r.left + r.w / 2 + B));
@@ -4340,10 +4523,13 @@ VIEWS.workspace = (() => {
     ['pip', 'PiP', 'Full source with an inset'],
     ['stack', 'Stack', 'Two sources, one above the other'],
   ];
+  // Layouts divide the working area, not the raster — on a screen with one, a
+  // quad is four cells of the region that is seen rather than four cells of a
+  // picture whose edges never leave the frame.
   function arrange(s, c, kind) {
-    const { w: sw, h: sh } = screenPx(s);
+    const { x: ox, y: oy, w: sw, h: sh } = workPx(s);
     const ls = assignedLayers(s, c); if (!ls.length) return;
-    const put = (l, x, y, w, h) => setGeomNow(s, c, l, { left: x, top: y, w, h });
+    const put = (l, x, y, w, h) => setGeomNow(s, c, l, { left: ox + x, top: oy + y, w, h });
     if (kind === 'full') {
       const t = (sel && sel.s === s && sel.c === c && store.val('PRinp', s, c, sel.l)) ? sel.l : ls[0];
       put(t, 0, 0, sw, sh);
@@ -4367,9 +4553,9 @@ VIEWS.workspace = (() => {
   }
   /** Nine-point placement of the selected layer, keeping its size. */
   function place(s, c, l, ix) {
-    const { w: sw, h: sh } = screenPx(s), r = layerRectPx(s, c, l);
+    const { x: ox, y: oy, w: sw, h: sh } = workPx(s), r = layerRectPx(s, c, l);
     const col = ix % 3, row = Math.floor(ix / 3);
-    setGeomNow(s, c, l, { left: col * (sw - r.w) / 2, top: row * (sh - r.h) / 2, w: r.w, h: r.h });
+    setGeomNow(s, c, l, { left: ox + col * (sw - r.w) / 2, top: oy + row * (sh - r.h) / 2, w: r.w, h: r.h });
     store.notify();
   }
   /** Resize the selected layer to an aspect ratio, keeping its width. */
@@ -4385,8 +4571,8 @@ VIEWS.workspace = (() => {
     if (src >= 1 && src <= 24) { w = store.val('INish', src - 1) || 0; h = store.val('INisv', src - 1) || 0; }
     else if (src >= 25 && src <= 32) { w = store.val('LSdwi', src - 25) || 0; h = store.val('LSdhe', src - 25) || 0; }
     if (!w || !h) { flash('No native size reported for this source'); return; }
-    const { w: sw, h: sh } = screenPx(s);
-    setGeomNow(s, c, l, { left: Math.round((sw - w) / 2), top: Math.round((sh - h) / 2), w, h });
+    const { x: ox, y: oy, w: sw, h: sh } = workPx(s);
+    setGeomNow(s, c, l, { left: ox + Math.round((sw - w) / 2), top: oy + Math.round((sh - h) / 2), w, h });
     store.notify();
   }
   function reorder(s, c, l, dir) {
@@ -4554,6 +4740,7 @@ VIEWS.workspace = (() => {
     const n = maxLayers(s);
     const cv = el('div', { class: 'screen-canvas ws-cv-' + role });
     cv.dataset.ar = String(sw / sh);
+    cv.append(workOverlay(s, sw, sh, false) || '');
     const pointFromEvent = (e) => {
       const b = cv.getBoundingClientRect();
       return { x: (e.clientX - b.left) / (b.width || 1) * sw, y: (e.clientY - b.top) / (b.height || 1) * sh };
@@ -4767,7 +4954,7 @@ VIEWS.workspace = (() => {
             el('input', { type: 'checkbox', checked: keepAspect || null, onchange: (e) => { keepAspect = e.target.checked; store.notify(); } }),
             el('span', { text: 'Keep aspect' })),
           el('div', { class: 'spacer' }),
-          el('button', { class: 'ws-mini', title: 'Fill the screen', onclick: () => { const p = screenPx(s); setGeomNow(s, c, l, { left: 0, top: 0, w: p.w, h: p.h }); store.notify(); } }, 'Screen size'),
+          el('button', { class: 'ws-mini', title: WORK_AREA.has(s) ? 'Fill the working area' : 'Fill the screen', onclick: () => { const a = workPx(s); setGeomNow(s, c, l, { left: a.x, top: a.y, w: a.w, h: a.h }); store.notify(); } }, WORK_AREA.has(s) ? 'Area size' : 'Screen size'),
           el('button', { class: 'ws-mini', title: "Size to the source's own resolution", onclick: () => contentSize(s, c, l) }, 'Content size')),
         el('div', { class: 'row' },
           el('span', { class: 'hint', text: 'Place' }),
