@@ -13,7 +13,16 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   one canvas, a global TAKE ALL / CUT ALL, click-through to editing.
 - **Wall** — a screen output-position map: each screen placed in the output-tile
   grid at its real position (`OSpoh`/`OSpov`), drag to arrange, apply with `OSupd`.
-- **Memories** — master and screen memory grids (recall / load+take / save).
+- **Memories** — master, screen and layer banks in one view. The two device
+  banks get recall / load+take / save against all 144 slots, with each slot's
+  device label (`LBPMe`/`LBPSe`), erase (`PMres`/`PSres`), an explicit
+  preview-or-program target (`PMprf`/`PSprf`), and the device's own category
+  filter (`PMcat`) applied to every recall. Neither platform stores a single
+  layer, so the **layer bank** is openrcs's own: it captures one layer's whole
+  property set — 40 leaves on a LiveCore, 27 on a Midra, read off the variable
+  table rather than hard-coded — and applies it to any screen, preset and layer
+  under the same category filter, then reads the layer back to report what
+  actually landed. It persists locally and travels in a show file.
 - **Cues** — a show script over the memories: an ordered cue list with GO NEXT,
   per-cue autofollow (chain to the next after a wait) with a HOLD, and notes.
 - **Destinations** — screen groups as super-destinations: take/cut/T-bar/step-back
@@ -65,6 +74,11 @@ Concrete device capabilities not yet given a dedicated surface:
   Midra serves no HTTP at all.
 - **Cut & Fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` are known, but the rest of
   the RCS's Cut & Fill panel has no obvious mnemonics.
+- **A device-side layer load on Midra.** `GClrq` (`PRESET_LOAD_REQUEST`) is five
+  dimensional — `[2, 8, 2, 2, 12]` — and that trailing 12 looks like a per-layer
+  selector, which would make a layer recall something the device does rather than
+  something the client re-applies. Nothing drives it yet and it has not been tried
+  on hardware; the layer bank above works without it on both platforms.
 
 ## Beyond the stock control software
 

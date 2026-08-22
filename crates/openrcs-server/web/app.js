@@ -618,14 +618,167 @@ store.subscribe(() => render());
 
 // ================= views =================
 
+const flagOn = (v, bit) => ((v ?? 0) >>> bit & 1) === 1;
+const flagSet = (v, bit, on) => on ? ((v ?? 0) | (1 << bit)) >>> 0 : ((v ?? 0) & ~(1 << bit)) >>> 0;
+
+// PEMEM_CATEGORY — the bit layout of PMcat, the preset-memory load/save filter.
+const MEM_FILTERS = [
+  ['Source', 0], ['Pos/size', 1], ['Transparency', 2], ['Crop', 3], ['Border', 4],
+  ['Transitions', 5], ['Effects', 6], ['Timing', 7], ['Speed', 8], ['Flying curve', 9],
+  ['Native bkg', 10], ['Mask', 11],
+];
+const MEM_FILTER_ALL = 4095;
+
+// ---------- layer memories ----------
+// Neither platform has a device-side layer bank: the device stores whole screen
+// presets (PM*) and nothing smaller. Every per-layer property is separately
+// addressable as PR*[screen, preset, layer] though, so one layer's worth of
+// state can be captured and re-applied anywhere. That makes this a client-side
+// bank, kept alongside Cues and Keys, and it works the same on LiveCore's 24
+// layers and Midra's 8.
+
+// Which PMcat category each leaf answers to, so a layer memory recalls under
+// the same filter chips as a screen memory. Native background (bit 10) has no
+// layer equivalent — it is a property of the screen, not of a layer.
+const LAYER_CAT = {
+  PRinp: 0,
+  PRpoh: 1, PRpov: 1, PRpoz: 1, PRsih: 1, PRsiv: 1, PRroh: 1, PRrov: 1, PRroz: 1,
+  PRalp: 2,
+  PRcph: 3, PRcpv: 3, PRcsh: 3, PRcsv: 3,
+  PRbst: 4, PRbcr: 4, PRbcg: 4, PRbcb: 4, PRbal: 4, PRbsh: 4, PRbsv: 4, PRshp: 4,
+  PRotr: 5, PRowa: 5, PRctr: 5, PRcwa: 5,
+  PRflg: 6, PRaov: 6, PRsmm: 6, PRfli: 6, PRftr: 6,
+  PRoso: 7, PRoeo: 7, PRcso: 7, PRceo: 7, PRodu: 7, PRcdu: 7,
+  PRtba: 8, PRtbb: 8,
+  PRbah: 9, PRbav: 9, PRbaz: 9, PRbbh: 9, PRbbv: 9, PRbbz: 9,
+  PRmcv: 11,
+};
+
+// Every writable per-layer preset variable the device advertised — 40 on a
+// LiveCore, 27 on a Midra. Read off the table rather than listed here, so the
+// set follows whichever platform the bridge connected to. PRlay is the RCS's
+// edit selection rather than layer state; capturing it would drag the
+// operator's cursor around on every recall.
+function layerLeaves() {
+  const out = [];
+  for (const [m, def] of store.byMnem) {
+    if (def.group !== 'PRESET' && def.group !== 'GRP_PRESET_ELEMENT') continue;
+    if (def.ro || m === 'PRlay' || (def.dims?.length ?? 0) !== 3) continue;
+    out.push(m);
+  }
+  return out;
+}
+
+const LAYER_MEM = (() => {
+  const KEY = 'openrcs.layermem';
+  const N = 50;                    // the depth of the LivePremier layer bank
+  const slots = new Array(N).fill(null);
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (Array.isArray(saved)) for (let i = 0; i < N && i < saved.length; i++) slots[i] = saved[i] || null;
+  } catch { /* first run / private mode */ }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(slots)); } catch { /* quota/private */ } };
+
+  const get = (n) => slots[n] || null;
+  const count = () => slots.filter(Boolean).length;
+
+  /** Ask the device for one layer's leaves, so a capture has values to read. */
+  function fetch(s, ctx, l) { for (const m of layerLeaves()) store.get(m, [s, ctx, l]); }
+
+  /** Snapshot one layer into a slot. Reads the cache only — writes nothing. */
+  function save(n, s, ctx, l) {
+    const values = {};
+    for (const m of layerLeaves()) {
+      const v = store.val(m, s, ctx, l);
+      if (v != null) values[m] = v;
+    }
+    slots[n] = {
+      label: get(n)?.label || '',
+      saved: new Date().toISOString(),
+      // A LiveCore capture means nothing on a Midra. The position bias is the
+      // same but the ranges are not (alpha 0..256 against 0..255, position
+      // 0..131072 against 0..65535) and a third of the leaves do not exist on
+      // the other platform. Recorded so a recall can refuse rather than write
+      // plausible nonsense.
+      platform: store.meta?.platform || '',
+      from: { screen: s, preset: ctx, layer: l },
+      values,
+    };
+    persist();
+    return Object.keys(values).length;
+  }
+
+  function relabel(n, label) { if (slots[n]) { slots[n].label = label; persist(); } }
+  function erase(n) { slots[n] = null; persist(); }
+
+  const clampTo = (def, v) => Math.max(def.min, Math.min(def.max, v));
+
+  /**
+   * Write a stored layer onto a target layer, honouring the record mask.
+   * Returns the mnemonics written so the caller can read them back: a Midra
+   * refuses a source with no signal and answers with neither an echo nor an
+   * error code, so a write is not evidence that anything changed.
+   */
+  function apply(n, s, ctx, l, mask) {
+    const slot = get(n);
+    if (!slot) return [];
+    const wrote = [];
+    for (const [m, v] of Object.entries(slot.values)) {
+      const def = store.byMnem.get(m);
+      if (!def) continue;                     // a leaf this platform does not have
+      const bit = LAYER_CAT[m];
+      if (bit != null && !flagOn(mask, bit)) continue;
+      store.set(m, [s, ctx, l], clampTo(def, v));
+      wrote.push(m);
+    }
+    return wrote;
+  }
+
+  /** Which of a just-applied set the device did not take. */
+  function verify(n, s, ctx, l, wrote) {
+    const slot = get(n);
+    if (!slot) return [];
+    return wrote.filter((m) => {
+      const def = store.byMnem.get(m);
+      return def && store.val(m, s, ctx, l) !== clampTo(def, slot.values[m]);
+    });
+  }
+
+  /** The whole bank as plain data, for a show file, and back again. */
+  const snapshot = () => slots.map((x) => x);
+  function restore(list) {
+    if (!Array.isArray(list)) return;
+    for (let i = 0; i < N; i++) slots[i] = list[i] || null;
+    persist();
+  }
+
+  return { N, get, count, fetch, save, relabel, erase, apply, verify, snapshot, restore };
+})();
+
 // ---------- Memories ----------
 VIEWS.memories = (() => {
-  let scope = 'master';          // 'master' | 'screen'
-  let mode = 'recall';           // 'recall' | 'take' | 'save'
+  let scope = 'master';          // 'master' | 'screen' | 'layer'
+  let mode = 'recall';           // 'recall' | 'take' | 'save' | 'inspect'
   let screen = 0;
   let selected = null;
+  // PMcat, the device's own load/save record mask. One filter serves all three
+  // scopes: the layer bank re-uses the same bits, so a layer recalls under the
+  // chips an operator already knows from screen memories.
+  let filter = MEM_FILTER_ALL;
+  let filterOpen = false;
+  // Which bank a load lands in / a save is taken from. PMprf and PSprf both
+  // spell it 0 = the bank on air, 1 = the bank that is not.
+  let bank = 'pvw';
 
   const fetched = new Set();     // screen-memory slots whose contents we've pulled
+  const labelled = new Set();    // slots whose device label we've asked for
+
+  let flashMsg = null, flashTimer = null;
+  function flash(t) {
+    flashMsg = t; clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashMsg = null; store.notify(); }, 3200);
+    store.notify();
+  }
 
   // ---- Midra memory model: 8 slots, content in PMinp/geom[slot,screen,layer].
   // Save = GCsrq (device stores the live program); reset = CTpmr. Recall is
@@ -686,8 +839,7 @@ VIEWS.memories = (() => {
       }
       return g;
     }
-    function render() {
-      const usedCount = Array.from({ length: N }, (_, i) => store.val('PMpst', i)).filter(v => v === 1).length;
+    function body() {
       const isUsed = sel != null && store.val('PMpst', sel) === 1;
       const detail = sel != null ? el('div', { class: 'panel' },
         el('div', { class: 'row' }, el('h2', `Memory ${sel + 1}`), el('div', { class: 'spacer' }),
@@ -696,16 +848,172 @@ VIEWS.memories = (() => {
           isUsed ? el('button', { class: 'btn ghost', onclick: () => reset(sel) }, 'Erase') : null),
         isUsed ? el('div', { class: 'row', style: 'align-items:flex-start' }, thumb(sel))
           : el('div', { class: 'hint', text: 'Empty slot — “Save current program” stores the live layout here.' })) : null;
+      return el('div', {}, detail, el('div', { class: 'panel' }, grid()));
+    }
+    const hint = () => {
+      const used = Array.from({ length: N }, (_, i) => store.val('PMpst', i)).filter(v => v === 1).length;
+      return `${used} of ${N} presets saved · tap a slot to inspect`;
+    };
+    return { enter, body, hint };
+  })();
+
+  // ---- layer bank: one layer captured here, applied to any other ----
+  const lay = (() => {
+    let from = { screen: 0, role: 'pgm', layer: 0 };
+    let to = { screen: 0, role: 'pvw', layer: 0 };
+    let sel = null;
+    let report = null;           // outcome of the last apply, shown in the detail
+    const ctxOf = (a) => a.role === 'pgm' ? liveCtx(a.screen) : editCtx(a.screen);
+
+    function enter() {
+      // Midra protects the program preset; without update mode a write to the
+      // preview context silently fails to stick (the same reason Layers sets it).
+      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      for (const m of ['SCmly', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
+      if (hasBanks()) store.scan('GCsta');
+      LAYER_MEM.fetch(from.screen, ctxOf(from), from.layer);
+    }
+
+    function layerSelect(a, onchange) {
+      const s = el('select', { onchange: (e) => { a.layer = +e.target.value; onchange(); } });
+      for (let i = 0; i < layerSlots(); i++) {
+        const o = el('option', { value: i, text: 'Layer ' + (i + 1) });
+        if (i === a.layer) o.selected = true;
+        s.append(o);
+      }
+      return s;
+    }
+    // The bank is named by role, not by index: which buffer is on air moves with
+    // the device, so a fixed preset number would address the wrong one.
+    function addr(a, label, onchange) {
+      return el('div', { class: 'row' },
+        el('b', { text: label }),
+        screenSelect(a.screen, (v) => { a.screen = v; onchange(); }),
+        hasBanks() ? el('div', { class: 'seg' },
+          el('button', { class: a.role === 'pgm' ? 'on take' : '', onclick: () => { a.role = 'pgm'; onchange(); } }, 'Program'),
+          el('button', { class: a.role === 'pvw' ? 'on recall' : '', onclick: () => { a.role = 'pvw'; onchange(); } }, 'Preview')) : null,
+        layerSelect(a, onchange),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: sourceName(store.val('PRinp', a.screen, ctxOf(a), a.layer) || 0) }));
+    }
+
+    function saveTo(n) {
+      const wrote = LAYER_MEM.save(n, from.screen, ctxOf(from), from.layer);
+      sel = n; report = null;
+      flash(wrote
+        ? `Captured ${screenLabel(from.screen)} layer ${from.layer + 1} into memory ${n + 1} — ${wrote} properties`
+        : `Nothing to capture yet — layer ${from.layer + 1} has not been read back from the device`);
+    }
+    function recallTo(n, andTake) {
+      const slot = LAYER_MEM.get(n);
+      if (!slot) return;
+      const here = store.meta?.platform;
+      if (slot.platform && here && slot.platform !== here) {
+        flash(`Memory ${n + 1} was captured on a ${slot.platform} — its value ranges do not mean the same thing here, so nothing was written`);
+        return;
+      }
+      const ctx = ctxOf(to);
+      const wrote = LAYER_MEM.apply(n, to.screen, ctx, to.layer, filter);
+      sel = n;
+      report = { slot: n, wrote: wrote.length, missed: null };
+      // Read back rather than trust the write: a Midra drops a source with no
+      // signal and answers with neither an echo nor an error code.
+      setTimeout(() => {
+        LAYER_MEM.fetch(to.screen, ctx, to.layer);
+        setTimeout(() => {
+          if (report && report.slot === n) report.missed = LAYER_MEM.verify(n, to.screen, ctx, to.layer, wrote);
+          store.notify();
+        }, 500);
+      }, 250);
+      if (andTake) setTimeout(() => doTake(to.screen, 1000), 900);
+      flash(`Applied memory ${n + 1} to ${screenLabel(to.screen)} layer ${to.layer + 1}`);
+    }
+
+    function tap(n) {
+      sel = n;
+      if (mode === 'save') saveTo(n);
+      else if (mode === 'recall') recallTo(n, false);
+      else if (mode === 'take') recallTo(n, true);
+      store.notify();
+    }
+
+    function grid() {
+      const g = el('div', { class: `mem-grid mode-${mode}` });
+      for (let i = 0; i < LAYER_MEM.N; i++) {
+        const s = LAYER_MEM.get(i);
+        g.append(el('button', {
+          class: 'slot' + (s ? ' valid' : '') + (sel === i ? ' sel' : ''),
+          title: s
+            ? `${s.label || 'Layer memory ' + (i + 1)} — captured from ${screenLabel(s.from.screen)} layer ${s.from.layer + 1}`
+            : `Layer memory ${i + 1} — empty`,
+          onclick: () => tap(i),
+        }, el('span', { class: 'num', text: i + 1 }),
+          s ? el('span', { class: 'lbl', text: s.label || sourceName(s.values.PRinp || 0) }) : null));
+      }
+      return g;
+    }
+
+    function detail(n) {
+      const s = LAYER_MEM.get(n);
+      if (!s) return el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('h2', `Layer memory ${n + 1}`)),
+        el('div', { class: 'empty-state', text: 'Empty — pick the layer to capture above, switch to Save, then tap this slot.' }));
+      const rows = Object.entries(s.values).map(([m, v]) => {
+        const def = store.byMnem.get(m);
+        const bit = LAYER_CAT[m];
+        const cat = MEM_FILTERS.find(([, b]) => b === bit);
+        const masked = bit != null && !flagOn(filter, bit);
+        return el('tr', { class: (def && !masked) ? '' : 'dim' },
+          el('td', { text: m }),
+          el('td', { text: def?.name || 'not on this platform' }),
+          el('td', { text: cat ? cat[0] : '—' }),
+          el('td', { class: 'val', text: v }));
+      });
+      const kept = Object.keys(s.values).filter((m) => {
+        const bit = LAYER_CAT[m];
+        return store.byMnem.has(m) && (bit == null || flagOn(filter, bit));
+      }).length;
+      return el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('h2', `Layer memory ${n + 1}`),
+          el('input', {
+            class: 'lbl-in', type: 'text', maxlength: 24, value: s.label, placeholder: 'label',
+            onchange: (e) => { LAYER_MEM.relabel(n, e.target.value); store.notify(); },
+          }),
+          el('div', { class: 'spacer' }),
+          el('button', { class: 'btn recall', onclick: () => recallTo(n, false) }, 'Apply to target'),
+          el('button', { class: 'btn ghost', onclick: () => { LAYER_MEM.erase(n); if (sel === n) sel = null; report = null; store.notify(); } }, 'Erase')),
+        el('div', { class: 'row' }, el('span', { class: 'hint', text:
+          `${Object.keys(s.values).length} properties stored, ${kept} pass the current filter · captured `
+          + `${new Date(s.saved).toLocaleString()} from ${screenLabel(s.from.screen)} layer ${s.from.layer + 1}`
+          + (s.platform ? ` on a ${s.platform}` : '') })),
+        report && report.slot === n ? el('div', { class: 'row' },
+          el('span', { class: 'ws-flash', text:
+            report.missed == null ? `Applied ${report.wrote} properties — reading back…`
+              : report.missed.length ? `${report.wrote - report.missed.length} of ${report.wrote} landed — the device refused ${report.missed.join(', ')}`
+              : `All ${report.wrote} properties landed` })) : null,
+        el('table', { class: 'grid' },
+          el('thead', el('tr', ...['Variable', 'Property', 'Category', 'Value'].map(h => el('th', { text: h })))),
+          el('tbody', ...rows)));
+    }
+
+    function body() {
+      const refetch = () => { enter(); store.notify(); };
       return el('div', {},
-        el('div', { class: 'view-head' }, el('h1', { text: 'Memories' }),
-          el('span', { class: 'hint', text: `${usedCount} of ${N} presets saved · tap a slot to inspect` })),
-        detail,
+        el('div', { class: 'panel' },
+          addr(from, 'Capture from', refetch),
+          addr(to, 'Apply to', () => store.notify()),
+          el('div', { class: 'row' }, el('span', { class: 'hint', text:
+            'Neither platform stores a single layer, so this bank lives in the browser. It survives a reload, and a recall is checked by reading the layer back.' }))),
+        sel != null ? detail(sel) : null,
         el('div', { class: 'panel' }, grid()));
     }
-    return { enter, render };
+    const hint = () => `${LAYER_MEM.count()} of ${LAYER_MEM.N} layer memories saved · tap a slot to ${mode === 'save' ? 'capture into' : mode === 'take' ? 'apply + take' : 'apply'}`;
+    return { enter, body, hint };
   })();
 
   function enter() {
+    if (scope === 'layer') return lay.enter();
     if (store.meta?.platform === 'midra') return mid.enter();
     store.scan('PSval');         // master validity
     store.scan('PMscw');         // screen-memory content width (>0 = present)
@@ -723,6 +1031,20 @@ VIEWS.memories = (() => {
     for (let l = 0; l < mly; l++)
       for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv', 'PMalp']) store.get(m, [slot, l]);
   }
+
+  // Labels are 16 gets each, so they are fetched for populated slots only and
+  // once — a blind sweep of both banks would be 4608 reads down one TCP link.
+  function ensureLabels(isMaster) {
+    const m = isMaster ? 'LBPSe' : 'LBPMe';
+    if (!store.byMnem.has(m)) return;
+    for (let i = 0; i < 144; i++) {
+      if (!slotValid(i, isMaster) || labelled.has(m + i)) continue;
+      labelled.add(m + i);
+      fetchLabel(m, [i]);
+    }
+  }
+  const slotValid = (i, isMaster) => isMaster ? store.val('PSval', i) === 1 : (store.val('PMscw', i) || 0) > 0;
+  const slotLabel = (i, isMaster) => readLabel(isMaster ? 'LBPSe' : 'LBPMe', [i]);
 
   // a scaled thumbnail of a stored memory's layer arrangement
   function memThumb(slot) {
@@ -769,81 +1091,157 @@ VIEWS.memories = (() => {
       el('tbody', ...rows));
   }
 
+  const prf = () => bank === 'pgm' ? 0 : 1;
+
   function slotTap(n) {
     selected = n;
     if (mode === 'inspect') { if (scope === 'screen') ensureContent(n); store.notify(); return; }
     if (scope === 'master') {
       store.set('PSmet', [], n);                       // target slot
+      store.set('PSprf', [], prf());
       if (mode === 'recall') store.set('PSloa', [], 1);
       else if (mode === 'take') store.set('PSlot', [], 1);
-      else if (mode === 'save') { store.set('PSprf', [], 0); store.set('PSsav', [], 1); store.scan('PSval'); }
+      else if (mode === 'save') { store.set('PSsav', [], 1); store.scan('PSval'); labelled.delete('LBPSe' + n); }
     } else {
+      store.set('PMcat', [], filter);                  // the record mask, both ways
       store.set('PMscf', [], screen);
       store.set('PMmet', [], n);
+      store.set('PMprf', [], prf());
       if (mode === 'recall') store.set('PMloa', [], 1);
       else if (mode === 'take') store.set('PMlot', [], 1);
-      else if (mode === 'save') { store.set('PMprf', [], 0); store.set('PMsav', [], 1); store.scan('PMscw'); fetched.delete(n); ensureContent(n); }
-      else if (scope === 'screen') ensureContent(n);
+      else if (mode === 'save') { store.set('PMsav', [], 1); store.scan('PMscw'); fetched.delete(n); labelled.delete('LBPMe' + n); ensureContent(n); }
     }
     store.notify();
   }
 
+  function eraseSlot(n) {
+    if (scope === 'master') {
+      store.set('PSmet', [], n); store.set('PSres', [], 1);
+      setTimeout(() => store.scan('PSval'), 400);
+    } else {
+      store.set('PMscf', [], screen); store.set('PMmet', [], n); store.set('PMres', [], 1);
+      fetched.delete(n);
+      setTimeout(() => { store.get('PMscw', [n]); store.get('PMmly', [n]); store.notify(); }, 400);
+    }
+    labelled.delete((scope === 'master' ? 'LBPSe' : 'LBPMe') + n);
+    flash(`Erased ${scope === 'master' ? 'master memory' : 'memory'} ${n + 1}`);
+  }
+
   function grid() {
+    const isMaster = scope === 'master';
+    ensureLabels(isMaster);
     const g = el('div', { class: `mem-grid mode-${mode}` });
     const N = 144;
     for (let i = 0; i < N; i++) {
-      let valid, cls = 'slot';
-      if (scope === 'master') valid = store.val('PSval', i) === 1;
-      else valid = (store.val('PMscw', i) || 0) > 0;
+      const valid = slotValid(i, isMaster), label = valid ? slotLabel(i, isMaster) : '';
+      let cls = 'slot';
       if (valid) cls += ' valid';
       if (selected === i) cls += ' sel';
-      g.append(el('button', { class: cls, onclick: () => slotTap(i) },
+      g.append(el('button', {
+        class: cls,
+        title: `${isMaster ? 'Master memory' : 'Memory'} ${i + 1}${label ? ' — ' + label : ''}${valid ? '' : ' — empty'}`,
+        onclick: () => slotTap(i),
+      },
         el('span', { class: 'num', text: i + 1 }),
-        valid ? el('span', { class: 'lbl', text: scope === 'screen' ? `${store.val('PMmly', i) ?? 0} lyr` : 'saved' }) : null));
+        valid ? el('span', { class: 'lbl', text: label || (isMaster ? 'saved' : `${store.val('PMmly', i) ?? 0} lyr`) }) : null));
     }
     return g;
   }
 
-  function render() {
-    if (store.meta?.platform === 'midra') return mid.render();
-    const validCount = scope === 'master'
-      ? store.arr('PSval', 144).filter(v => v === 1).length
-      : store.arr('PMscw', 144).filter(v => (v || 0) > 0).length;
+  // The record mask is the device's own PMcat, so the chips mean exactly what
+  // they mean in the vendor RCS — and the layer bank filters on the same bits.
+  function filterChips() {
+    const chip = (label, on, fn) => el('button', { class: 'ws-mini' + (on ? ' on' : ''), onclick: fn }, label);
+    return el('div', { class: 'ws-filters' },
+      ...MEM_FILTERS.map(([label, bit]) =>
+        chip(label, flagOn(filter, bit), () => { filter = flagSet(filter, bit, !flagOn(filter, bit)); store.notify(); })),
+      chip('All', filter === MEM_FILTER_ALL, () => { filter = MEM_FILTER_ALL; store.notify(); }));
+  }
 
+  function toolbar(midra) {
+    const nFilters = MEM_FILTERS.filter(([, b]) => flagOn(filter, b)).length;
+    const seg = (id, label, cls) => el('button', {
+      class: (cls || '') + (mode === id ? ' on' : ''), onclick: () => { mode = id; store.notify(); },
+    }, label);
+    const scopeBtn = (id, label) => el('button', {
+      class: scope === id ? 'on recall' : '',
+      onclick: () => { scope = id; selected = null; enter(); store.notify(); },
+    }, label);
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('div', { class: 'seg' },
+          midra ? scopeBtn('master', 'Presets') : scopeBtn('master', 'Master'),
+          midra ? null : scopeBtn('screen', 'Screen'),
+          scopeBtn('layer', 'Layer')),
+        scope === 'screen' ? el('label', { class: 'field' }, 'Screen',
+          screenSelect(screen, v => { screen = v; enter(); store.notify(); })) : null,
+        el('div', { class: 'spacer' }),
+        scope !== 'layer' && !midra ? el('div', { class: 'seg' },
+          el('button', { class: bank === 'pvw' ? 'on recall' : '', onclick: () => { bank = 'pvw'; store.notify(); } }, mode === 'save' ? 'From preview' : 'Into preview'),
+          el('button', { class: bank === 'pgm' ? 'on take' : '', onclick: () => { bank = 'pgm'; store.notify(); } }, mode === 'save' ? 'From program' : 'Into program')) : null,
+        // Midra's own bank is driven from the slot detail, not a mode, and it
+        // carries no record mask — PMcat is a LiveCore variable. The layer bank
+        // has both on either platform, because it applies them itself.
+        midra && scope !== 'layer' ? null : el('div', { class: 'seg' },
+          seg('recall', scope === 'layer' ? 'Apply' : 'Recall', 'recall'),
+          seg('take', scope === 'layer' ? 'Apply + Take' : 'Load + Take', 'take'),
+          seg('save', scope === 'layer' ? 'Capture' : 'Save', 'save'),
+          scope === 'layer' ? null : seg('inspect', 'Inspect')),
+        midra && scope !== 'layer' ? null
+          : el('button', { class: 'ws-mini' + (filterOpen ? ' on' : ''), title: 'Which categories a recall carries',
+            onclick: () => { filterOpen = !filterOpen; store.notify(); } },
+            `Filter: ${nFilters === MEM_FILTERS.length ? 'all' : nFilters}`)),
+      filterOpen && !(midra && scope !== 'layer') ? filterChips() : null);
+  }
+
+  function liveBody() {
+    const isMaster = scope === 'master';
     return el('div', {},
-      el('div', { class: 'view-head' },
-        el('h1', { text: 'Memories' }),
-        el('span', { class: 'hint', text: `${validCount} saved · tap a slot to ${mode === 'save' ? 'save into' : mode === 'take' ? 'load + take' : mode === 'inspect' ? 'preview its contents' : 'recall to preview'}` })),
-
-      el('div', { class: 'panel' },
-        el('div', { class: 'row' },
-          el('div', { class: 'seg' },
-            el('button', { class: scope === 'master' ? 'on recall' : '', onclick: () => { scope = 'master'; selected = null; render2(); } }, 'Master'),
-            el('button', { class: scope === 'screen' ? 'on recall' : '', onclick: () => { scope = 'screen'; selected = null; render2(); } }, 'Screen')),
-          scope === 'screen' ? el('label', { class: 'field' }, 'Screen',
-            screenSelect(screen, v => { screen = v; enter(); render2(); })) : null,
-          el('div', { class: 'spacer' }),
-          el('div', { class: 'seg' },
-            el('button', { class: 'recall ' + (mode === 'recall' ? 'on' : ''), onclick: () => { mode = 'recall'; render2(); } }, 'Recall'),
-            el('button', { class: 'take ' + (mode === 'take' ? 'on' : ''), onclick: () => { mode = 'take'; render2(); } }, 'Load + Take'),
-            el('button', { class: 'save ' + (mode === 'save' ? 'on' : ''), onclick: () => { mode = 'save'; render2(); } }, 'Save'),
-            el('button', { class: (mode === 'inspect' ? 'on' : ''), onclick: () => { mode = 'inspect'; render2(); } }, 'Inspect')))),
-
       // stored-content preview for the selected screen memory
-      scope === 'screen' && selected != null && (store.val('PMscw', selected) || 0) > 0
+      !isMaster && selected != null && slotValid(selected, false)
         ? el('div', { class: 'panel' },
           el('div', { class: 'row' },
             el('h2', `Memory ${selected + 1} contents`),
+            el('input', {
+              class: 'lbl-in', type: 'text', maxlength: LABEL_LEN, value: slotLabel(selected, false), placeholder: 'label',
+              onchange: (e) => { writeLabel('LBPMe', [selected], e.target.value); setTimeout(() => fetchLabel('LBPMe', [selected]), 300); },
+            }),
             el('div', { class: 'spacer' }),
-            el('span', { class: 'hint', text: `${store.val('PMscw', selected)}×${store.val('PMsch', selected) || '·'} · ${store.val('PMmly', selected) ?? 0} layers` })),
+            el('span', { class: 'hint', text: `${store.val('PMscw', selected)}×${store.val('PMsch', selected) || '·'} · ${store.val('PMmly', selected) ?? 0} layers` }),
+            el('button', { class: 'btn ghost', onclick: () => eraseSlot(selected) }, 'Erase')),
           el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
             memThumb(selected),
             memList(selected)))
         : null,
-
+      isMaster && selected != null && slotValid(selected, true)
+        ? el('div', { class: 'panel' },
+          el('div', { class: 'row' },
+            el('h2', `Master memory ${selected + 1}`),
+            el('input', {
+              class: 'lbl-in', type: 'text', maxlength: LABEL_LEN, value: slotLabel(selected, true), placeholder: 'label',
+              onchange: (e) => { writeLabel('LBPSe', [selected], e.target.value); setTimeout(() => fetchLabel('LBPSe', [selected]), 300); },
+            }),
+            el('div', { class: 'spacer' }),
+            el('span', { class: 'hint', text: 'recalls every enabled screen at once' }),
+            el('button', { class: 'btn ghost', onclick: () => eraseSlot(selected) }, 'Erase')))
+        : null,
       el('div', { class: 'panel' }, grid()));
   }
-  const render2 = () => render && store.notify();
+
+  function render() {
+    const midra = store.meta?.platform === 'midra';
+    const hint = scope === 'layer' ? lay.hint()
+      : midra ? mid.hint()
+      : `${store.arr(scope === 'master' ? 'PSval' : 'PMscw', 144).filter(v => scope === 'master' ? v === 1 : (v || 0) > 0).length} saved`
+        + ` · tap a slot to ${mode === 'save' ? 'save into' : mode === 'take' ? 'load + take' : mode === 'inspect' ? 'preview its contents' : 'recall'}`;
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Memories' }),
+        el('span', { class: 'hint', text: hint }),
+        flashMsg ? el('span', { class: 'ws-flash', text: flashMsg }) : null),
+      toolbar(midra),
+      scope === 'layer' ? lay.body() : midra ? mid.body() : liveBody());
+  }
 
   return { enter, render };
 })();
@@ -1321,7 +1719,7 @@ const SHOW_SCOPES = [
     hint: 'The current on-screen composition — every layer’s source, geometry, opacity, border, crop and transitions, plus the native background.',
     groups: ['PRESET', 'PRESET_NATIVE', 'MASTER_ALPHA', 'GRP_PRESET_ELEMENT'] },
   { id: 'memories', label: 'Memory banks',
-    hint: 'The stored screen and master memories. Large — a full bank is thousands of values and takes a moment to read.',
+    hint: 'The stored screen and master memories, and the layer bank. Large — a full bank is thousands of values and takes a moment to read.',
     groups: ['PRESET_MEMORIES', 'MASTER_PRESET_MEMORIES', 'CONFIDENCE_MEMORIES', 'MONITORING_LAYOUT_MEMORIES', 'GRP_PRESET_MEMORY'] },
   { id: 'inputs', label: 'Input setup',
     hint: 'Per-input settings and plug configuration.',
@@ -1392,6 +1790,11 @@ async function captureShow(scopeIds, onProgress) {
       serial: store.val('DIdsn') ?? store.val('SYssn') ?? null,
     },
     scopes: scopeIds.filter(id => scopes.some(s => s.id === id)),
+    // The layer bank is not device state — no processor stores a single layer —
+    // so it travels beside the values rather than among them. A show captured
+    // without the memories scope carries none, and leaves any existing bank
+    // alone on restore.
+    ...(scopeIds.includes('memories') ? { layerBank: LAYER_MEM.snapshot() } : {}),
     values,
   };
 }
@@ -1424,6 +1827,7 @@ function showDiff(show) {
 // device as little as possible. Skips anything this device lacks or that's
 // read-only. onProgress(fraction) runs across the values to write.
 async function restoreShow(show, onProgress) {
+  if (show.layerBank) LAYER_MEM.restore(show.layerBank);
   const vals = show.values.filter(([m, idx, v]) => {
     const d = store.byMnem.get(m);
     return d && !d.ro && store.state.get(keyOf(m, idx)) !== v;
@@ -1984,17 +2388,6 @@ const PE_FLAG = {
   ANCHOR_SLICE_0: 16, ANCHOR_SLICE_1: 17, ANCHOR_SLICE_2: 18, ANCHOR_SLICE_3: 19,
   ROUND_BORDER_CORNER: 20,
 };
-const flagOn = (v, bit) => ((v ?? 0) >>> bit & 1) === 1;
-const flagSet = (v, bit, on) => on ? ((v ?? 0) | (1 << bit)) >>> 0 : ((v ?? 0) & ~(1 << bit)) >>> 0;
-
-// PEMEM_CATEGORY — the bit layout of PMcat, the preset-memory load/save filter.
-const MEM_FILTERS = [
-  ['Source', 0], ['Pos/size', 1], ['Transparency', 2], ['Crop', 3], ['Border', 4],
-  ['Transitions', 5], ['Effects', 6], ['Timing', 7], ['Speed', 8], ['Flying curve', 9],
-  ['Native bkg', 10], ['Mask', 11],
-];
-const MEM_FILTER_ALL = 4095;
-
 VIEWS.layers = (() => {
   let screen = 0;
   // Track the *role* being edited, not a preset index: which bank is program moves
