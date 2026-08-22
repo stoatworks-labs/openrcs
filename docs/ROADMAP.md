@@ -38,7 +38,10 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   variable the device holds, per-screen take/cut/T-bar/step-back, and the full
   144-slot screen and master memory system with labels and category filters.
 - **Setup** — a live **Tally** grid; Inputs; Outputs with format, HDCP and output
-  processing (brightness/contrast/gamma/gain); Screens; Stills; **Capture** (grab
+  processing (brightness/contrast/gamma/gain), plus a per-output **area of interest**
+  (`OUTPUT_AOI_SIZE`, staged and committed with `OSaup`, drawn from the device's own
+  `OUTPUT_AOI_STATUS` readback — see the open question below); **Video out** (Midra:
+  the frame's second output, below); Screens; Stills; **Capture** (grab
   a source frame — full or a graphical region — into the still library);
   **Multiviewer** (a drag/resize layout designer for the monitoring outputs, with
   layout memories); **Soft edge** (a graphical per-edge blend editor for
@@ -64,6 +67,15 @@ Concrete device capabilities not yet given a dedicated surface:
 
 - **Screen mapping** — place each screen at its real output position for the Stage
   canvas, and the two monitor outputs in a monitoring screen (`MONITORING_SCREEN`).
+- **Video out (Midra)** — **shipped.** Most Midra frames carry a second, separately
+  scaled output, usually on an SDI plug (`DFvso`). `CTvom` picks what it is for —
+  Recording, or a mirror of output 1 or 2, each gated on its own capability flag
+  (`DFmvo`/`DFmoa`/`DFmob`) — and in Recording mode `VOmod` chooses which screen it
+  looks at and `VOpoh`/`VOpov`/`VOsih`/`VOsiv` crop an **area of interest** out of it.
+  Verified on a Pulse2: entering Recording mode lights the SDI plug (`VOpls`) and
+  drops the raster to 720×576, and a 1280×720 crop offset 300px off centre landed
+  exactly. **The video out cannot be pointed at an input** — `VOmod` takes screens
+  only, and the device refuses a fifth value.
 - **Confidence memories** (`CM*`) and per-screen **Confidential** (`CO*`) — the
   fullscreen/mosaic core is done; these two grids are not yet exposed.
 
@@ -74,6 +86,13 @@ Concrete device capabilities not yet given a dedicated surface:
   Midra serves no HTTP at all.
 - **Cut & Fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` are known, but the rest of
   the RCS's Cut & Fill panel has no obvious mnemonics.
+- **The LiveCore per-output area of interest does not read back.** `OSaoi` accepts
+  Custom, the four `OSa*` values stage and echo, and `OSaup` is accepted — but on a
+  NeXtage 16 `OUT_AOI_STATUS` stayed pinned at 200×200 whatever was staged (1280×720
+  and 960×540 both), with `OSfmh`/`OSfmv` reporting 1720,880 = format − 200. Position
+  did not track either. Either the crop needs something else enabled first, or the
+  status group means something other than it appears to. The panel draws the status
+  rather than the staged numbers and says so, so nothing is claimed that was not seen.
 - **A device-side layer load on Midra.** `GClrq` (`PRESET_LOAD_REQUEST`) is five
   dimensional — `[2, 8, 2, 2, 12]` — and that trailing 12 looks like a per-layer
   selector, which would make a layer recall something the device does rather than

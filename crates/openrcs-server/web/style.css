@@ -716,3 +716,29 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .found-row .plat { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
 .hint.pad { display: block; margin-top: 10px; line-height: 1.5; }
 .hint.bad { color: var(--pgm); }
+
+/* ---- Video out: the area-of-interest editor ---- */
+/* Its own rectangle rather than .lrect: this one is always the single subject of
+   the canvas, so it is never selected or deselected and carries its handle at
+   all times, where a layer rect shows one only when picked. */
+.vo-canvas { flex: 0 0 auto; touch-action: none; }
+.vo-aoi {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  display: flex; align-items: flex-start; cursor: move; user-select: none;
+  min-width: 10px; min-height: 10px; touch-action: none;
+}
+/* Nothing stored yet: the rectangle is showing the default (the whole screen)
+   rather than a real setting, and should not read as one. */
+.vo-aoi.unset { border-style: dashed; border-color: var(--faint); background: color-mix(in srgb, var(--faint) 8%, transparent); }
+.vo-aoi-tag {
+  font-family: var(--mono); font-size: 11px; background: #000a; color: var(--text);
+  padding: 1px 5px; border-radius: 0 0 3px 0; pointer-events: none; white-space: nowrap;
+}
+.vo-handle {
+  position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px;
+  background: var(--accent); border: 1px solid #000; border-radius: 2px;
+  cursor: nwse-resize; touch-action: none;
+}
+.btn.dim { opacity: .4; cursor: not-allowed; }

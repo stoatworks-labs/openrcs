@@ -452,7 +452,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lppresets', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console'];
+const VIEW_IDS = ['lpscreens', 'lppresets', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -511,7 +511,7 @@ const NAV = [
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
-  ['connection', 'Connection'], ['tailnet', 'Tailnet'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['screens', 'Screens'],
+  ['connection', 'Connection'], ['tailnet', 'Tailnet'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['videoout', 'Video out'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
   ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'],
@@ -524,6 +524,8 @@ const VIEW_REQUIRES = {
   cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
   stills: () => store.byMnem.has('Slval') || store.byMnem.has('PSfrv'),  // LiveCore or Midra
   capture: 'STcen', multiview: 'MLcen',
+  // the video out is a Midra thing, and not every frame in the range has one
+  videoout: () => store.byMnem.has('VOmod'),
   // the soft-edge view models LiveCore's per-edge SEcen[screen,edge]; Midra's
   // soft edge is a different (scalar) model, so gate on an indexed SEcen
   softedge: () => (store.byMnem.get('SEcen')?.dims.length || 0) > 0,
@@ -3161,7 +3163,9 @@ VIEWS.outputs = (() => {
   let sel = 0;
   function enter() {
     for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
-      'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl']) if (store.byMnem.has(m)) store.scan(m);
+      'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl',
+      'OSaoi', 'OSocp', 'OSash', 'OSasv', 'OSaph', 'OSapv',
+      'OSsmh', 'OSsmv', 'OSSsh', 'OSSsv', 'OSSph', 'OSSpv', 'OSsro']) if (store.byMnem.has(m)) store.scan(m);
   }
   // set the output format (and, on Midra, fire the update trigger to apply it)
   function formatSelect() {
@@ -3186,6 +3190,93 @@ VIEWS.outputs = (() => {
         el('button', { class: 'btn ghost' + (used ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('OUuse', [i], used ? 0 : 1); } }, 'Use'),
         el('button', { class: 'btn ghost' + (black ? ' pgm' : ''), style: 'margin-left:6px', onclick: (e) => { e.stopPropagation(); store.set('OUbla', [i], black ? 0 : 1); } }, 'Black')));
   }
+  // ---- Area of interest (LiveCore) ----
+  // A per-output crop: the output carries a window of its format rather than the
+  // whole raster. Two things make it unlike the Midra video out's area of
+  // interest, and the UI has to respect both:
+  //   * position and size are plain pixels here — no +32768 bias;
+  //   * the values are staged, and only take effect when OSaup is fired. So the
+  //     panel edits freely and commits on Apply, rather than writing live.
+  // OUT_AOI_STATUS is the device's own readback of what it actually settled on,
+  // which is what the canvas draws — a staged edit that the device will clamp
+  // should not be shown as though it already happened.
+  const AOI_MODES = ['Format size', 'Custom'];
+  function aoiSection(i) {
+    if (!store.byMnem.has('OSash')) return null;          // Midra has no per-output AoI
+    const idx = [i];
+    const mode = store.val('OSaoi', i) ?? 0;
+    const custom = mode === 1;
+    const maxW = store.val('OSsmh', i) || 1920, maxH = store.val('OSsmv', i) || 1080;
+    const liveW = store.val('OSSsh', i), liveH = store.val('OSSsv', i);
+    const liveX = store.val('OSSph', i), liveY = store.val('OSSpv', i);
+    const rot = store.val('OSsro', i);
+
+    const modeSeg = el('div', { class: 'seg' }, ...AOI_MODES.map((label, m) =>
+      el('button', {
+        class: mode === m ? 'on recall' : '',
+        onclick: () => { store.set('OSaoi', idx, m); store.set('OSaup', idx, 1); setTimeout(enter, 500); },
+      }, label)));
+
+    // A device that has never been given a custom area parks these at the
+    // variable's own ceiling (100000), which is not a size anyone typed and
+    // reads as nonsense in a pixel field. Show the format's size instead —
+    // the same thing the output is actually carrying.
+    const shown = (mnem, fallback) => {
+      const v = store.val(mnem, i), ceil = store.byMnem.get(mnem)?.max ?? 100000;
+      return (v == null || v === 0 || v >= ceil) ? fallback : v;
+    };
+    const num = (label, mnem, max, fallback) => el('label', { class: 'field' }, label,
+      el('input', {
+        type: 'number', class: 'lbl-in', style: 'width:88px', min: 0, max,
+        value: shown(mnem, fallback), disabled: !custom,
+        onchange: (e) => store.set(mnem, idx, Math.max(0, Math.min(max, Math.round(+e.target.value)))),
+      }));
+
+    // What the device says it is doing, drawn inside the format's full raster.
+    const CW = 300, scale = CW / maxW;
+    const cv = el('div', { class: 'screen-canvas vo-canvas', style: `width:${CW}px;height:${Math.round(maxH * scale)}px` });
+    if (liveW && liveH) {
+      cv.append(el('div', {
+        class: 'vo-aoi' + (custom ? '' : ' unset'),
+        style: `left:${(liveX || 0) * scale}px;top:${(liveY || 0) * scale}px;`
+          + `width:${liveW * scale}px;height:${liveH * scale}px;cursor:default`,
+      }, el('span', { class: 'vo-aoi-tag', text: `${liveW}×${liveH}` })));
+    } else {
+      cv.append(el('span', { class: 'se-mid', text: 'no area reported' }));
+    }
+
+    return el('div', {},
+      el('div', { class: 'sub-head' }, 'Area of interest'),
+      el('div', { class: 'row' },
+        modeSeg,
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: `format ${maxW}×${maxH}${rot ? ` · rotation ${rot}` : ''}` })),
+      el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
+        cv,
+        el('div', { style: 'flex:1' },
+          el('div', { class: 'grid2' },
+            num('Width', 'OSash', maxW, maxW),
+            num('Height', 'OSasv', maxH, maxH),
+            num('Position X', 'OSaph', maxW, 0),
+            num('Position Y', 'OSapv', maxH, 0)),
+          store.byMnem.has('OSocp') ? bind('Overscan compensation', 'OSocp', idx, 0, 20, 1, v => v + '%') : null,
+          el('div', { class: 'row' },
+            el('button', { class: 'btn primary', disabled: !custom, onclick: () => { store.set('OSaup', idx, 1); setTimeout(enter, 500); } }, 'Apply'),
+            el('button', {
+              class: 'btn ghost', disabled: !custom,
+              onclick: () => { store.set('OSash', idx, maxW); store.set('OSasv', idx, maxH); store.set('OSaph', idx, 0); store.set('OSapv', idx, 0); store.set('OSaup', idx, 1); setTimeout(enter, 500); },
+            }, 'Whole format')),
+          el('div', { class: 'hint pad', text: custom
+            ? 'Edits are staged — Apply commits them, and the picture above is the device’s own readback, not what was typed.'
+            : 'The output carries its whole format. Switch to Custom to crop a window out of it.' }),
+          // Worth saying out loud rather than letting an operator discover it
+          // mid-show: on the one frame this has been tried on, the staged values
+          // were accepted and echoed but OUT_AOI_STATUS never moved off a
+          // 200x200 floor, so the crop could not be confirmed as happening.
+          custom && liveW === 200 && liveH === 200
+            ? el('div', { class: 'hint pad bad', text: 'The device is reporting a 200×200 area regardless of what is staged — the crop has not been confirmed on this output. Check the picture on the output before trusting it.' })
+            : null)));
+  }
   function detail() {
     const i = [sel];
     return el('div', { class: 'editor' },
@@ -3201,7 +3292,8 @@ VIEWS.outputs = (() => {
         bind('Gamma', 'OCgam', i, 5, 40, 1, v => (v / 10).toFixed(1)),
         bind('Gain R', 'OCgre', i, 0, 255, 1),
         bind('Gain G', 'OCggr', i, 0, 255, 1),
-        bind('Gain B', 'OCgbl', i, 0, 255, 1)));
+        bind('Gain B', 'OCgbl', i, 0, 255, 1)),
+      aoiSection(sel));
   }
   function render() {
     const rows = Array.from({ length: N() }, (_, i) => row(i));
@@ -3213,6 +3305,255 @@ VIEWS.outputs = (() => {
             el('thead', el('tr', ...['Output', 'Display', 'State', 'Format', 'Size', ''].map(h => el('th', { text: h })))),
             el('tbody', ...rows))),
         el('div', { class: 'panel' }, el('h2', `Output ${sel + 1}`), detail())));
+  }
+  return { enter, render };
+})();
+
+// ---------- Video Out (Midra) ----------
+// A second, independently-scaled output that most Midra frames carry on an SDI
+// plug. It is not one of the numbered outputs: it has its own format, its own
+// image controls, and — the reason it is worth a view of its own — an area of
+// interest, so it can carry a crop of a screen rather than the whole thing.
+//
+// Every enum below was recovered from the device's own string table and then
+// confirmed against a Pulse2. See docs/PROTOCOL.md.
+
+// CTvom VIDEO_OUT_CFGMODE. The order is not a guess: the device advertises one
+// capability flag per value, in this order, and a frame that cannot offer a
+// mode reports 0 for its flag.
+const VIDEO_OUT_MODES = [
+  ['Recording', 'DFmvo', 'An independent feed with its own format and area of interest'],
+  ['Mirror output 1', 'DFmoa', 'Carries whatever output 1 is showing'],
+  ['Mirror output 2', 'DFmob', 'Carries whatever output 2 is showing'],
+];
+
+// VOmod VIDOUT_MODE — what the recording feed is a view of. Always a screen;
+// there is no way to point it at an input, and the device refuses 4.
+const VIDEO_OUT_SOURCES = ['Screen 1', 'Screen 2', 'Screen H-tiled', 'Screen V-tiled'];
+
+// VOfor VIDOUT_FORMAT 0..13 — the composite/SD half of the frame's format
+// table, which is exactly the range this variable allows.
+const VIDEO_OUT_FORMATS = ['Auto', 'PAL', 'PAL 4/3', 'PAL 16/9', 'NTSC', 'NTSC 4/3',
+  'NTSC 16/9', 'PAL-M', 'PAL-N combi', 'NTSC 4.43', 'PAL 60', 'SECAM', '480i', '576i'];
+
+// OUpat / VOpat 0..9.
+const TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
+  'Grid', 'SMPTE', 'V burst', 'Centring', 'Soft-edge centring'];
+
+VIEWS.videoout = (() => {
+  const B = POS_BIAS;
+  const CW = 460;                       // canvas width for the area-of-interest editor
+  let drag = null;
+
+  const cfgMode = () => store.val('CTvom') ?? 0;
+  const recording = () => cfgMode() === 0;
+  const modeOffered = (flag) => store.val(flag) !== 0;   // null (unread) reads as offered
+
+  function enter() {
+    for (const m of ['VOmod', 'VOpoh', 'VOpov', 'VOsih', 'VOsiv', 'VOfor', 'VOrat', 'VOpat', 'VOpct',
+      'VObcr', 'VObcg', 'VObcb', 'VOfli', 'VOgam', 'VOsha', 'VOovc',
+      'VOfvs', 'VOfst', 'VOrst', 'VOkin', 'VOshs', 'VOsvs', 'VOpls',
+      'CTvom', 'DFvdo', 'DFvso', 'DFmvo', 'DFmoa', 'DFmob',
+      'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
+  }
+
+  // The screen the feed is a view of, and therefore the space the area of
+  // interest is expressed in. The tiled modes span both screens.
+  function sourceSize() {
+    const w0 = store.val('SCssh', 0) || 1920, h0 = store.val('SCssv', 0) || 1080;
+    const w1 = store.val('SCssh', 1) || 0, h1 = store.val('SCssv', 1) || 0;
+    switch (store.val('VOmod') ?? 0) {
+      case 1: return { w: w1 || w0, h: h1 || h0 };
+      case 2: return { w: w0 + (w1 || w0), h: Math.max(h0, h1 || h0) };
+      case 3: return { w: Math.max(w0, w1 || w0), h: h0 + (h1 || h0) };
+      default: return { w: w0, h: h0 };
+    }
+  }
+
+  // The stored rectangle, in source-screen pixels. A freshly reset device parks
+  // every one of these at the bias value, which is not a usable rectangle — so
+  // an unset size falls back to the whole screen rather than drawing nothing.
+  function aoi() {
+    const src = sourceSize();
+    const rawW = store.val('VOsih'), rawH = store.val('VOsiv');
+    const unset = (v) => v == null || v === B;
+    const w = unset(rawW) ? src.w : rawW, h = unset(rawH) ? src.h : rawH;
+    const cx = (store.val('VOpoh') ?? B) - B, cy = (store.val('VOpov') ?? B) - B;
+    return { w, h, cx, cy, src, unset: unset(rawW) && unset(rawH) };
+  }
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  function writeAoi(next) {
+    const src = sourceSize();
+    const w = clamp(Math.round(next.w), 16, src.w), h = clamp(Math.round(next.h), 16, src.h);
+    const cx = clamp(Math.round(next.cx), -src.w, src.w), cy = clamp(Math.round(next.cy), -src.h, src.h);
+    store.set('VOsih', [], w); store.set('VOsiv', [], h);
+    store.set('VOpoh', [], B + cx); store.set('VOpov', [], B + cy);
+  }
+
+  // Drag the rectangle to move it, drag its corner handle to resize. The centre
+  // is what the device stores, so a move writes position and a resize writes
+  // size — never both, or a resize would walk the rectangle across the screen.
+  function canvas() {
+    const a = aoi();
+    const scale = CW / a.src.w;
+    const cv = el('div', { class: 'screen-canvas vo-canvas', style: `width:${CW}px;height:${Math.round(a.src.h * scale)}px` });
+    const left = (a.cx - a.w / 2) * scale + CW / 2;
+    const top = (a.cy - a.h / 2) * scale + (a.src.h * scale) / 2;
+    const rect = el('div', {
+      class: 'vo-aoi' + (a.unset ? ' unset' : ''),
+      style: `left:${left}px;top:${top}px;width:${a.w * scale}px;height:${a.h * scale}px`,
+      onpointerdown: (e) => {
+        if (e.target.classList.contains('vo-handle')) return;
+        e.preventDefault(); e.target.setPointerCapture?.(e.pointerId);
+        drag = { kind: 'move', x: e.clientX, y: e.clientY, cx: a.cx, cy: a.cy, w: a.w, h: a.h, scale };
+      },
+    }, el('span', { class: 'vo-aoi-tag', text: `${a.w}×${a.h}` }),
+      el('div', {
+        class: 'vo-handle',
+        onpointerdown: (e) => {
+          e.preventDefault(); e.stopPropagation(); e.target.setPointerCapture?.(e.pointerId);
+          drag = { kind: 'size', x: e.clientX, y: e.clientY, cx: a.cx, cy: a.cy, w: a.w, h: a.h, scale };
+        },
+      }));
+    const onMove = (e) => {
+      if (!drag) return;
+      const dx = (e.clientX - drag.x) / drag.scale, dy = (e.clientY - drag.y) / drag.scale;
+      if (drag.kind === 'move') writeAoi({ w: drag.w, h: drag.h, cx: drag.cx + dx, cy: drag.cy + dy });
+      else writeAoi({ w: drag.w + dx * 2, h: drag.h + dy * 2, cx: drag.cx, cy: drag.cy });
+      store.notify();
+    };
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerup', () => { drag = null; });
+    cv.addEventListener('pointerleave', () => { drag = null; });
+    cv.append(rect);
+    return cv;
+  }
+
+  function num(label, mnem, get, set, min, max) {
+    return el('label', { class: 'field' }, label,
+      el('input', {
+        type: 'number', class: 'lbl-in', style: 'width:90px', min, max, value: get(),
+        onchange: (e) => { set(clamp(Math.round(+e.target.value), min, max)); store.notify(); },
+      }));
+  }
+
+  function aoiPanel() {
+    const a = aoi();
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('h2', 'Area of interest'),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: `within ${a.src.w}×${a.src.h} · ${VIDEO_OUT_SOURCES[store.val('VOmod') ?? 0]}` }),
+        el('button', { class: 'btn ghost', onclick: () => { writeAoi({ w: a.src.w, h: a.src.h, cx: 0, cy: 0 }); store.notify(); } }, 'Whole screen')),
+      !recording() ? el('div', { class: 'hint pad', text: 'The area of interest only applies in Recording mode — a mirrored output carries its source untouched.' }) : null,
+      el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
+        canvas(),
+        el('div', { class: 'grid2', style: 'flex:1' },
+          num('Width', 'VOsih', () => a.w, (v) => store.set('VOsih', [], v), 16, a.src.w),
+          num('Height', 'VOsiv', () => a.h, (v) => store.set('VOsiv', [], v), 16, a.src.h),
+          num('Centre X', 'VOpoh', () => a.cx, (v) => store.set('VOpoh', [], B + v), -a.src.w, a.src.w),
+          num('Centre Y', 'VOpov', () => a.cy, (v) => store.set('VOpov', [], B + v), -a.src.h, a.src.h))),
+      a.unset ? el('div', { class: 'hint pad', text: 'No area stored yet — the whole screen is shown. Drag the rectangle or type a size to set one.' }) : null);
+  }
+
+  function modePanel() {
+    const cur = cfgMode();
+    const sdiOnly = store.val('DFvso') === 1;
+    const plugs = [0, 1, 2].map(i => store.val('VOpls', i));
+    const activePlug = plugs.findIndex(v => v === 1);
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('h2', 'Mode'),
+        el('div', { class: 'spacer' }),
+        el('span', { class: 'hint', text: sdiOnly ? 'this frame carries the video out on its SDI plug only' : 'video out plugs' }),
+        boolChip(activePlug >= 0 ? 1 : 0, `plug ${activePlug + 1} active`, 'no plug active')),
+      el('div', { class: 'row' }, ...VIDEO_OUT_MODES.map(([label, flag, hint], i) => {
+        const offered = modeOffered(flag);
+        return el('button', {
+          class: 'btn ' + (cur === i ? 'primary' : 'ghost') + (offered ? '' : ' dim'),
+          disabled: !offered, title: offered ? hint : 'not offered by this frame',
+          onclick: () => { store.set('CTvom', [], i); setTimeout(enter, 800); },
+        }, label);
+      })),
+      el('div', { class: 'hint pad', text: VIDEO_OUT_MODES[cur]?.[2] || '' }),
+      el('div', { class: 'hint pad', text: 'Changing the mode reconfigures the plug — the output re-syncs and its format changes with it.' }));
+  }
+
+  function formatPanel() {
+    const cur = store.val('VOfor') ?? 0;
+    const sel = el('select', {
+      onchange: (e) => { store.set('VOfor', [], +e.target.value); if (store.byMnem.has('VOfru')) store.set('VOfru', [], 1); setTimeout(enter, 700); },
+    });
+    VIDEO_OUT_FORMATS.forEach((name, i) => {
+      const o = el('option', { value: i, text: name });
+      if (i === cur) o.selected = true;
+      sel.append(o);
+    });
+    const rate = store.val('VOrst'), w = store.val('VOshs'), h = store.val('VOsvs');
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' },
+        el('h2', 'Format'),
+        el('div', { class: 'spacer' }),
+        boolChip(store.val('VOfvs'), 'valid', 'invalid'),
+        el('span', { class: 'hint', text: `${(w && h) ? `${w}×${h}` : '·'}${rate ? ` @ ${(rate / 1000).toFixed(2)} Hz` : ''}` })),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Format', sel),
+        store.byMnem.has('VOrat') ? bind('Rate', 'VOrat', [], 0, store.byMnem.get('VOrat').max) : null,
+        store.byMnem.has('VOovc') ? toggleBtn('Overscan', 'VOovc', [], 'pgm') : null),
+      el('div', { class: 'hint pad', text: 'Overscan compensation shrinks the picture slightly so a display that overscans still shows the edges.' }));
+  }
+
+  function imagePanel() {
+    const pat = store.val('VOpat') ?? 0;
+    const sel = el('select', { onchange: (e) => store.set('VOpat', [], +e.target.value) });
+    TEST_PATTERNS.forEach((name, i) => {
+      const o = el('option', { value: i, text: name });
+      if (i === pat) o.selected = true;
+      sel.append(o);
+    });
+    const sw = (m) => store.val(m) ?? 0;
+    return el('div', { class: 'panel' },
+      el('h2', 'Image'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Test pattern', sel),
+        store.byMnem.has('VOpct') ? toggleBtn('Centred', 'VOpct', [], 'pgm') : null,
+        el('label', { class: 'field' }, 'Background',
+          el('span', { class: 'swatch-dot', style: `background:rgb(${sw('VObcr')},${sw('VObcg')},${sw('VObcb')})` }))),
+      el('div', { class: 'grid2' },
+        bind('Background R', 'VObcr', [], 0, 255, 1),
+        bind('Background G', 'VObcg', [], 0, 255, 1),
+        bind('Background B', 'VObcb', [], 0, 255, 1),
+        store.byMnem.has('VOgam') ? bind('Gamma', 'VOgam', [], 5, 40, 1, v => (v / 10).toFixed(1)) : null,
+        store.byMnem.has('VOsha') ? bind('Sharpness', 'VOsha', [], 0, 255, 1) : null,
+        store.byMnem.has('VOfli') ? bind('Flicker filter', 'VOfli', [], 0, 7, 1) : null));
+  }
+
+  function render() {
+    if (store.val('DFvdo') === 0) {
+      return el('div', {},
+        el('div', { class: 'view-head' }, el('h1', { text: 'Video out' })),
+        el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'This frame has no video output.' })));
+    }
+    const srcSel = el('select', { onchange: (e) => { store.set('VOmod', [], +e.target.value); setTimeout(enter, 500); } });
+    VIDEO_OUT_SOURCES.forEach((name, i) => {
+      const o = el('option', { value: i, text: name });
+      if (i === (store.val('VOmod') ?? 0)) o.selected = true;
+      srcSel.append(o);
+    });
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Video out' }),
+        el('span', { class: 'hint', text: 'The frame’s second output — its own format, and a crop of a screen rather than the whole one' })),
+      modePanel(),
+      recording() ? el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('h2', 'Source'), srcSel,
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'hint', text: 'always a screen — the video out cannot be pointed at an input' }))) : null,
+      recording() ? aoiPanel() : null,
+      formatPanel(),
+      imagePanel());
   }
   return { enter, render };
 })();
