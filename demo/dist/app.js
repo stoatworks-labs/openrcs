@@ -874,24 +874,32 @@ VIEWS.memories = (() => {
       LAYER_MEM.fetch(from.screen, ctxOf(from), from.layer);
     }
 
+    // SCmly is what the screen is actually configured for; PRinp's last dimension
+    // is only the frame's ceiling. Offering 24 layers on a 4-layer screen invites
+    // a capture of something that cannot exist.
+    const layerCount = (s) => store.val('SCmly', s) || layerSlots();
     function layerSelect(a, onchange) {
       const s = el('select', { onchange: (e) => { a.layer = +e.target.value; onchange(); } });
-      for (let i = 0; i < layerSlots(); i++) {
+      for (let i = 0; i < layerCount(a.screen); i++) {
         const o = el('option', { value: i, text: 'Layer ' + (i + 1) });
         if (i === a.layer) o.selected = true;
         s.append(o);
       }
       return s;
     }
-    // The bank is named by role, not by index: which buffer is on air moves with
-    // the device, so a fixed preset number would address the wrong one.
+    // The bank is named by role, not by index. On a LiveCore which buffer is on
+    // air moves with the device, so a fixed preset number would address the
+    // wrong one; on a Midra the mapping is fixed at program 0 / preview 1.
+    // liveCtx/editCtx already resolve both, so the choice is offered either way
+    // — gating it on GCsta would leave a Midra able to address only context 0,
+    // which is half the layers it actually has.
     function addr(a, label, onchange) {
       return el('div', { class: 'row' },
         el('b', { text: label }),
         screenSelect(a.screen, (v) => { a.screen = v; onchange(); }),
-        hasBanks() ? el('div', { class: 'seg' },
+        el('div', { class: 'seg' },
           el('button', { class: a.role === 'pgm' ? 'on take' : '', onclick: () => { a.role = 'pgm'; onchange(); } }, 'Program'),
-          el('button', { class: a.role === 'pvw' ? 'on recall' : '', onclick: () => { a.role = 'pvw'; onchange(); } }, 'Preview')) : null,
+          el('button', { class: a.role === 'pvw' ? 'on recall' : '', onclick: () => { a.role = 'pvw'; onchange(); } }, 'Preview')),
         layerSelect(a, onchange),
         el('div', { class: 'spacer' }),
         el('span', { class: 'hint', text: sourceName(store.val('PRinp', a.screen, ctxOf(a), a.layer) || 0) }));
