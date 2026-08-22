@@ -88,6 +88,14 @@ per-platform quirks are all confirmed on the wire. Per-variable ranges are still
 strong guidance rather than a guarantee, and a few behaviours depend on model,
 firmware or a live input signal.
 
+Two things this release added are worth calling out for what is and is not proven.
+The Midra **video out** — its three plug modes, its screen sources, and its area of
+interest — is confirmed on a Pulse2, including watching the SDI plug move between
+outputs as the mode changes. The LiveCore **per-output area of interest** is not:
+the values stage and the apply is accepted, but the device's own status readback
+never moved off a fixed size on a NeXtage 16, so the panel shows that readback
+rather than the numbers typed into it, and warns when it sees it.
+
 **LivePremier (Aquilon) is early.** `openrcs-awj` implements the AWJ protocol —
 JSON over TCP 10606, from Analog Way's published Programmer's Guide rather than
 from reverse engineering — and the surface gains two views for it: screens in
@@ -175,12 +183,18 @@ single window-filling page — backed by a **Stage** overview and a **Wall** map
 that places each screen at its real output position; a graphical **Layers**
 editor (drag/resize, source, opacity, border, crop, layer transitions, built-in
 layouts); **Destinations** that take, cut and T-bar whole screen groups at once;
-**Memories**, **Cues** (a show script with per-cue autofollow), **Keys**
+**Memories** — master, screen and **layer** banks, with each slot's device label,
+the processor's own twelve-category record filter on every recall, and a layer
+bank that captures one layer's whole property set and verifies each recall by
+reading the layer back; **Cues** (a show script with per-cue autofollow), **Keys**
 (one-tap macros) and **Live**; a big-target **Show mode** for front-of-house; and
 **Shows** — capture the device's whole state to a portable file and restore it,
 with an instant **Confidence** undo and an offline **Plan** mode that stages a
 look with no device attached and pushes it on connect. Setup covers **Inputs**,
-**Outputs**, **Screens**, **Stills**, a live **Tally**, **Capture**,
+**Outputs** (with a per-output area of interest on LiveCore), **Video out** on a
+Midra — the frame's second output, with its own format and a draggable crop of a
+screen — **Screens** with a **working area** that keeps layers inside the part of
+a screen that is actually seen, **Stills**, a live **Tally**, **Capture**,
 **Multiviewer** and **Soft edge** designers, **EDID** management with a
 custom-EDID writer, **GPIO** and **System**; **Tools** add an **Inspector** over
 every device variable and a raw-protocol **Console**. It's a dependency-free

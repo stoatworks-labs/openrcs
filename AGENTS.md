@@ -100,6 +100,28 @@ std binary and may use crates. Keep the split.
   and `u32`, not `i32`/`u16`.
 - Partial reply lines must be buffered across reads (the `Decoder` does this).
 
+## The surface's own invariants
+
+- **Layer geometry has exactly two write points** — `setGeom`/`setGeomNow` in the
+  Layers view and in Workspace. The working-area clamp lives there so that every
+  path is covered by construction, including typed values and memory recalls that
+  never touch a canvas. A third write point would silently escape the region.
+- **The working area and the layer bank are client-side.** Nothing is written to a
+  processor to establish either. Both persist to `localStorage` and travel in a show
+  file; neither has a device variable behind it, and neither should grow one.
+- **Enum tables in the UI are recovered, not guessed.** `VIDEO_OUT_MODES`,
+  `VIDEO_OUT_SOURCES`, `VIDEO_OUT_FORMATS`, `TEST_PATTERNS` and `MEM_FILTERS` each
+  came from a device's own string table and were confirmed against hardware by count
+  or by refusal. `OUfor` is deliberately still rendered as "Format N" because it has
+  not been solved — do not fill it in from a plausible slice of the format table.
+- **Draw the device's readback, not the staged value**, wherever the two can differ.
+  The LiveCore output area of interest does differ, and the panel says so rather
+  than showing the operator their own numbers back.
+- **A layer leaf set is derived from the variable table**, not listed. `layerLeaves()`
+  filters the preset group by dimensionality, which is what makes the layer bank come
+  out at 40 leaves on a LiveCore and 27 on a Midra with no second table to maintain.
+  `PRlay` is excluded on purpose: it is the RCS's edit selection, not layer state.
+
 ## Verifying
 
 ```bash

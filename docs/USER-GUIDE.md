@@ -54,6 +54,27 @@ single shape.
 
 ## New in this release
 
+- **Layer memories** — a fourth memory bank beside master and screen. Capture one
+  layer's whole property set and apply it to any screen, preset and layer, under the
+  same category filter as a screen memory. No processor stores a single layer, so
+  this bank lives in the browser: it survives a reload, travels in a show file, and
+  every recall is checked by reading the layer back — which is how it catches a Midra
+  refusing a source that has no signal.
+- **Memories** gains what only the Workspace panel had: each slot's label as stored on
+  the device, erase, an explicit preview-or-program target, and the device's own
+  twelve-category record filter applied to every recall.
+- **Video out** (Midra) — the frame's second output, on its own view. Choose what its
+  plug is for, pick which screen it looks at, and drag an **area of interest** to send
+  a crop of that screen rather than the whole thing. See the note below about what it
+  can and cannot carry.
+- **Area of interest** on each LiveCore output — staged, then committed with Apply.
+  Unconfirmed on hardware; the panel shows the device's own readback rather than the
+  numbers you typed, and says so.
+- **Working area** — a region of a screen that openrcs composes inside. Layouts divide
+  it, and no drag, resize, typed value or memory recall can put a layer outside it.
+  Nothing is written to the processor to set one up. Use it when only part of a screen
+  is really seen — an LED wall inside a larger canvas, or a feed that has to stay
+  inside a frame.
 - **Show mode** — a stripped, big-target front-of-house surface: large CUT ALL /
   TAKE ALL, a TAKE tile per destination, and a grid of master-memory recall tiles.
   The one to drive a show from a touchscreen at front-of-house.
@@ -159,6 +180,76 @@ scaled thumbnail of a stored memory's layout — source, size and position of ev
 layer — without recalling it. On **Midra**, memories follow that family's model
 instead: eight preset slots, each captured from the live program, with the same
 inspect-thumbnail, recall and erase.
+
+### Layer memories
+
+The third tab in Memories. Pick the layer to **capture from** — screen, program or
+preview, and which layer — then switch to **Capture** and tap a slot. The slot stores
+every property that layer has: 40 of them on a LiveCore, 27 on a Midra, read from the
+variable table your processor actually advertised rather than a fixed list.
+
+To use one, set **Apply to** — any screen, either bank, any layer — and tap the slot.
+The category chips apply here exactly as they do to a screen memory, so you can drop a
+layer's position and size onto another layer without disturbing its source.
+
+Two things worth knowing:
+
+- **A recall is verified, not assumed.** openrcs re-reads the layer afterwards and
+  names anything that did not land. A Midra silently refuses a source with no signal —
+  no error, no echo — and this is the only way to see it.
+- **A capture records which platform it came from** and refuses to apply on the other
+  one. The two families spell the same properties with different ranges, so the numbers
+  would land but mean something else.
+
+![The layer bank — one layer's whole property set, ready to drop onto another](screenshots/layer-bank.png)
+
+## Video out — Midra
+
+Most Midra frames carry a second output beside the numbered ones. On a frame where it
+is the SDI plug, this is the only SDI the unit has, and this view is where it lives.
+
+**Mode** decides what the plug is for. It is not a display setting — it reassigns the
+plug:
+
+| Mode | What the plug does |
+|---|---|
+| **Recording** | An independent feed with its own format and an area of interest. **Standard definition only** — 720×576 or 720×480, whatever the format list offers. |
+| **Mirror output 1** | The plug becomes an extra plug of output 1, carrying that output's full raster. HD if the output is HD. |
+| **Mirror output 2** | The same, for output 2. |
+
+Only the modes your frame offers are enabled; it reports which ones it has.
+
+In **Recording** mode you also get a **source** — which screen the feed is a view of,
+including the two tiled combinations — and an **area of interest**: drag the rectangle,
+or type a size and centre, to send a crop of that screen instead of all of it.
+
+> **The video out cannot be pointed at an input.** Every source it offers is a screen.
+> To put one input on that plug, put the input on a layer of a screen the video out is
+> looking at.
+
+> **There is no HD area of interest.** The crop exists only in Recording mode, and
+> Recording mode is standard definition. If you need a framed HD feed, mirror an output
+> and constrain the composition with a [working area](#working-area) instead.
+
+![The video out on a Pulse2 — Recording mode, with a 1280×720 crop of screen 1](screenshots/videoout.png)
+
+## Working area
+
+Neither platform can crop an output at HD. When only part of a screen is actually
+seen, openrcs can constrain itself instead: set a **working area** on the screen in
+**Setup → Screens** and everything composes inside it.
+
+- Layout presets divide the region rather than the raster — a quad is four cells of
+  the part you see.
+- A layer cannot be dragged, resized, typed or recalled outside it.
+- Nothing is written to the processor. It never knows.
+
+Shape presets cover the usual cases (16:9 or 4:3 centred, half the screen, centre 80%),
+or type the four numbers. Setting a region deliberately does not move anything that is
+already placed — **Fit existing layers** does that when you want it, across every
+preset bank so a take cannot bring an overhang back.
+
+![A working area on screen 1 — layers are kept inside the dashed region](screenshots/working-area.png)
 
 ## Cues
 
