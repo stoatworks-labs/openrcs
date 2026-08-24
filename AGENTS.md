@@ -132,3 +132,10 @@ cargo build --no-default-features # no_std must keep building
 
 `no_std` is not decoration — a future gateway target may be embedded. Do not
 reach for `std` in `openrcs-proto`.
+
+## Notes
+
+`docs/NOTES.md` carries this repo's working notes — current status, decisions
+already made, and the traps that have actually bitten. Read it before changing
+anything non-obvious. Cross-cutting fleet knowledge lives in
+[fleet-notes](https://github.com/stoatworks-labs/fleet-notes).
