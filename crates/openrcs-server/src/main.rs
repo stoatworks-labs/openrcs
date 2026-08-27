@@ -634,7 +634,7 @@ where
     S: SinkExt<Message> + Unpin,
 {
     let json = serde_json::to_string(msg).map_err(|_| ())?;
-    tx.send(Message::Text(json)).await.map_err(|_| ())
+    tx.send(Message::Text(json.into())).await.map_err(|_| ())
 }
 
 #[cfg(test)]
