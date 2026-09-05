@@ -33,19 +33,19 @@ describe compatibility.
 
 ## Download
 
-**[v0.5.1](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.5.1)** — prebuilt for macOS, Windows and Linux. Pick your platform:
+**[v0.5.2](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.5.2)** — prebuilt for macOS, Windows and Linux. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Apple Silicon, Intel</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Apple Silicon · .dmg disk image (CLI) | [`openrcs-server-0.5.1-macos-aarch64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-aarch64-cli.dmg) | 1.7 MB |
-| Intel · .dmg disk image (CLI) | [`openrcs-server-0.5.1-macos-x86_64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-x86_64-cli.dmg) | 1.8 MB |
-| Apple Silicon · .pkg installer (CLI) | [`openrcs-server-0.5.1-macos-aarch64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-aarch64-cli.pkg) | 1.2 MB |
-| Intel · .pkg installer (CLI) | [`openrcs-server-0.5.1-macos-x86_64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-x86_64-cli.pkg) | 1.3 MB |
-| Apple Silicon · .tar.gz archive | [`openrcs-server-0.5.1-macos-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-aarch64.tar.gz) | 1.2 MB |
-| Intel · .tar.gz archive | [`openrcs-server-0.5.1-macos-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-macos-x86_64.tar.gz) | 1.3 MB |
+| Apple Silicon · .dmg disk image (CLI) | [`openrcs-server-0.5.2-macos-aarch64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-macos-aarch64-cli.dmg) | 1.7 MB |
+| Intel · .dmg disk image (CLI) | [`openrcs-server-0.5.2-macos-x86_64-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-macos-x86_64-cli.dmg) | 1.7 MB |
+| Apple Silicon · .pkg installer (CLI) | [`openrcs-server-0.5.2-macos-aarch64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-macos-aarch64-cli.pkg) | 1.2 MB |
+| Intel · .pkg installer (CLI) | [`openrcs-server-0.5.2-macos-x86_64-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-macos-x86_64-cli.pkg) | 1.2 MB |
+| Apple Silicon · .tar.gz archive | [`openrcs-server-macos-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-macos-aarch64.tar.gz) | 1.2 MB |
+| Intel · .tar.gz archive | [`openrcs-server-macos-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-macos-x86_64.tar.gz) | 1.2 MB |
 
 </details>
 
@@ -54,10 +54,10 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`openrcs-server-0.5.1-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-windows-x86_64-setup.exe) | 867 KB |
-| ARM64 · .exe installer | [`openrcs-server-0.5.1-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-windows-aarch64-setup.exe) | 786 KB |
-| x64 · .zip archive | [`openrcs-server-0.5.1-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-windows-x86_64.zip) | 1.1 MB |
-| ARM64 · .zip archive | [`openrcs-server-0.5.1-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-windows-aarch64.zip) | 1.0 MB |
+| x64 · .exe installer | [`openrcs-server-0.5.2-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-windows-x86_64-setup.exe) | 933 KB |
+| ARM64 · .exe installer | [`openrcs-server-0.5.2-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-windows-aarch64-setup.exe) | 851 KB |
+| x64 · .zip archive | [`openrcs-server-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-x86_64.zip) | 1.0 MB |
+| ARM64 · .zip archive | [`openrcs-server-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-aarch64.zip) | 991 KB |
 
 </details>
 
@@ -66,8 +66,12 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .tar.gz archive | [`openrcs-server-0.5.1-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-linux-x86_64.tar.gz) | 1.2 MB |
-| ARM64 · .tar.gz archive | [`openrcs-server-0.5.1-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.1/openrcs-server-0.5.1-linux-aarch64.tar.gz) | 1.1 MB |
+| x64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.5.2_amd64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server_0.5.2_amd64.deb) | 1.4 MB |
+| ARM64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.5.2_arm64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server_0.5.2_arm64.deb) | 1.4 MB |
+| x64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.5.2-1.x86_64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-1.x86_64.rpm) | 1.4 MB |
+| ARM64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.5.2-1.aarch64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.5.2/openrcs-server-0.5.2-1.aarch64.rpm) | 1.4 MB |
+| x64 · .tar.gz archive | [`openrcs-server-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-x86_64.tar.gz) | 1.3 MB |
+| ARM64 · .tar.gz archive | [`openrcs-server-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-aarch64.tar.gz) | 1.4 MB |
 
 </details>
 
