@@ -100,20 +100,30 @@ the values stage and the apply is accepted, but the device's own status readback
 never moved off a fixed size on a NeXtage 16, so the panel shows that readback
 rather than the numbers typed into it, and warns when it sees it.
 
-**LivePremier (Aquilon) is early.** `openrcs-awj` implements the AWJ protocol —
-JSON over TCP 10606, from Analog Way's published Programmer's Guide rather than
-from reverse engineering — and the surface gains two views for it: screens in
-use with their transition state and take times, and the screen preset bank.
-Reading has been exercised against an **Aquilon C** on firmware 6.2.73: model,
-labels, transition, preset letters and bank validity all come back clean.
+**LivePremier (Aquilon) is in field testing.** `openrcs-awj` implements the AWJ
+protocol — JSON over TCP 10606, from Analog Way's published Programmer's Guide
+rather than from reverse engineering — and the surface gains two views for it:
+screens in use with their transition state and take times, and the screen preset
+bank. Reading has been exercised against **two different Aquilon C frames** on
+firmware 6.2.73 — most recently 2026-09-09 — with `openrcs-awj`'s own `awjprobe`
+example: model, labels, transition, preset letters and bank validity all come
+back clean on both.
 
 The controls that write — take, cut, preset recall, and the subscription list
 behind "Live updates" — have been exercised end to end against the **LivePremier
-simulator**, not against a device: subscribing, a take (the transition reaching
-`AT_UP` about a second later, and the surface's own program/preview letters
-following it), an instant cut, and a preset saved and recalled onto preview. A
-simulator is not a processor, and it is known not to reproduce every device
-behaviour, so treat that half as unproven on real hardware.
+simulator**, and **the AWJ operations underneath them are now confirmed on real
+hardware**: a TAKE measured at 1.07 s against a configured 1.0 s fade, a preset
+saved and recalled onto preview, a recall of an empty slot passing silently, and
+a second socket receiving a push for a write made on the first — the exact
+mechanism behind "Live updates". Those hardware writes were sent by a separate
+test harness rather than by this code, so what is proven is the protocol, not
+yet `openrcs`'s own write path. Treat the plumbing between the surface and the
+wire as still simulator-only, and the wire itself as settled.
+
+Two hardware facts worth carrying into any AWJ client: an `x…` trigger property
+stays `true` after firing, so reading one back is never confirmation; and a
+preset recall overwrites the screen's `takeUpTime`, so any fade must be written
+*after* the load, not before.
 
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
