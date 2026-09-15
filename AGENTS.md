@@ -33,6 +33,8 @@ crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   web/                  vanilla ES-module SPA, no build step
 protocol/*.json         source of truth for the variable tables
 docs/PROTOCOL.md        the wire protocol
+docs/comparison.json    feature parity vs the vendor RCS, per family; edit this
+docs/COMPARISON.md      GENERATED from it by scripts/gen-comparison.py
 ```
 
 Only `openrcs-proto` is `no_std` and dependency-free; the server is a normal

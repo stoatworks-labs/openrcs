@@ -130,6 +130,11 @@ Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
 ESP32) between the processor and its clients. The protocol engine is
 `no_std`-friendly so the same code backs all of them.
 
+How all of this compares with the vendor's own control software — the RCS²
+for Midra, the Web RCS for LiveCore, LivePremier and Midra 4K — feature by
+feature, with what is full, partial, missing or beyond stock on each family:
+[docs/COMPARISON.md](docs/COMPARISON.md).
+
 ## Web control surface
 
 `openrcs-server` bridges a browser control panel to a processor: it holds one

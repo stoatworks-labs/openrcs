@@ -42,3 +42,9 @@ jobs:
       # in this workflow would notice.
       - name: no_std still builds
         run: cargo build --no-default-features
+
+      # docs/COMPARISON.md is generated from docs/comparison.json. A JSON edit
+      # that forgets to re-run the generator would leave the repo and the
+      # website (which syncs the JSON) disagreeing about a cell.
+      - name: comparison doc is current
+        run: python3 scripts/gen-comparison.py --check
