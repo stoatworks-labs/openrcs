@@ -605,6 +605,168 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K: audio, setup, input plugs, output canvas, backup, streaming — 2026-09-15, round four
+
+Two new views (Audio, Setup) and the rest of the setup surface on the existing
+ones, still simulator-only. Every spelling was probed on the Midra 4K sim
+before it was built (`awjprobe.py`, 120 paths, one E12: free-canvas outputs
+are `left`/`top`, not `posH`/`posV`), and every write below was made through
+the surface and read back with a separate socket.
+
+- **Audio** (mynah 1.5.0 spelled most of it first; this crate pins the rest):
+  sources `audio/$source/@items/{IN1..16, IN_DANTE_CHa_b, IN_ANALOG_n,
+  IN_MEDIA_PLAYER, CUSTOM_1..10}/status/@props/isAvailable`; audio inputs
+  `audio/$input/@items/<IN1_SDI_EMBEDDED…>/status/@props/{isAvailable,
+  isAudioDetected, channelCount}` + `$channel/@items/n/control/@props/mute`;
+  the level meters are `audio/$input/level/control/@props/{select, xRefresh}`
+  and `status/@props/level` (the `inputList/level` sibling of `items`, so
+  `$input/level`), same under `$output`; outputs `audio/$output/@items/
+  VIDEO_OUT_n/{control/@props/mute, status/@props/{isAvailable, source}}`;
+  line outs `audio/$lineOut/@items/n/control/@props/{mode DIRECT_ROUTING|
+  FOLLOW_SCREEN, selectedAudioPair}`, `directRouting/@props/source`,
+  `followScreen/@props/screen`; Dante groups `audio/dante/$outputGroup/@items/
+  n/…` the same; custom `audio/custom/status/@props/availableChannels` and
+  `audio/custom/$source/@items/CUSTOM_n/control/@props/{label, channelMapping
+  [8]}`; per destination `$screen/@items/n/audio/control/@props/mode
+  (DIRECT_ROUTING | FOLLOW_LIVE_LAYER_CONTENT | FOLLOW_AUDIO_LAYER)`,
+  `directRouting/@props/source`, `followLiveLayer/@props/layer`; aux modes
+  DIRECT_ROUTING | FOLLOW_CONTENT | FOLLOW_AUDIO_LAYER; the audio layer
+  `$screen/@items/n/$preset/@items/UP|DOWN/audio/control/@props/source`; video
+  outputs `$output/@items/k/audio/control/@props/mode (NONE|AUTO|
+  DIRECT_ROUTING)` + `directRouting/@props/source`; multiviewer `multiviewer/
+  audio/control/@props/mode (DIRECT_ROUTING|FOLLOW_WIDGET)`, `followWidget/
+  @props/widget`, `vuMeters/@props/widget` from `status/vuMeters/@props/
+  widgetValidity`; quick preset `quickPreset/control/audio/@props/mode
+  (PRESET|KEEP|MUTE|FORCE_SOURCE)` + `forceSource/@props/source`. Verified:
+  S1's program audio layer → IN3 (landed on DOWN, the program buffer), S1
+  direct IN5 (OUT 1's status source followed), OUT 1 direct IN2, line out 1
+  follow screen 2 pair 3–4, custom 1 label + channel 1, mute, level read.
+- **Preconfig:** `preconfig/control/@props/{xCompute, xApply, xCopyFromCurrent}`,
+  `control/template/@props/{select, xLoad}`, `control/$resources/@items/1..4/
+  @props/{mode DISABLE|SEAMLESS|SPLIT, useOnScreen}` (the plural survives:
+  `resourcesList` → `$resources`), `control/$output/@items/K/@props/{mode,
+  useOnScreen, useOnAux}`, `control/$screen/@items/n/@props/{enable,
+  backgroundLayerType}`, `control/$auxiliaryScreen/@items/n/@props/enable`;
+  validity under `preconfig/status/…` with the same shape (`modeValidity`,
+  `useOnScreenValidity`, `templateValidity`, `screenValidity`, `auxValidity`);
+  the two states `preconfig/status/$state/@items/NEW|CURRENT/$screen/@items/
+  n/@props/{enable, outputCount, $output, layerCount, backgroundLayerType}`,
+  `$auxiliaryScreen/…/{mode, $output}`, `$output/…/{mode, usedOnScreen,
+  usedOnAux}`. **`outputList` answers as `$output`** — the device rewrites the
+  reply path — so it is asked for as `$output`. Verified: S2 background type →
+  ONLY_LIVE, Compute → NEW shows it against CURRENT; Copy from current +
+  Compute puts it back. Apply not fired (it would rebuild the sim's pipeline
+  under the other views).
+- **Screen canvases:** `$screen/@items/n/control/@props/mode` from `status/
+  @props/modeValidity` (SINGLE_OUT|GRID|FREE; the sims allow GRID only);
+  grid `canvas/grid/control/@props/{columnQty, rowQty, emptyCellWidth,
+  emptyCellHeight, xUpdate, xSoftedgeUpdate}`, `canvas/grid/$output/@items/K/
+  control/@props/{column, row}`, gaps `canvas/grid/$columnSpacing|$rowSpacing/
+  @items/i/control/@props/size` (softedge curve under `…/softedge`), infos
+  `canvas/grid/$infos/@items/i/status/@props/{columnOffset, columnWidth,
+  rowOffset, rowHeight}`; free `canvas/free/control/@props/xUpdate`,
+  `control/size/@props/{mode AUTO|CUSTOM, sizeH, sizeV}`, `control/$output/
+  @items/K/@props/{left, top}`; `canvas/status/@props/hasOverlapWarning`. The
+  grid xUpdate is taken but **the sim's canvas size never moves** — unproven.
+  Pattern `$screen/@items/n/pattern/control/@props/{type (15 SCREEN_PATTERN_
+  TYPE values), inhibit}` verified SMPTE on/off.
+- **Input plugs:** `$input/@items/INPUT_n/$plug/@items/p/control/@props/
+  {signalType, enableHdcp, enableCropFinder, label}` with `status/@props/
+  {signalTypeValidity, hdcpValidity, type, canUseLutProcessing}` and
+  `status/signal/@props/{isValid, formatName, scanType, formatWidth,
+  formatHeight, fieldFrequency, colorSpace}`; `control/hdr/@props/{mode
+  AUTO|SDR|HDR10|HLG, nitLevel}`, `status/hdr/@props/{mode, nitLevel}`;
+  `settings/{@props/xReset, color/@props/{brightness…offsetB}, processing/
+  @props/{sharpness LOW|MEDIUM|HIGH, pulldown22, pulldown32}, aspect/@props/
+  {signal, transformTo, customRatio, layerFill}, cropping/control/@props/
+  {predefined, top, bottom, left, right, xUpdate}, keying/control/@props/{mode
+  DISABLE|CHROMA|LUMA|CUT_AND_FILL, displayMask NONE|BLACK_N_WHITE|COLOR},
+  keying/chroma/@props/{hue, transparency, colorCorrection, foreground,
+  background}, keying/luma/@props/{luma, foreground, transparency, invert},
+  keying/cutNFill/{control/@props/curve, status/@props/{status, source,
+  phaseShift}}, keying/assistant/@props/{enable, top, bottom, left, right,
+  xGrab}}`; `$input/@items/INPUT_n/status/keying/@props/isAvailable` and
+  `status/keying/cutNFill/@props/isAvailable` gate the keyer choices — **no
+  sim input reports a keyer**, cut and fill is on the odd inputs. EDID:
+  `edid/cmd/@props/data` (write 256 bytes), `edid/status/@props/data`,
+  `edid/status/$extension/@items/BLOCK_1..3/@props/{extensionType,
+  isHdmiCompatible, isAudioCompatible, isHdrCompatible, prefFormatName}`.
+  Verified on IN1 plug 1: label, signal type RGB_0_255, HDCP NONE, HDR10,
+  sharpness HIGH, aspect signal 16:9, crop LETTERBOX_1_78 + xUpdate, keyer
+  CUT_AND_FILL (cut from IN2), and DEFAULT_HDMI_1080P_50 loaded from the
+  library → the plug presented 1920×1080 at 50 Hz. All restored, EDID from the
+  store dump's bytes.
+- **EDID library:** `system/edid/$bank/@items/{1..64 | DEFAULT_*}/{control/
+  @props/{label, xUpdate, xDelete, xRequestPrefFormat}, status/@props/
+  {isAvailable, isProtected, productName, prefFormatName, hid, dataSize,
+  data}}` — 64 user slots (65 is E12) and 21 factory `DEFAULT_*` keys (all
+  available on both sims, `MIDRA_4K_HDMI` / `…_DP`); editor `system/edid/edit/
+  control/@props/{label, data}`, `edit/status/@props/{productName,
+  prefFormatAvailable, hashCode…}`; `system/edid/save|load/$bank/@items/N/
+  @props/xRequest`. The surface saves an output plug's display EDID
+  (`$output/@items/k/$plug/@items/p/edid/status/@props/{isAvailable, data}`)
+  into a user slot; the sims have no display, so that path is spelled only.
+- **Output canvas / plug:** `$output/@items/k/canvas/aoi/@props/{mode
+  FIT_FORMAT|CUSTOM, overscan, top, left, width, height (‰), xUpdate}`,
+  `canvas/pitch/@props/{pitchRatioH, pitchRatioV, xUpdate}` (in the hardware
+  sweep), `canvas/status/@props/{aoiWidth, aoiHeight, pitchedWidth,
+  pitchedHeight, maxWidth, maxHeight, isUsedInScreen}`; `hdr/control/@props/
+  {mode, nitLevel}`, `hdr/status/…`; `settings/@props/colorSpace` is
+  OUTPUT_SIG_COLORIMETRY (AUTO|ITU_BT709|ITU_BT2020); plug `$plug/@items/1/
+  control/@props/{enableHdcp (HDCP_POLICY), pixelEncoding, sdiTransport,
+  forceDviMode}`, `status/@props/{pixelEncodingFormatValidity, hdcpValidity,
+  sdiValidity, isHdcp, hasHdcpWarning, isMonitorDetected, monitorName,
+  colorSpace, colorDepth}`, `audio/control/@props/mode` from `audio/status/
+  @props/modeValidity`. Verified: AOI CUSTOM 50000×50000 at 25000,25000 +
+  xUpdate → status 960×540 of 1920×1080; HLG; HDCP_1X; RGB_FULL_10B; 8
+  channels. Restored.
+- **Custom formats:** `customFormats/create/settings/@props/{mode CVT|FULL,
+  userName, cvtReducedBlk, fullCvtHutil, fullCvtVutil, fullCvtRate (mHz),
+  fullHsync, fullHbackPorch, fullHfrontPorch, fullHsyncPol, fullV…}`,
+  `create/control/@props/{xCheck, xReset}`, `create/status/@props/
+  {checkStatus NEVER_CHECKED|CHECKED|MODIFIED, checkResult VALID|INVALID,
+  displayName, hTotal, vTotal, pixelFrequency (Hz), lineFrequency (Hz)}`,
+  `create/save/$bank/@items/N/@props/xRequest`, slots `customFormats/$bank/
+  @items/1..16/{control/@props/{userName, xDelete}, status/@props/{isValid,
+  displayName, hUtil, vUtil, rate, mode…}}`. Verified: 1600×900 at 50 Hz CVT
+  → check VALID (total 1760×922, 81.136 MHz) → saved to slot 1. **Neither the
+  slot's `xDelete` nor the bank's erases anything on the sim** — unproven; the
+  sim keeps "M1 Wall 1…" in slot 1.
+- **Configuration slots / backup:** `system/configuration/storage/$bank/
+  @items/SLOT_1|2/{control/@props/label, status/@props/{status EMPTY|VALID|
+  VALID_WARNING|INVALID, timestamp, versionUpdater, module[]}, delete/cmd/
+  @props/xRequest}`; export `system/configuration/backup/export/cmd/@props/
+  {destination BANK|EXTERNAL, slot, path, label, xRequest = [modules]}`,
+  `export/status/@props/{status, progress, fileName}`; restore = `import/
+  extract/cmd/@props/{source BANK|EXTERNAL, slot, path, xRequest, xCancel}`
+  then `import/apply/cmd/@props/{stillOption, xRequest = [modules]}`, each
+  with a status node. Verified: back up into slot 2 → VALID, timestamp
+  `2026_09_15_10_21_39`, 3.2.29, 19 modules; erase (two taps) → EMPTY. The
+  command's `label` did not reach the slot; the surface writes the slot's own
+  label afterwards. Restore not fired on the sim (it reboots the device).
+- **Streaming:** `streaming/destinationBank/@props/rememberKeys`, `$slot/
+  @items/1..10/@props/{label, url, key, xReset}` (four factory destinations),
+  `control/@props/{start, mode}`, `control/destination/@props/target` (a
+  number), `control/video/@props/{source, profile, quality, customBitrate}`,
+  `control/audio/@props/{mode, directRoutingSource, quality, customBitrate}`,
+  `control/audio/live/@props/{mute, directRoutingPair, followContentPair}`,
+  `status/@props/{status, mode, urlAndKey}`, `status/video/@props/{source,
+  sourceValidity, profile, bitrate, hdcpWarning}`. Verified the control
+  writes; **`start` never leaves the status at NO_REQUEST on the sim**.
+- **Save filters:** `preset/bank/control/save/$screen/@items/n/@props/
+  {categoryFilter, layerFilter, layerTopFilter, layerBackFilter}`, `preset/
+  auxBank/control/save/$auxiliaryScreen/@items/n/@props/categoryFilter`,
+  `preset/masterBank/control/save/@props/{screenFilter, auxFilter,
+  screenCategoryFilter, auxCategoryFilter, screenLayerLiveFilter,
+  screenLayerTopFilter, screenLayerBackFilter}` beside `mode`. A slot's
+  `status` reports the filter it was saved with. Verified: position, L2 and
+  background off on S1 → the device's lists lost exactly those; restored.
+- **Screens / Layers:** grouped take = one `xTake` per ticked destination
+  (S2 alone went EFFECT_FROM_DOWN, S1 stayed AT_DOWN); the group T-bar drives
+  each ticked `tbarPosition`. Canvas snapping is client-side (8 screen px to
+  canvas edges/centre and other layers' edges/centres; Alt frees the drag);
+  arrow-key nudge and copy/paste write the same geometry paths as a drag.
+
 ## Midra 4K / Alta 4K: multiviewer, stills, outputs, inspector — 2026-09-15, round three
 
 Four more views, still simulator-only, all on paths from the store dump and

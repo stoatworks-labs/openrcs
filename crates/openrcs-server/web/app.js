@@ -455,7 +455,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -517,8 +517,8 @@ function header() {
 
 const NAV = [
   { section: () => awjSeriesName() },
-  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpmultiview', 'Multiviewer'],
-  ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsystem', 'System'], ['lpinspector', 'Inspector'],
+  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpmultiview', 'Multiviewer'], ['lpaudio', 'Audio'],
+  ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsetup', 'Setup'], ['lpsystem', 'System'], ['lpinspector', 'Inspector'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -553,6 +553,8 @@ const VIEW_REQUIRES = {
   lpmultiview: () => awjDialect() === 'mng',
   lpoutputs: () => awjDialect() === 'mng',
   lpstills: () => awjDialect() === 'mng',
+  lpaudio: () => awjDialect() === 'mng',
+  lpsetup: () => awjDialect() === 'mng',
 };
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
@@ -3095,6 +3097,140 @@ const MNG = {
   outputSetting: (k, prop) => `DeviceObject/$output/@items/${k}/settings/@props/${prop}`,
   outputPattern: (k, prop) => `DeviceObject/$output/@items/${k}/pattern/control/@props/${prop}`,
   outputPlugStatus: (k, plug, prop) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/status/@props/${prop}`,
+  outputPlugControl: (k, plug, prop) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/control/@props/${prop}`,
+  outputPlugAudioMode: (k, plug) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/audio/control/@props/mode`,
+  outputPlugAudioValidity: (k, plug) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/audio/status/@props/modeValidity`,
+  outputPlugEdid: (k, plug, prop) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/edid/status/@props/${prop}`,
+  // The output's canvas: area of interest and pitch, each applied with its own xUpdate.
+  outputAoi: (k, prop) => `DeviceObject/$output/@items/${k}/canvas/aoi/@props/${prop}`,
+  outputPitch: (k, prop) => `DeviceObject/$output/@items/${k}/canvas/pitch/@props/${prop}`,
+  outputCanvasStatus: (k, prop) => `DeviceObject/$output/@items/${k}/canvas/status/@props/${prop}`,
+  outputHdr: (k, prop) => `DeviceObject/$output/@items/${k}/hdr/control/@props/${prop}`,
+  outputHdrStatus: (k, prop) => `DeviceObject/$output/@items/${k}/hdr/status/@props/${prop}`,
+  // Custom output formats: one editor, checked and then saved into a slot.
+  cfSetting: (prop) => `DeviceObject/customFormats/create/settings/@props/${prop}`,
+  cfControl: (prop) => `DeviceObject/customFormats/create/control/@props/${prop}`,
+  cfStatus: (prop) => `DeviceObject/customFormats/create/status/@props/${prop}`,
+  cfSave: (n) => `DeviceObject/customFormats/create/save/$bank/@items/${n}/@props/xRequest`,
+  cfBank: (n, prop) => `DeviceObject/customFormats/$bank/@items/${n}/control/@props/${prop}`,
+  cfBankStatus: (n, prop) => `DeviceObject/customFormats/$bank/@items/${n}/status/@props/${prop}`,
+  // Input plugs: the settings live on the plug, the keyer with them.
+  plugAvailable: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/@props/isAvailable`,
+  plugControl: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/control/@props/${prop}`,
+  plugStatusProp: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/@props/${prop}`,
+  plugSignal: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/signal/@props/${prop}`,
+  plugSetting: (i, p, tail) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/settings/${tail}`,
+  plugHdr: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/control/hdr/@props/${prop}`,
+  plugHdrStatus: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/hdr/@props/${prop}`,
+  plugEdidCmd: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/edid/cmd/@props/data`,
+  plugEdidStatus: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/edid/status/@props/data`,
+  plugEdidExt: (i, p, b, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/edid/status/$extension/@items/BLOCK_${b}/@props/${prop}`,
+  inputKeyingAvailable: (i) => `DeviceObject/$input/@items/INPUT_${i}/status/keying/@props/isAvailable`,
+  inputCutFillAvailable: (i) => `DeviceObject/$input/@items/INPUT_${i}/status/keying/cutNFill/@props/isAvailable`,
+  // The EDID library: user slots 1..64 and the factory DEFAULT_* entries; the
+  // editor is the staging area a save files from and a load fills.
+  edidBank: (k, prop) => `DeviceObject/system/edid/$bank/@items/${k}/control/@props/${prop}`,
+  edidBankStatus: (k, prop) => `DeviceObject/system/edid/$bank/@items/${k}/status/@props/${prop}`,
+  edidEdit: (prop) => `DeviceObject/system/edid/edit/control/@props/${prop}`,
+  edidEditStatus: (prop) => `DeviceObject/system/edid/edit/status/@props/${prop}`,
+  edidSave: (n) => `DeviceObject/system/edid/save/$bank/@items/${n}/@props/xRequest`,
+  edidLoad: (n) => `DeviceObject/system/edid/load/$bank/@items/${n}/@props/xRequest`,
+  // Screens: layout mode, the canvas as a grid of outputs or free placement, the test pattern.
+  screenMode: (n) => `DeviceObject/$screen/@items/${n}/control/@props/mode`,
+  screenModeValidity: (n) => `DeviceObject/$screen/@items/${n}/status/@props/modeValidity`,
+  screenCanvasWarn: (n) => `DeviceObject/$screen/@items/${n}/canvas/status/@props/hasOverlapWarning`,
+  screenGrid: (n, prop) => `DeviceObject/$screen/@items/${n}/canvas/grid/control/@props/${prop}`,
+  screenGridStatus: (n, prop) => `DeviceObject/$screen/@items/${n}/canvas/grid/status/@props/${prop}`,
+  screenGridOutput: (n, k, prop) => `DeviceObject/$screen/@items/${n}/canvas/grid/$output/@items/${k}/control/@props/${prop}`,
+  screenGridSpacing: (n, dim, i) => `DeviceObject/$screen/@items/${n}/canvas/grid/$${dim}Spacing/@items/${i}/control/@props/size`,
+  screenGridInfo: (n, i, prop) => `DeviceObject/$screen/@items/${n}/canvas/grid/$infos/@items/${i}/status/@props/${prop}`,
+  screenFreeUpdate: (n) => `DeviceObject/$screen/@items/${n}/canvas/free/control/@props/xUpdate`,
+  screenFreeSize: (n, prop) => `DeviceObject/$screen/@items/${n}/canvas/free/control/size/@props/${prop}`,
+  screenFreeOutput: (n, k, prop) => `DeviceObject/$screen/@items/${n}/canvas/free/control/$output/@items/${k}/@props/${prop}`,
+  screenPattern: (n, prop) => `DeviceObject/$screen/@items/${n}/pattern/control/@props/${prop}`,
+  // Preconfig: the working configuration, its validity lists, and the NEW and CURRENT states.
+  preconfigControl: (prop) => `DeviceObject/preconfig/control/@props/${prop}`,
+  preconfigTemplate: (prop) => `DeviceObject/preconfig/control/template/@props/${prop}`,
+  preconfigResource: (n, prop) => `DeviceObject/preconfig/control/$resources/@items/${n}/@props/${prop}`,
+  preconfigOutput: (k, prop) => `DeviceObject/preconfig/control/$output/@items/${k}/@props/${prop}`,
+  preconfigScreen: (n, prop) => `DeviceObject/preconfig/control/$screen/@items/${n}/@props/${prop}`,
+  preconfigAux: (n) => `DeviceObject/preconfig/control/$auxiliaryScreen/@items/${n}/@props/enable`,
+  preconfigStatus: (prop) => `DeviceObject/preconfig/status/@props/${prop}`,
+  preconfigResourceValidity: (n, prop) => `DeviceObject/preconfig/status/$resources/@items/${n}/@props/${prop}`,
+  preconfigOutputValidity: (k, prop) => `DeviceObject/preconfig/status/$output/@items/${k}/@props/${prop}`,
+  preconfigScreenValidity: (n, prop) => `DeviceObject/preconfig/status/$screen/@items/${n}/@props/${prop}`,
+  preconfigState: (state, list, key, prop) => `DeviceObject/preconfig/status/$state/@items/${state}/$${list}/@items/${key}/@props/${prop}`,
+  // Configuration slots and the backup / restore that uses them. Export and
+  // apply take a list of modules as their trigger; extract takes a flag.
+  cfgSlotLabel: (s) => `DeviceObject/system/configuration/storage/$bank/@items/SLOT_${s}/control/@props/label`,
+  cfgSlotStatus: (s, prop) => `DeviceObject/system/configuration/storage/$bank/@items/SLOT_${s}/status/@props/${prop}`,
+  cfgSlotDelete: (s) => `DeviceObject/system/configuration/storage/$bank/@items/SLOT_${s}/delete/cmd/@props/xRequest`,
+  cfgExport: (prop) => `DeviceObject/system/configuration/backup/export/cmd/@props/${prop}`,
+  cfgExportStatus: (prop) => `DeviceObject/system/configuration/backup/export/status/@props/${prop}`,
+  cfgExtract: (prop) => `DeviceObject/system/configuration/backup/import/extract/cmd/@props/${prop}`,
+  cfgExtractStatus: (prop) => `DeviceObject/system/configuration/backup/import/extract/status/@props/${prop}`,
+  cfgApply: (prop) => `DeviceObject/system/configuration/backup/import/apply/cmd/@props/${prop}`,
+  cfgApplyStatus: (prop) => `DeviceObject/system/configuration/backup/import/apply/status/@props/${prop}`,
+  // Streaming.
+  streamSlot: (n, prop) => `DeviceObject/streaming/destinationBank/$slot/@items/${n}/@props/${prop}`,
+  streamRememberKeys: () => 'DeviceObject/streaming/destinationBank/@props/rememberKeys',
+  streamControl: (prop) => `DeviceObject/streaming/control/@props/${prop}`,
+  streamTarget: () => 'DeviceObject/streaming/control/destination/@props/target',
+  streamVideo: (prop) => `DeviceObject/streaming/control/video/@props/${prop}`,
+  streamAudio: (prop) => `DeviceObject/streaming/control/audio/@props/${prop}`,
+  streamAudioLive: (prop) => `DeviceObject/streaming/control/audio/live/@props/${prop}`,
+  streamStatus: (prop) => `DeviceObject/streaming/status/@props/${prop}`,
+  streamVideoStatus: (prop) => `DeviceObject/streaming/status/video/@props/${prop}`,
+  streamAudioStatus: (prop) => `DeviceObject/streaming/status/audio/@props/${prop}`,
+  // Audio: the clock, the sources, every routing point, mutes, custom mixes, levels, Dante.
+  audioControl: (prop) => `DeviceObject/audio/control/@props/${prop}`,
+  audioStatus: (prop) => `DeviceObject/audio/status/@props/${prop}`,
+  audioSourceAvailable: (key) => `DeviceObject/audio/$source/@items/${key}/status/@props/isAvailable`,
+  audioInputStatus: (key, prop) => `DeviceObject/audio/$input/@items/${key}/status/@props/${prop}`,
+  audioInputChannelMute: (key, ch) => `DeviceObject/audio/$input/@items/${key}/$channel/@items/${ch}/control/@props/mute`,
+  audioLevelSelect: (side) => `DeviceObject/audio/$${side}/level/control/@props/select`,
+  audioLevelRefresh: (side) => `DeviceObject/audio/$${side}/level/control/@props/xRefresh`,
+  audioLevel: (side) => `DeviceObject/audio/$${side}/level/status/@props/level`,
+  audioOutputMute: (key) => `DeviceObject/audio/$output/@items/${key}/control/@props/mute`,
+  audioOutputStatus: (key, prop) => `DeviceObject/audio/$output/@items/${key}/status/@props/${prop}`,
+  audioOutputChannelMute: (key, ch) => `DeviceObject/audio/$output/@items/${key}/$channel/@items/${ch}/control/@props/mute`,
+  audioLineOut: (n, prop) => `DeviceObject/audio/$lineOut/@items/${n}/control/@props/${prop}`,
+  audioLineOutDirect: (n) => `DeviceObject/audio/$lineOut/@items/${n}/control/directRouting/@props/source`,
+  audioLineOutFollow: (n) => `DeviceObject/audio/$lineOut/@items/${n}/control/followScreen/@props/screen`,
+  audioDestMute: (d) => `DeviceObject/audio/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/mute`,
+  audioCustomChannels: () => 'DeviceObject/audio/custom/status/@props/availableChannels',
+  audioCustom: (n, prop) => `DeviceObject/audio/custom/$source/@items/CUSTOM_${n}/control/@props/${prop}`,
+  danteControl: (prop) => `DeviceObject/audio/dante/control/@props/${prop}`,
+  danteStatus: (prop) => `DeviceObject/audio/dante/status/@props/${prop}`,
+  danteIp: (which, prop) => `DeviceObject/audio/dante/ipv4/${which}/status/@props/${prop}`,
+  danteChannelAvailable: (n) => `DeviceObject/audio/dante/$channel/@items/${n}/status/@props/isAvailable`,
+  danteChannelSource: (n, prop) => `DeviceObject/audio/dante/$channel/@items/${n}/source/status/@props/${prop}`,
+  danteChannelSourceCmd: (n, prop) => `DeviceObject/audio/dante/$channel/@items/${n}/source/cmd/@props/${prop}`,
+  danteChannelTx: (n) => `DeviceObject/audio/dante/$channel/@items/${n}/transmitter/status/@props/label`,
+  danteChannelTxCmd: (n, prop) => `DeviceObject/audio/dante/$channel/@items/${n}/transmitter/cmd/@props/${prop}`,
+  danteGroup: (n, prop) => `DeviceObject/audio/dante/$outputGroup/@items/${n}/control/@props/${prop}`,
+  danteGroupDirect: (n) => `DeviceObject/audio/dante/$outputGroup/@items/${n}/control/directRouting/@props/source`,
+  danteGroupFollow: (n) => `DeviceObject/audio/dante/$outputGroup/@items/${n}/control/followScreen/@props/screen`,
+  // Per destination: the routing point on the screen or auxiliary, and the
+  // audio layer each of its buffers carries.
+  destAudioMode: (d) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/audio/control/@props/mode`,
+  destAudioDirect: (d) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/audio/control/directRouting/@props/source`,
+  screenAudioFollowLayer: (n) => `DeviceObject/$screen/@items/${n}/audio/control/followLiveLayer/@props/layer`,
+  audioLayer: (d, buffer) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${buffer}/audio/control/@props/source`,
+  audioLayerStatus: (d, buffer) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${buffer}/audio/status/@props/source`,
+  outputAudioMode: (k) => `DeviceObject/$output/@items/${k}/audio/control/@props/mode`,
+  outputAudioDirect: (k) => `DeviceObject/$output/@items/${k}/audio/control/directRouting/@props/source`,
+  mvwAudio: (prop) => `DeviceObject/multiviewer/audio/control/@props/${prop}`,
+  mvwAudioDirect: () => 'DeviceObject/multiviewer/audio/control/directRouting/@props/source',
+  mvwAudioVu: () => 'DeviceObject/multiviewer/audio/control/vuMeters/@props/widget',
+  mvwAudioFollow: () => 'DeviceObject/multiviewer/audio/control/followWidget/@props/widget',
+  mvwAudioStatus: (prop) => `DeviceObject/multiviewer/audio/status/@props/${prop}`,
+  mvwAudioVuValidity: () => 'DeviceObject/multiviewer/audio/status/vuMeters/@props/widgetValidity',
+  qpAudioMode: () => 'DeviceObject/quickPreset/control/audio/@props/mode',
+  qpAudioForce: () => 'DeviceObject/quickPreset/control/audio/forceSource/@props/source',
+  // What a bank save records, set on the destination (or the master bank) before the save.
+  saveFilter: (root, d, prop) => `DeviceObject/${root}/control/save/${MNG_LIST[d.kind]}/@items/${d.n}/@props/${prop}`,
+  masterSaveFilter: (prop) => `DeviceObject/preset/masterBank/control/save/@props/${prop}`,
   // Both lists' control and status, one prefix.
   SUB_TRANSITIONS: 'DeviceObject/transition',
   SUB_TALLIES: 'DeviceObject/tallies',
@@ -3105,6 +3241,11 @@ const MNG = {
   SUB_TIMERS: 'DeviceObject/$timer',
   SUB_STILLS: 'DeviceObject/stillLibrary',
   SUB_OUTPUTS: 'DeviceObject/$output',
+  SUB_AUDIO: 'DeviceObject/audio',
+  SUB_PRECONFIG: 'DeviceObject/preconfig',
+  SUB_SCREENS: 'DeviceObject/$screen',
+  SUB_STREAMING: 'DeviceObject/streaming',
+  SUB_CUSTOM_FORMATS: 'DeviceObject/customFormats',
 };
 const MNG_MVW_WIDGETS = 27;   // slots on an Alta 4K; a Midra 4K has 20, and widgetValidity says which are usable
 const MNG_TIMERS = 3;
@@ -3527,10 +3668,10 @@ VIEWS.lpsystem = (() => {
       MNG.ipv4('netmask'), MNG.ipv4('gateway'), MNG.ipv4('dns'), MNG.ipv4Dhcp(), MNG.standbyIsOn()]) store.pget(p);
     for (const s of SENSORS) for (const k of ['isAvailable', 'temperature', 'alarm']) store.pget(MNG.sensor(s, k));
     for (let n = 1; n <= 4; n++) for (const k of ['isAvailable', 'speed', 'alarm']) store.pget(MNG.caseFan(n, k));
-    awjViewSubs = () => [MNG.SUB_SYSTEM];
+    awjViewSubs = () => [MNG.SUB_SYSTEM, MNG.SUB_STREAMING];
     awjApplySubs();
   }
-  function enter() { if (awjDialect() !== 'mng') return; read = false; armReboot = false; settle(); }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armReboot = false; mngSystemExtras.reset(); settle(); }
 
   const ip = (v) => Array.isArray(v) ? v.join('.') : '·';
   const prettyName = (s) => s.replace(/^(CM|CF_MEZZA|CF_OPT|FPGA)_/, (m) => ({ CM_: 'case ', CF_MEZZA_: 'mezzanine ', CF_OPT_: 'option ', FPGA_: 'FPGA ' })[m] || '').toLowerCase().replace(/_/g, ' ');
@@ -3597,7 +3738,10 @@ VIEWS.lpsystem = (() => {
                 el('td', { class: 'val', text: sp == null ? '·' : sp === 65535 ? 'not reported' : String(sp) }),
                 el('td', {}, alarmChipMng(store.pval(MNG.caseFan(n, 'alarm')) === true ? 'ALARM' : 'NONE')));
             }))) : null,
-          el('div', { class: 'hint pad', text: 'Readings are the device’s own; a fan speed of 65535 is its way of saying it has none to report.' }))));
+          el('div', { class: 'hint pad', text: 'Readings are the device’s own; a fan speed of 65535 is its way of saying it has none to report.' }))),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, mngSystemExtras.slots()),
+        el('div', { class: 'panel' }, mngSystemExtras.streaming())));
   }
   return { enter, render };
 })();
@@ -3983,7 +4127,7 @@ VIEWS.lpoutputs = (() => {
       store.pget(MNG.outputPattern(k, 'type')); store.pget(MNG.outputPattern(k, 'inhibit'));
       for (const [p] of SETTINGS) store.pget(MNG.outputSetting(k, p));
     }
-    awjViewSubs = () => [MNG.SUB_OUTPUTS];
+    awjViewSubs = () => [MNG.SUB_OUTPUTS, MNG.SUB_CUSTOM_FORMATS];
     awjApplySubs();
     startMngSnapshots();
   }
@@ -3992,7 +4136,7 @@ VIEWS.lpoutputs = (() => {
     if (!role) return;
     store.pget(MNG.outputFormat(k, role)); store.pget(MNG.outputFormatValidity(k, role));
   }
-  function enter() { if (awjDialect() !== 'mng') return; read = false; settle(); }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; mngOutputExtras.reset(); settle(); }
 
   function row(k) {
     const avail = store.pval(MNG.outputStatus(k, 'isAvailable'));
@@ -4039,7 +4183,10 @@ VIEWS.lpoutputs = (() => {
             el('input', { type: 'range', min, max, step: 1, value: v ?? 0,
               onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
               oninput: (e) => { pthrottledSet(path, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); } }));
-        })));
+        })),
+      mngOutputExtras.canvas(k),
+      mngOutputExtras.signal(k),
+      mngOutputExtras.display(k));
   }
 
   function render() {
@@ -4054,7 +4201,8 @@ VIEWS.lpoutputs = (() => {
             el('thead', {}, el('tr', {}, ...['', 'Output', 'Label', 'Role', 'Format', 'Size', 'Plug', ''].map(h => el('th', { text: h })))),
             el('tbody', {}, ...MNG_OUTPUTS.map(row))),
           el('div', { class: 'hint pad', text: 'Tap an output to edit it. A format change is applied with the device’s own update trigger and read back after it has settled.' })),
-        el('div', { class: 'panel' }, editor(sel))));
+        el('div', { class: 'panel' }, editor(sel))),
+      mngOutputExtras.customFormats());
   }
   return { enter, render };
 })();
@@ -4100,6 +4248,828 @@ VIEWS.lpinspector = (() => {
         showLog ? el('div', { class: 'log', style: 'max-height:40vh' }, ...log.map(l => el('div', { class: 'line ' + l.dir, text: `${l.dir === 'tx' ? '»' : l.dir === 'er' ? '✗' : '«'} ${l.text}` }))) : null));
   }
   return { render };
+})();
+
+// ---------- AWJ: field helpers shared by the setup-style views ----------
+// A write on this protocol is answered with nothing, so every field reads its
+// path back after a beat unless Live updates is carrying the change.
+function awjWrite(path, v, extra = []) {
+  store.pset(path, v);
+  if (awjLive) return;
+  setTimeout(() => { store.pget(path); for (const p of extra) store.pget(p); }, 150);
+}
+const awjWords = (v) => String(v ?? '·').toLowerCase().replace(/_/g, ' ');
+function awjSelect(label, path, options, opts = {}) {
+  const v = store.pval(path);
+  const s = el('select', { disabled: !!opts.disabled, onchange: (e) => (opts.write || awjWrite)(path, e.target.value, opts.extra || []) });
+  for (const o of options) {
+    const val = typeof o === 'string' ? o : o.v;
+    s.append(el('option', { value: val, selected: val === v, text: typeof o === 'string' ? awjWords(o) : o.text }));
+  }
+  if (v != null && !options.some(o => (typeof o === 'string' ? o : o.v) === v)) s.append(el('option', { value: v, selected: true, text: String(v) }));
+  return label == null ? s : el('label', { class: 'field' }, label, s);
+}
+function awjNumber(label, path, min, max, opts = {}) {
+  const inp = el('input', { class: opts.cls, type: 'number', min, max, step: opts.step ?? 1, value: store.pval(path) ?? '',
+    onchange: (e) => { let n = +e.target.value || 0; if (!opts.float) n = Math.round(n); n = Math.max(min, Math.min(max, n)); (opts.write || awjWrite)(path, n, opts.extra || []); } });
+  return label == null ? inp : el('label', { class: 'field' }, label, inp);
+}
+function awjText(label, path, maxlength = 32, opts = {}) {
+  const inp = el('input', { class: opts.cls, type: 'text', maxlength, value: store.pval(path) ?? '', onchange: (e) => awjWrite(path, e.target.value) });
+  return label == null ? inp : el('label', { class: 'field' }, label, inp);
+}
+function awjToggle(path, label, opts = {}) {
+  const on = store.pval(path) === true;
+  return el('button', { class: 'btn ' + (opts.small ? 'small ' : '') + (on ? (opts.cls || 'pgm') : 'ghost'), title: opts.title, disabled: !!opts.disabled,
+    onclick: () => awjWrite(path, !on, opts.extra || []) }, typeof label === 'function' ? label(on) : label);
+}
+function awjRange(label, path, min, max, fmt = (v) => String(v)) {
+  const v = store.pval(path);
+  return el('label', { class: 'field slider' },
+    el('span', {}, label, el('b', { class: 'sv', text: v == null ? '·' : fmt(v) })),
+    el('input', { type: 'range', min, max, step: 1, value: v ?? min,
+      onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+      oninput: (e) => { pthrottledSet(path, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); } }));
+}
+/** A trigger (`x…` property): written true, then the listed paths are read back after `after` ms. */
+function awjTrigger(path, label, opts = {}) {
+  return el('button', { class: 'btn ' + (opts.cls || 'ghost'), title: opts.title, disabled: !!opts.disabled, onclick: () => {
+    store.pset(path, true);
+    const re = () => { for (const p of opts.reads || []) store.pget(p); };
+    setTimeout(re, opts.after ?? 300);
+    if (opts.again) setTimeout(re, opts.again);
+    if (opts.then) opts.then();
+  } }, label);
+}
+function awjChip(cls, text) { return el('span', { class: 'chip ' + cls }, el('span', { class: 'dot' }), text); }
+/** A chip for the device's own status words: idle / done / in progress / error. */
+function awjStatusChip(s) {
+  if (s == null) return awjChip('off', '·');
+  const w = String(s);
+  const cls = /ERROR|FAIL|INVALID|NOT_/.test(w) ? 'bad' : /DONE|OK|VALID|RUNNING|FINISH/.test(w) ? 'on' : /PROGRESS|TRANSITION/.test(w) ? 'pvw' : 'off';
+  return awjChip(cls, awjWords(w));
+}
+/** A one-line status list of flag names, from a `…Filter` list, as toggle buttons. */
+function awjFlagRow(path, values, opts = {}) {
+  const set = new Set(Array.isArray(store.pval(path)) ? store.pval(path) : []);
+  return el('div', { class: 'row wrap' }, ...values.map(f => el('button', {
+    class: 'btn small ' + (set.has(f) ? (opts.cls || 'pgm') : 'ghost'),
+    onclick: () => { const n = new Set(set); n.has(f) ? n.delete(f) : n.add(f); awjWrite(path, values.filter(x => n.has(x))); } },
+    opts.text ? opts.text(f) : awjWords(f))));
+}
+
+// ---------- Midra 4K / Alta 4K: audio sources and inputs ----------
+// Audio travels as eight-channel sources — an input's embedded audio (whichever
+// plug is active), four Dante groups, two analogue line inputs, the media
+// player and ten custom mixes — and every place it comes out is a routing
+// point that either carries one source directly or follows something.
+const MNG_AUDIO_SOURCES = ['NONE', ...Array.from({ length: 16 }, (_, i) => `IN${i + 1}`), 'IN_DANTE_CH1_8', 'IN_DANTE_CH9_16', 'IN_DANTE_CH17_24', 'IN_DANTE_CH25_32',
+  'IN_ANALOG_1', 'IN_ANALOG_2', 'IN_MEDIA_PLAYER', ...Array.from({ length: 10 }, (_, i) => `CUSTOM_${i + 1}`)];
+const MNG_AUDIO_INPUTS = ['IN1_SDI_EMBEDDED', 'IN1_HDMI_EMBEDDED', 'IN2_SDI_EMBEDDED', 'IN2_HDMI_EMBEDDED', 'IN3_SDI_EMBEDDED', 'IN4_SDI_EMBEDDED', 'IN5_HDMI_EMBEDDED', 'IN6_HDMI_EMBEDDED',
+  'IN6_RJ45_EMBEDDED', 'IN7_HDMI_EMBEDDED', 'IN7_RJ45_EMBEDDED', 'IN8_HDMI_EMBEDDED', 'IN9_DP_EMBEDDED', 'IN10_DP_EMBEDDED', 'IN11_ACTIVE_PLUG_EMBEDDED', 'IN12_ACTIVE_PLUG_EMBEDDED',
+  'IN13_ACTIVE_PLUG_EMBEDDED', 'IN14_ACTIVE_PLUG_EMBEDDED', 'IN15_ACTIVE_PLUG_EMBEDDED', 'IN16_ACTIVE_PLUG_EMBEDDED', 'IN_DANTE_CH1_8', 'IN_DANTE_CH9_16', 'IN_DANTE_CH17_24', 'IN_DANTE_CH25_32',
+  'IN_ANALOG_1', 'IN_ANALOG_2', 'IN_MEDIA_PLAYER'];
+const MNG_AUDIO_OUTPUTS = ['VIDEO_OUT_1', 'VIDEO_OUT_2', 'VIDEO_OUT_3', 'VIDEO_OUT_4', 'VIDEO_OUT_5', 'VIDEO_OUT_6'];
+const MNG_AUDIO_PAIRS = ['CHANNEL_1_2', 'CHANNEL_3_4', 'CHANNEL_5_6', 'CHANNEL_7_8'];
+/** "IN3 · Camera", "Dante 9–16", "Line in 2", "Custom 4 · Ambience". */
+function mngAudioSourceName(v) {
+  if (!v || v === 'NONE') return '— none —';
+  let m;
+  if ((m = /^IN(\d+)$/.exec(v))) return mngInputs.name(`INPUT_${m[1]}`);
+  if ((m = /^IN_DANTE_CH(\d+)_(\d+)$/.exec(v))) return `Dante ${m[1]}–${m[2]}`;
+  if ((m = /^IN_ANALOG_(\d)$/.exec(v))) return `Line in ${m[1]}`;
+  if (v === 'IN_MEDIA_PLAYER') return 'Media player';
+  if ((m = /^CUSTOM_(\d+)$/.exec(v))) { const l = store.pval(MNG.audioCustom(+m[1], 'label')); return `Custom ${m[1]}${l ? ' · ' + l : ''}`; }
+  return String(v);
+}
+/** "IN1 SDI", "IN6 RJ45", "Dante 1–8", "Line in 1". */
+function mngAudioInputName(k) {
+  let m;
+  if ((m = /^IN(\d+)_(SDI|HDMI|RJ45|DP|ACTIVE_PLUG)_EMBEDDED$/.exec(k))) return `IN${m[1]} ${m[2] === 'ACTIVE_PLUG' ? 'active plug' : m[2]}`;
+  return mngAudioSourceName(k);
+}
+function mngAudioSourceOptions(cur) {
+  const opts = MNG_AUDIO_SOURCES.filter(k => k === 'NONE' || store.pval(MNG.audioSourceAvailable(k)) === true).map(k => ({ v: k, text: mngAudioSourceName(k) }));
+  if (cur && !opts.some(o => o.v === cur)) opts.push({ v: cur, text: String(cur) });
+  return opts;
+}
+
+// ---------- AWJ: Audio (Midra 4K / Alta 4K) ----------
+VIEWS.lpaudio = (() => {
+  let read = false;
+  let custom = 1;        // the custom source being edited
+  const D = () => awj();
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    mngInputs.refresh();
+    for (const p of ['mode', 'masterRate', 'transitionDelay']) store.pget(MNG.audioControl(p));
+    for (const p of ['isDanteRateInvalid', 'mode', 'rate', 'frequency']) store.pget(MNG.audioStatus(p));
+    for (const k of MNG_AUDIO_SOURCES) if (k !== 'NONE') store.pget(MNG.audioSourceAvailable(k));
+    for (const k of MNG_AUDIO_INPUTS) for (const p of ['isAvailable', 'isAudioDetected', 'channelCount']) store.pget(MNG.audioInputStatus(k, p));
+    for (const d of D().destinations()) {
+      store.pget(MNG.destAudioMode(d)); store.pget(MNG.destAudioDirect(d)); store.pget(MNG.audioDestMute(d));
+      if (d.kind === 'screen') store.pget(MNG.screenAudioFollowLayer(d.n));
+      for (const b of ['UP', 'DOWN']) { store.pget(MNG.audioLayer(d, b)); store.pget(MNG.audioLayerStatus(d, b)); }
+    }
+    for (const k of ['1', '2', '3', '4', '5', '6']) { store.pget(MNG.outputAudioMode(k)); store.pget(MNG.outputAudioDirect(k)); }
+    for (const k of MNG_AUDIO_OUTPUTS) { store.pget(MNG.audioOutputMute(k)); store.pget(MNG.audioOutputStatus(k, 'isAvailable')); store.pget(MNG.audioOutputStatus(k, 'source')); }
+    for (const p of ['mode']) store.pget(MNG.mvwAudio(p));
+    for (const p of [MNG.mvwAudioDirect(), MNG.mvwAudioVu(), MNG.mvwAudioFollow(), MNG.mvwAudioStatus('source'), MNG.mvwAudioVuValidity()]) store.pget(p);
+    for (const n of [1, 2]) for (const p of [MNG.audioLineOut(n, 'mode'), MNG.audioLineOut(n, 'selectedAudioPair'), MNG.audioLineOutDirect(n), MNG.audioLineOutFollow(n)]) store.pget(p);
+    for (const n of [1, 2, 3, 4]) for (const p of [MNG.danteGroup(n, 'mode'), MNG.danteGroupDirect(n), MNG.danteGroupFollow(n)]) store.pget(p);
+    for (const p of ['global', 'type', 'id', 'version', 'ethernetMode', 'hasInitFailed']) store.pget(MNG.danteStatus(p));
+    for (const p of ['ip', 'isPlugged', 'macAddress']) store.pget(MNG.danteIp('primary', p));
+    for (let n = 1; n <= 32; n++) store.pget(MNG.danteChannelAvailable(n));
+    store.pget(MNG.audioCustomChannels());
+    for (let n = 1; n <= 10; n++) { store.pget(MNG.audioCustom(n, 'label')); store.pget(MNG.audioCustom(n, 'channelMapping')); }
+    for (const side of ['input', 'output']) { store.pget(MNG.audioLevelSelect(side)); store.pget(MNG.audioLevel(side)); }
+    store.pget(MNG.qpAudioMode()); store.pget(MNG.qpAudioForce());
+    awjViewSubs = () => [MNG.SUB_AUDIO, MNG.SUB_QUICK_PRESET, MNG.SUB_MULTIVIEWER, ...D().destinations().map(d => MNG.subDestination(d) + '/audio'), ...D().destinations().flatMap(d => ['UP', 'DOWN'].map(b => `${MNG.subDestination(d)}/$preset/@items/${b}/audio`))];
+    awjApplySubs();
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; settle(); }
+
+  const srcSel = (path, disabled) => awjSelect(null, path, mngAudioSourceOptions(store.pval(path)), { disabled });
+
+  function destRow(d) {
+    const { program, preview } = D().buffers(d);
+    const mode = store.pval(MNG.destAudioMode(d));
+    const modes = d.kind === 'screen' ? ['FOLLOW_AUDIO_LAYER', 'FOLLOW_LIVE_LAYER_CONTENT', 'DIRECT_ROUTING'] : ['FOLLOW_AUDIO_LAYER', 'FOLLOW_CONTENT', 'DIRECT_ROUTING'];
+    const words = { FOLLOW_AUDIO_LAYER: 'audio layer', FOLLOW_LIVE_LAYER_CONTENT: 'a live layer’s content', FOLLOW_CONTENT: 'its content', DIRECT_ROUTING: 'direct' };
+    const layers = [];
+    if (d.kind === 'screen') for (let l = 1; l <= 8; l++) { const m = store.pval(MNG.layerMode(d.n, l)); if (m !== undefined && m !== 'DISABLE') layers.push(String(l)); }
+    return el('tr', {},
+      el('td', { text: d.id }),
+      el('td', { text: D().label(d) || '—' }),
+      el('td', {}, srcSel(MNG.audioLayer(d, program))),
+      el('td', {}, srcSel(MNG.audioLayer(d, preview))),
+      el('td', {}, awjSelect(null, MNG.destAudioMode(d), modes.map(m => ({ v: m, text: words[m] })))),
+      el('td', {}, mode === 'DIRECT_ROUTING' ? srcSel(MNG.destAudioDirect(d)) : mode === 'FOLLOW_LIVE_LAYER_CONTENT' && d.kind === 'screen'
+        ? awjSelect(null, MNG.screenAudioFollowLayer(d.n), layers.map(l => ({ v: l, text: `layer ${l}` }))) : el('span', { class: 'hint', text: '—' })),
+      el('td', {}, awjToggle(MNG.audioDestMute(d), (on) => on ? 'Muted' : 'Mute', { small: true, cls: 'bad' })));
+  }
+  function outputRow(k) {
+    const key = `VIDEO_OUT_${k}`;
+    const mode = store.pval(MNG.outputAudioMode(k));
+    const avail = store.pval(MNG.audioOutputStatus(key, 'isAvailable'));
+    return el('tr', { class: avail === false ? 'dim' : '' },
+      el('td', { text: `OUT ${k}` }),
+      el('td', {}, awjSelect(null, MNG.outputAudioMode(k), [{ v: 'AUTO', text: 'the screen it shows' }, { v: 'DIRECT_ROUTING', text: 'direct' }, { v: 'NONE', text: 'none' }])),
+      el('td', {}, mode === 'DIRECT_ROUTING' ? srcSel(MNG.outputAudioDirect(k)) : el('span', { class: 'hint', text: '—' })),
+      el('td', { class: 'val', text: mngAudioSourceName(store.pval(MNG.audioOutputStatus(key, 'source'))) }),
+      el('td', {}, awjToggle(MNG.audioOutputMute(key), (on) => on ? 'Muted' : 'Mute', { small: true, cls: 'bad' })));
+  }
+  function mvwRow() {
+    const mode = store.pval(MNG.mvwAudio('mode'));
+    const widgets = (store.pval(MNG.mvwWidgetValidity()) || []).map(String);
+    const vuOk = store.pval(MNG.mvwAudioVuValidity()) || ['NONE'];
+    return el('tr', {},
+      el('td', { text: 'MVW' }),
+      el('td', {}, awjSelect(null, MNG.mvwAudio('mode'), [{ v: 'FOLLOW_WIDGET', text: 'a widget' }, { v: 'DIRECT_ROUTING', text: 'direct' }])),
+      el('td', {}, mode === 'DIRECT_ROUTING' ? srcSel(MNG.mvwAudioDirect()) : awjSelect(null, MNG.mvwAudioFollow(), widgets.map(w => ({ v: w, text: `widget ${w}` })))),
+      el('td', { class: 'val', text: mngAudioSourceName(store.pval(MNG.mvwAudioStatus('source'))) }),
+      el('td', {}, el('label', { class: 'field' }, 'VU meters on ', awjSelect(null, MNG.mvwAudioVu(), vuOk.map(w => ({ v: String(w), text: w === 'NONE' ? 'no widget' : `widget ${w}` }))))));
+  }
+  function lineRow(n) {
+    const mode = store.pval(MNG.audioLineOut(n, 'mode'));
+    return el('tr', {},
+      el('td', { text: `Line out ${n}` }),
+      el('td', {}, awjSelect(null, MNG.audioLineOut(n, 'mode'), [{ v: 'FOLLOW_SCREEN', text: 'a screen' }, { v: 'DIRECT_ROUTING', text: 'direct' }])),
+      el('td', {}, mode === 'DIRECT_ROUTING' ? srcSel(MNG.audioLineOutDirect(n)) : awjSelect(null, MNG.audioLineOutFollow(n), ['1', '2', '3', '4'].map(s => ({ v: s, text: `screen ${s}` })))),
+      el('td', {}, awjSelect(null, MNG.audioLineOut(n, 'selectedAudioPair'), MNG_AUDIO_PAIRS.map(p => ({ v: p, text: 'channels ' + p.replace('CHANNEL_', '').replace('_', '–') })))),
+      el('td', {}));
+  }
+  function danteRow(n) {
+    const mode = store.pval(MNG.danteGroup(n, 'mode'));
+    return el('tr', {},
+      el('td', { text: `Dante ${(n - 1) * 8 + 1}–${n * 8}` }),
+      el('td', {}, awjSelect(null, MNG.danteGroup(n, 'mode'), [{ v: 'FOLLOW_SCREEN', text: 'a screen' }, { v: 'DIRECT_ROUTING', text: 'direct' }])),
+      el('td', {}, mode === 'DIRECT_ROUTING' ? srcSel(MNG.danteGroupDirect(n)) : awjSelect(null, MNG.danteGroupFollow(n), ['1', '2', '3', '4'].map(s => ({ v: s, text: `screen ${s}` })))),
+      el('td', {}), el('td', {}));
+  }
+  function customPanel() {
+    const chans = store.pval(MNG.audioCustomChannels()) || ['NONE'];
+    const map = store.pval(MNG.audioCustom(custom, 'channelMapping')) || Array(8).fill('NONE');
+    const chanName = (c) => c === 'NONE' ? '— none —' : (() => { const m = /^(.*)_CH(\d+)$/.exec(c); return m ? `${mngAudioInputName(m[1])} ch ${m[2]}` : awjWords(c); })();
+    return el('div', {},
+      el('div', { class: 'row wrap' }, el('div', { class: 'seg' }, ...Array.from({ length: 10 }, (_, i) => i + 1).map(n =>
+        el('button', { class: n === custom ? 'on recall' : '', onclick: () => { custom = n; store.notify(); } }, `C${n}`)))),
+      awjText(`Custom ${custom} label`, MNG.audioCustom(custom, 'label'), 32),
+      el('div', { class: 'row wrap' }, ...map.map((c, i) => {
+        const s = el('select', { onchange: (e) => { const next = [...map]; next[i] = e.target.value; awjWrite(MNG.audioCustom(custom, 'channelMapping'), next); } });
+        for (const ch of chans) s.append(el('option', { value: ch, selected: ch === c, text: chanName(ch) }));
+        if (!chans.includes(c)) s.append(el('option', { value: c, selected: true, text: chanName(c) }));
+        return el('label', { class: 'field' }, `Channel ${i + 1}`, s);
+      })),
+      el('div', { class: 'hint', text: 'A custom source is eight channels picked one by one from any embedded, Dante or analogue channel the unit has; it is then offered wherever a source is.' }));
+  }
+  function inputsTable() {
+    const rows = MNG_AUDIO_INPUTS.filter(k => store.pval(MNG.audioInputStatus(k, 'isAvailable')) === true);
+    const sel = store.pval(MNG.audioLevelSelect('input')), lvl = store.pval(MNG.audioLevel('input'));
+    return el('div', {},
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Audio input', 'Audio', 'Channels', 'Level'].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...rows.map(k => {
+          const det = store.pval(MNG.audioInputStatus(k, 'isAudioDetected'));
+          return el('tr', { class: sel === k ? 'sel' : '', onclick: () => { awjWrite(MNG.audioLevelSelect('input'), k); } },
+            el('td', { text: mngAudioInputName(k) }),
+            el('td', {}, awjChip(det === true ? 'on' : 'off', det === true ? 'detected' : det === false ? 'silent' : '·')),
+            el('td', { class: 'val', text: String(store.pval(MNG.audioInputStatus(k, 'channelCount')) ?? '·') }),
+            el('td', { class: 'val', text: sel === k && lvl != null ? String(lvl) : '' }));
+        }))),
+      el('div', { class: 'row' },
+        awjTrigger(MNG.audioLevelRefresh('input'), 'Read level', { reads: [MNG.audioLevel('input')], after: 250 }),
+        el('span', { class: 'hint', text: `of ${sel ? mngAudioInputName(sel) : 'the selected input'} — tap a row to select it; the unit reports one level at a time, on request.` })),
+      rows.length ? null : el('div', { class: 'hint pad', text: 'No audio input has answered as available yet.' }));
+  }
+  function levelsOut() {
+    const sel = store.pval(MNG.audioLevelSelect('output')), lvl = store.pval(MNG.audioLevel('output'));
+    return el('div', { class: 'row wrap' },
+      el('label', { text: 'Output level of ' }),
+      awjSelect(null, MNG.audioLevelSelect('output'), MNG_AUDIO_OUTPUTS.map(k => ({ v: k, text: 'OUT ' + k.replace('VIDEO_OUT_', '') }))),
+      awjTrigger(MNG.audioLevelRefresh('output'), 'Read level', { reads: [MNG.audioLevel('output')], after: 250 }),
+      el('span', { class: 'val', text: sel && lvl != null ? String(lvl) : '·' }));
+  }
+  function dantePanel() {
+    const g = store.pval(MNG.danteStatus('global'));
+    const chans = []; for (let n = 1; n <= 32; n++) if (store.pval(MNG.danteChannelAvailable(n)) === true) chans.push(n);
+    return el('div', {},
+      el('div', { class: 'row wrap' },
+        awjStatusChip(g),
+        el('span', { class: 'hint', text: `${store.pval(MNG.danteStatus('type')) || 'no card'} · ${store.pval(MNG.danteStatus('version')) || '·'} · ${awjWords(store.pval(MNG.danteStatus('ethernetMode')))} · primary ${(store.pval(MNG.danteIp('primary', 'ip')) || []).join('.') || '·'}` })),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Dante out', 'Follows', 'Source / screen', 'Pair', ''].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...[1, 2, 3, 4].map(danteRow))),
+      chans.length ? el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Channel', 'Receives', 'Transmits as'].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...chans.map(n => el('tr', {},
+          el('td', { text: String(n) }),
+          el('td', {}, el('span', { class: 'val', text: store.pval(MNG.danteChannelSource(n, 'connectedTo')) || store.pval(MNG.danteChannelSource(n, 'label')) || '—' })),
+          el('td', {}, el('span', { class: 'val', text: store.pval(MNG.danteChannelTx(n)) || '—' }))))))
+        : el('div', { class: 'hint pad', text: 'No Dante channel has answered as available: the unit has no Dante card, or the card has not initialised. Subscriptions are made in Dante Controller.' }));
+  }
+
+  function render() {
+    settle();
+    const used = D().destinations();
+    const rate = store.pval(MNG.audioStatus('rate')), freq = store.pval(MNG.audioStatus('frequency'));
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Audio' }), el('span', { class: 'hint', text: 'Where every output’s audio comes from — the audio layer each preset carries, or a source routed straight to it' })),
+      el('div', { class: 'panel' }, awjLiveRow('audio changes'),
+        el('div', { class: 'row wrap' },
+          awjSelect('Clock', MNG.audioControl('mode'), [{ v: 'MASTER', text: 'internal' }, { v: 'DANTE', text: 'Dante' }]),
+          awjSelect('Rate', MNG.audioControl('masterRate'), [{ v: '32K', text: '32 kHz' }, { v: '44K1', text: '44.1 kHz' }, { v: '48K', text: '48 kHz' }]),
+          awjNumber('Transition delay', MNG.audioControl('transitionDelay'), 0, 100, { cls: 'num' }),
+          awjChip(store.pval(MNG.audioStatus('isDanteRateInvalid')) === true ? 'bad' : 'on', `${awjWords(rate)}${freq ? ' · ' + freq + ' Hz' : ''}`),
+          el('div', { class: 'grow' }),
+          awjSelect('Quick preset audio', MNG.qpAudioMode(), [{ v: 'PRESET', text: 'what the preset says' }, { v: 'KEEP', text: 'keep the current' }, { v: 'MUTE', text: 'mute' }, { v: 'FORCE_SOURCE', text: 'force a source' }]),
+          store.pval(MNG.qpAudioMode()) === 'FORCE_SOURCE' ? srcSel(MNG.qpAudioForce()) : null)),
+      el('div', { class: 'panel' }, el('h2', 'Screens and auxiliaries'),
+        used.length ? el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Destination', 'Label', 'Audio layer · program', 'Audio layer · preview', 'Output follows', 'Source / layer', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...used.map(destRow))) : el('div', { class: 'hint pad', text: 'No screen or auxiliary is in service.' }),
+        el('div', { class: 'hint pad', text: 'The audio layer is the part a show programs: one source per buffer, saved with the memory and swapped by the take exactly as the picture is. Program and preview here are the buffers the transition state names.' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Outputs'),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Output', 'Follows', 'Source / widget', 'Carrying', ''].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...['1', '2', '3', '4', '5', '6'].map(outputRow), mvwRow())),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Line out', 'Follows', 'Source / screen', 'Pair', ''].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...[1, 2].map(lineRow))),
+          levelsOut(),
+          el('h2', 'Dante'), dantePanel()),
+        el('div', { class: 'panel' }, el('h2', 'Custom sources'), customPanel(),
+          el('h2', 'Audio inputs'), inputsTable())));
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Setup (Midra 4K / Alta 4K) ----------
+// The preconfig — which outputs feed which screens, which layers each screen
+// gets — is a working copy the device computes and then applies as a whole;
+// applying rebuilds the pipeline and blanks every output for a few seconds.
+// Below it, each screen's canvas (a grid of outputs, or free placement) and
+// its own test pattern.
+VIEWS.lpsetup = (() => {
+  let read = false;
+  let armApply = false;
+  let tab = 'config';   // 'config' | 'canvas'
+  const D = () => awj();
+  const OUT_MODES = { DISABLE: 'off', SCREEN_FORMAT: 'screen', AUX: 'auxiliary', AUX_INPUT_AND_PROGRAM: 'aux: inputs and program', AUX_INPUT_ONLY: 'aux: inputs only', MULTIVIEWER: 'multiviewer' };
+  const RES_MODES = { DISABLE: 'off', SEAMLESS: 'seamless (one layer)', SPLIT: 'split (two layers)' };
+  const BG_TYPES = { DISABLE: 'none', LIVE_OR_FRAME: 'live or frame', ONLY_LIVE: 'live only', ONLY_FRAME: 'frame only' };
+  const PATTERNS = ['NONE', 'GEOMETRIC', 'VERTICAL_GREY_SCALE', 'HORIZONTAL_GREY_SCALE', 'VERTICAL_COLOR_BAR', 'HORIZONTAL_COLOR_BAR', 'GRID_CUSTOM', 'SMPTE', 'VERTICAL_GRADIENT', 'HORIZONTAL_GRADIENT', 'CROSSHATCH', 'CHECKERBOARD', 'SOFTEDGE', 'THIRTY_BPP_1', 'THIRTY_BPP_2'];
+  // A list-valued property is spelled like a collection on the wire: the
+  // store's `outputList` is `$output` in the device's reply, whichever way
+  // it was asked for, so it is asked for that way.
+  const STATE_PROPS = { screen: ['enable', 'outputCount', '$output', 'layerCount', 'backgroundLayerType'], auxiliaryScreen: ['mode', '$output'], output: ['mode', 'usedOnScreen', 'usedOnAux'] };
+
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    for (const p of ['xApply', 'xCompute', 'xCopyFromCurrent']) store.pget(MNG.preconfigControl(p));
+    for (const p of ['select']) store.pget(MNG.preconfigTemplate(p));
+    for (const p of ['hasBeenAppliedOnce', 'applyDone', 'computeDone', 'templateValidity', 'screenValidity', 'auxValidity']) store.pget(MNG.preconfigStatus(p));
+    for (let n = 1; n <= 4; n++) {
+      for (const p of ['mode', 'useOnScreen']) store.pget(MNG.preconfigResource(n, p));
+      for (const p of ['modeValidity', 'useOnScreenValidity']) store.pget(MNG.preconfigResourceValidity(n, p));
+      for (const p of ['enable', 'backgroundLayerType']) store.pget(MNG.preconfigScreen(n, p));
+      for (const p of ['backgroundLayerTypeValidity', 'topLayerValidity']) store.pget(MNG.preconfigScreenValidity(n, p));
+      store.pget(MNG.preconfigAux(n));
+      for (const st of ['NEW', 'CURRENT']) {
+        for (const p of STATE_PROPS.screen) store.pget(MNG.preconfigState(st, 'screen', n, p));
+        for (const p of STATE_PROPS.auxiliaryScreen) store.pget(MNG.preconfigState(st, 'auxiliaryScreen', n, p));
+      }
+      // The screen's own canvas and pattern.
+      store.pget(MNG.screenMode(n)); store.pget(MNG.screenModeValidity(n));
+      store.pget(MNG.canvasW(n)); store.pget(MNG.canvasH(n)); store.pget(MNG.screenCanvasWarn(n));
+      for (const p of ['columnQty', 'rowQty', 'emptyCellWidth', 'emptyCellHeight']) store.pget(MNG.screenGrid(n, p));
+      for (const p of ['columnQty', 'rowQty']) store.pget(MNG.screenGridStatus(n, p));
+      for (const k of MNG_OUTPUTS) { for (const p of ['column', 'row']) store.pget(MNG.screenGridOutput(n, k, p)); for (const p of ['left', 'top']) store.pget(MNG.screenFreeOutput(n, k, p)); }
+      for (let i = 1; i <= 5; i++) { store.pget(MNG.screenGridSpacing(n, 'column', i)); store.pget(MNG.screenGridSpacing(n, 'row', i)); }
+      for (const p of ['mode', 'sizeH', 'sizeV']) store.pget(MNG.screenFreeSize(n, p));
+      for (const p of ['type', 'inhibit']) store.pget(MNG.screenPattern(n, p));
+    }
+    for (const k of MNG_OUTPUTS) {
+      for (const p of ['mode', 'useOnScreen', 'useOnAux']) store.pget(MNG.preconfigOutput(k, p));
+      for (const p of ['modeValidity', 'useOnScreenValidity', 'useOnAuxValidity']) store.pget(MNG.preconfigOutputValidity(k, p));
+      for (const st of ['NEW', 'CURRENT']) for (const p of STATE_PROPS.output) store.pget(MNG.preconfigState(st, 'output', k, p));
+    }
+    awjViewSubs = () => [MNG.SUB_PRECONFIG, MNG.SUB_SCREENS];
+    awjApplySubs();
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armApply = false; settle(); }
+  const reReadStates = () => { setTimeout(() => { read = false; settle(); }, 800); };
+
+  const validity = (path, fallback) => { const v = store.pval(path); return Array.isArray(v) && v.length ? v : fallback; };
+  const screenOpts = (path) => validity(path, ['1']).map(s => ({ v: String(s), text: `screen ${s}` }));
+
+  function configPanel() {
+    const tpl = store.pval(MNG.preconfigTemplate('select'));
+    const computed = store.pval(MNG.preconfigStatus('computeDone')) === true;
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row wrap' },
+        awjChip(store.pval(MNG.preconfigStatus('hasBeenAppliedOnce')) === true ? 'on' : 'off', store.pval(MNG.preconfigStatus('hasBeenAppliedOnce')) === true ? 'a configuration is applied' : 'never applied'),
+        awjChip(computed ? 'on' : 'off', computed ? 'computed' : 'not computed'),
+        el('div', { class: 'grow' }),
+        el('label', { class: 'field' }, 'Template', awjSelect(null, MNG.preconfigTemplate('select'), validity(MNG.preconfigStatus('templateValidity'), tpl ? [tpl] : []).map(t => ({ v: t, text: awjWords(t) })))),
+        awjTrigger(MNG.preconfigTemplate('xLoad'), 'Load template', { title: 'Fill the working configuration from the template (nothing is applied)', then: reReadStates }),
+        awjTrigger(MNG.preconfigControl('xCopyFromCurrent'), 'Copy from current', { title: 'Fill the working configuration from what is applied', then: reReadStates })),
+      el('div', { class: 'split' },
+        el('div', {},
+          el('h2', 'Layer resources'),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Resource', 'Mode', 'On screen'].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...[1, 2, 3, 4].map(n => {
+              const modes = validity(MNG.preconfigResourceValidity(n, 'modeValidity'), ['DISABLE']);
+              return el('tr', { class: modes.length === 1 && modes[0] === 'DISABLE' ? 'dim' : '' },
+                el('td', { text: `Scaler ${n}` }),
+                el('td', {}, awjSelect(null, MNG.preconfigResource(n, 'mode'), modes.map(m => ({ v: m, text: RES_MODES[m] || awjWords(m) })))),
+                el('td', {}, awjSelect(null, MNG.preconfigResource(n, 'useOnScreen'), screenOpts(MNG.preconfigResourceValidity(n, 'useOnScreenValidity')), { disabled: store.pval(MNG.preconfigResource(n, 'mode')) === 'DISABLE' })));
+            }))),
+          el('h2', 'Screens'),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Screen', 'In service', 'Background layer'].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...[1, 2, 3, 4].map(n => {
+              const ok = validity(MNG.preconfigStatus('screenValidity'), ['1']).map(String).includes(String(n));
+              return el('tr', { class: ok ? '' : 'dim' },
+                el('td', { text: `S${n}` }),
+                el('td', {}, awjToggle(MNG.preconfigScreen(n, 'enable'), (on) => on ? 'in service' : 'off', { small: true, cls: 'primary', disabled: !ok })),
+                el('td', {}, awjSelect(null, MNG.preconfigScreen(n, 'backgroundLayerType'), validity(MNG.preconfigScreenValidity(n, 'backgroundLayerTypeValidity'), ['DISABLE']).map(t => ({ v: t, text: BG_TYPES[t] || awjWords(t) })), { disabled: !ok })));
+            }))),
+          el('h2', 'Auxiliaries'),
+          el('div', { class: 'row wrap' }, ...[1, 2, 3, 4].map(n => {
+            const ok = validity(MNG.preconfigStatus('auxValidity'), []).map(String).includes(String(n));
+            return awjToggle(MNG.preconfigAux(n), (on) => `A${n} ${on ? 'in service' : 'off'}`, { small: true, cls: 'primary', disabled: !ok });
+          }))),
+        el('div', {},
+          el('h2', 'Outputs'),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Output', 'Role', 'Screen', 'Auxiliary'].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...MNG_OUTPUTS.map(k => {
+              const modes = validity(MNG.preconfigOutputValidity(k, 'modeValidity'), ['DISABLE']);
+              const mode = store.pval(MNG.preconfigOutput(k, 'mode'));
+              return el('tr', { class: modes.length === 1 && modes[0] === 'DISABLE' ? 'dim' : '' },
+                el('td', { text: k === 'MTVW' ? 'MVW' : `OUT ${k}` }),
+                el('td', {}, awjSelect(null, MNG.preconfigOutput(k, 'mode'), modes.map(m => ({ v: m, text: OUT_MODES[m] || awjWords(m) })))),
+                el('td', {}, awjSelect(null, MNG.preconfigOutput(k, 'useOnScreen'), screenOpts(MNG.preconfigOutputValidity(k, 'useOnScreenValidity')), { disabled: mode !== 'SCREEN_FORMAT' })),
+                el('td', {}, awjSelect(null, MNG.preconfigOutput(k, 'useOnAux'), validity(MNG.preconfigOutputValidity(k, 'useOnAuxValidity'), ['1']).map(a => ({ v: String(a), text: `aux ${a}` })), { disabled: !String(mode || '').startsWith('AUX') })));
+            }))),
+          el('div', { class: 'hint pad', text: 'Every choice here is offered from the device’s own validity lists for the model and the cards it has; a change is held in the working configuration until it is computed and applied.' }))),
+      el('div', { class: 'row wrap' },
+        awjTrigger(MNG.preconfigControl('xCompute'), 'Compute', { cls: 'primary', title: 'Work out the new pipeline from the working configuration, without applying it', then: reReadStates }),
+        el('button', { class: 'btn ' + (armApply ? 'pgm' : 'ghost'), disabled: !computed, onclick: () => {
+          if (!armApply) { armApply = true; store.notify(); setTimeout(() => { armApply = false; store.notify(); }, 5000); return; }
+          store.pset(MNG.preconfigControl('xApply'), true); armApply = false; store.notify();
+          setTimeout(() => { read = false; settle(); for (const d of D().destinations()) D().refresh(d); }, 3000);
+        } }, armApply ? 'Tap again to apply — every output goes dark for a few seconds' : 'Apply'),
+        el('span', { class: 'hint', text: computed ? 'Applying rebuilds the whole pipeline: outputs blank, layers reset, memories stay.' : 'Compute first; Apply is offered once the device has a computed configuration.' })),
+      statesTable());
+  }
+  function statesTable() {
+    const cell = (st, list, key, p) => { const v = store.pval(MNG.preconfigState(st, list, key, p)); return Array.isArray(v) ? (v.length ? v.join(', ') : '—') : v == null ? '·' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : awjWords(v); };
+    const rows = [];
+    for (let n = 1; n <= 4; n++) rows.push(['S' + n, ...['NEW', 'CURRENT'].map(st => `${cell(st, 'screen', n, 'enable') === 'yes' ? 'on' : 'off'} · outputs ${cell(st, 'screen', n, '$output')} · ${cell(st, 'screen', n, 'layerCount')} layers · bg ${cell(st, 'screen', n, 'backgroundLayerType')}`)]);
+    for (let n = 1; n <= 4; n++) rows.push(['A' + n, ...['NEW', 'CURRENT'].map(st => `${cell(st, 'auxiliaryScreen', n, 'mode')} · outputs ${cell(st, 'auxiliaryScreen', n, '$output')}`)]);
+    for (const k of MNG_OUTPUTS) rows.push([k === 'MTVW' ? 'MVW' : 'OUT ' + k, ...['NEW', 'CURRENT'].map(st => { const m = cell(st, 'output', k, 'mode'); return m === 'screen format' ? `screen ${cell(st, 'output', k, 'usedOnScreen')}` : m.startsWith('aux') ? `${m} ${cell(st, 'output', k, 'usedOnAux')}` : m; })]);
+    return el('details', { class: 'group' }, el('summary', { text: 'Computed (new) against applied (current)' }),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['', 'New', 'Current'].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...rows.map(r => el('tr', {}, ...r.map((c, i) => el('td', { class: i ? 'val' : '', text: c })))))));
+  }
+
+  function canvasPanel(n) {
+    const mode = store.pval(MNG.screenMode(n));
+    const modes = validity(MNG.screenModeValidity(n), mode ? [mode] : []);
+    const cols = store.pval(MNG.screenGrid(n, 'columnQty')) ?? 1, rows = store.pval(MNG.screenGrid(n, 'rowQty')) ?? 1;
+    const outs = MNG_OUTPUTS.filter(k => store.pval(MNG.preconfigState('CURRENT', 'output', k, 'mode')) === 'SCREEN_FORMAT' && String(store.pval(MNG.preconfigState('CURRENT', 'output', k, 'usedOnScreen'))) === String(n));
+    const gridReads = [MNG.canvasW(n), MNG.canvasH(n), MNG.screenGridStatus(n, 'columnQty'), MNG.screenGridStatus(n, 'rowQty'), MNG.screenCanvasWarn(n)];
+    const w = store.pval(MNG.canvasW(n)), h = store.pval(MNG.canvasH(n));
+    const idx = (q) => Array.from({ length: Math.max(1, q) }, (_, i) => String(i + 1));
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row wrap' },
+        el('h2', { text: `S${n} ${D().label(awjDest('S' + n)) || ''}`.trim() }),
+        awjChip(store.pval(MNG.screenCanvasWarn(n)) === true ? 'bad' : 'on', `${w || '·'}×${h || '·'}${store.pval(MNG.screenCanvasWarn(n)) === true ? ' · outputs overlap' : ''}`),
+        el('div', { class: 'grow' }),
+        el('label', { class: 'field' }, 'Layout', awjSelect(null, MNG.screenMode(n), modes.map(m => ({ v: m, text: { SINGLE_OUT: 'one output', GRID: 'grid of outputs', FREE: 'free placement' }[m] || awjWords(m) })), { extra: gridReads })),
+        el('label', { class: 'field' }, 'Test pattern', awjSelect(null, MNG.screenPattern(n, 'type'), PATTERNS)),
+        awjToggle(MNG.screenPattern(n, 'inhibit'), (on) => on ? 'Pattern off' : 'Pattern on the screen', { title: 'The device inhibits its pattern by default; off here means shown', cls: 'ghost' })),
+      mode === 'GRID' ? el('div', {},
+        el('div', { class: 'row wrap' },
+          awjNumber('Columns', MNG.screenGrid(n, 'columnQty'), 1, 6, { cls: 'num' }),
+          awjNumber('Rows', MNG.screenGrid(n, 'rowQty'), 1, 6, { cls: 'num' }),
+          awjNumber('Empty cell width', MNG.screenGrid(n, 'emptyCellWidth'), 1, 8192, { cls: 'num' }),
+          awjNumber('Empty cell height', MNG.screenGrid(n, 'emptyCellHeight'), 1, 8192, { cls: 'num' }),
+          ...idx(cols - 1).map(i => awjNumber(`Column gap ${i}`, MNG.screenGridSpacing(n, 'column', i), -8192, 8192, { cls: 'num' })),
+          ...idx(rows - 1).map(i => awjNumber(`Row gap ${i}`, MNG.screenGridSpacing(n, 'row', i), -8192, 8192, { cls: 'num' }))),
+        outs.length ? el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Output', 'Column', 'Row'].map(hh => el('th', { text: hh })))),
+          el('tbody', {}, ...outs.map(k => el('tr', {},
+            el('td', { text: k === 'MTVW' ? 'MVW' : `OUT ${k}` }),
+            el('td', {}, awjSelect(null, MNG.screenGridOutput(n, k, 'column'), idx(cols))),
+            el('td', {}, awjSelect(null, MNG.screenGridOutput(n, k, 'row'), idx(rows))))))) : el('div', { class: 'hint', text: 'No output is applied to this screen.' }),
+        el('div', { class: 'row' },
+          awjTrigger(MNG.screenGrid(n, 'xUpdate'), 'Apply grid', { cls: 'primary', reads: gridReads, after: 800 }),
+          el('span', { class: 'hint', text: 'The grid is staged here and applied with the device’s update trigger; the canvas size follows from the outputs’ formats and the gaps.' })))
+      : mode === 'FREE' ? el('div', {},
+        el('div', { class: 'row wrap' },
+          awjSelect('Canvas size', MNG.screenFreeSize(n, 'mode'), [{ v: 'AUTO', text: 'fit the outputs' }, { v: 'CUSTOM', text: 'custom' }]),
+          awjNumber('Width', MNG.screenFreeSize(n, 'sizeH'), 1, 16384, { cls: 'num' }),
+          awjNumber('Height', MNG.screenFreeSize(n, 'sizeV'), 1, 16384, { cls: 'num' })),
+        outs.length ? el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Output', 'Left', 'Top'].map(hh => el('th', { text: hh })))),
+          el('tbody', {}, ...outs.map(k => el('tr', {},
+            el('td', { text: k === 'MTVW' ? 'MVW' : `OUT ${k}` }),
+            el('td', {}, awjNumber(null, MNG.screenFreeOutput(n, k, 'left'), -16384, 16384, { cls: 'num' })),
+            el('td', {}, awjNumber(null, MNG.screenFreeOutput(n, k, 'top'), -16384, 16384, { cls: 'num' })))))) : el('div', { class: 'hint', text: 'No output is applied to this screen.' }),
+        el('div', { class: 'row' },
+          awjTrigger(MNG.screenFreeUpdate(n), 'Apply placement', { cls: 'primary', reads: gridReads, after: 800 }),
+          el('span', { class: 'hint', text: 'Each output is placed by its top-left corner on the canvas.' })))
+      : el('div', { class: 'hint pad', text: mode === 'SINGLE_OUT' ? 'One output: the canvas is that output’s format.' : 'The screen has not reported a layout mode.' }));
+  }
+
+  function render() {
+    settle();
+    const screens = [1, 2, 3, 4].filter(n => store.pval(MNG.screenEnabled(n)) === true);
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Setup' }), el('span', { class: 'hint', text: 'The device’s configuration — outputs to screens, layers to screens — and each screen’s canvas and test pattern' })),
+      el('div', { class: 'panel' }, awjLiveRow('configuration changes'),
+        el('div', { class: 'row' }, el('div', { class: 'seg' },
+          el('button', { class: tab === 'config' ? 'on recall' : '', onclick: () => { tab = 'config'; store.notify(); } }, 'Configuration'),
+          el('button', { class: tab === 'canvas' ? 'on recall' : '', onclick: () => { tab = 'canvas'; store.notify(); } }, 'Canvases and patterns')))),
+      tab === 'config' ? configPanel()
+        : screens.length ? el('div', {}, ...screens.map(canvasPanel)) : el('div', { class: 'panel' }, el('div', { class: 'hint pad', text: 'No screen is in service in the applied configuration.' })));
+  }
+  return { enter, render };
+})();
+
+// ---------- Midra 4K / Alta 4K: output extras (canvas, HDR, plug, custom formats) ----------
+// Called from the Outputs view for the selected output. The area of interest
+// and the pitch are staged and applied with their own update triggers; the
+// plug carries HDCP, pixel encoding and the display's EDID.
+const MNG_CUSTOM_FORMATS = 16;
+const mngOutputExtras = (() => {
+  const read = new Set();
+  let cfRead = false;
+  let cfSlot = 1;
+  let edidLabel = '';
+  const HDCP_POLICY = [{ v: 'DISABLE', text: 'off' }, { v: 'AUTO', text: 'auto' }, { v: 'HDCP_1X', text: '1.x' }, { v: 'HDCP_2X_TYPE_0', text: '2.x type 0' }, { v: 'HDCP_2X_TYPE_1', text: '2.x type 1' }];
+  const NITS = ['AUTO', '100_NITS', '200_NITS', '300_NITS', '400_NITS', '500_NITS', '600_NITS', '700_NITS', '800_NITS', '900_NITS', '1000_NITS', '1200_NITS', '1400_NITS', '1600_NITS', '1800_NITS', '2000_NITS', '3000_NITS', '4000_NITS', '5000_NITS', '6000_NITS', '7000_NITS', '8000_NITS', '9000_NITS', '10000_NITS'];
+  const CF_FIELDS = [['fullHsync', 'H sync', 1, 4096], ['fullHbackPorch', 'H back porch', 0, 4096], ['fullHfrontPorch', 'H front porch', 0, 4096], ['fullCvtHutil', 'Active width', 64, 8192],
+    ['fullVsync', 'V sync', 1, 4096], ['fullVbackPorch', 'V back porch', 0, 4096], ['fullVfrontPorch', 'V front porch', 0, 4096], ['fullCvtVutil', 'Active height', 64, 8192]];
+  function fetch(k) {
+    if (read.has(k)) return;
+    read.add(k);
+    for (const p of ['mode', 'overscan', 'top', 'left', 'width', 'height']) store.pget(MNG.outputAoi(k, p));
+    for (const p of ['pitchRatioH', 'pitchRatioV']) store.pget(MNG.outputPitch(k, p));
+    for (const p of ['aoiWidth', 'aoiHeight', 'pitchedWidth', 'pitchedHeight', 'maxWidth', 'maxHeight', 'isUsedInScreen']) store.pget(MNG.outputCanvasStatus(k, p));
+    for (const p of ['mode', 'nitLevel']) { store.pget(MNG.outputHdr(k, p)); store.pget(MNG.outputHdrStatus(k, p)); }
+    store.pget(MNG.outputSetting(k, 'colorSpace'));
+    for (const p of ['enableHdcp', 'pixelEncoding', 'sdiTransport', 'forceDviMode']) store.pget(MNG.outputPlugControl(k, 1, p));
+    for (const p of ['pixelEncodingFormatValidity', 'hdcpValidity', 'sdiValidity', 'isHdcp', 'hasHdcpWarning', 'isMonitorDetected', 'monitorName', 'colorSpace', 'colorDepth']) store.pget(MNG.outputPlugStatus(k, 1, p));
+    store.pget(MNG.outputPlugAudioMode(k, 1)); store.pget(MNG.outputPlugAudioValidity(k, 1));
+    store.pget(MNG.outputPlugEdid(k, 1, 'isAvailable')); store.pget(MNG.outputPlugEdid(k, 1, 'data'));
+  }
+  function fetchCustomFormats() {
+    if (cfRead) return;
+    cfRead = true;
+    for (let n = 1; n <= MNG_CUSTOM_FORMATS; n++) { store.pget(MNG.cfBank(n, 'userName')); for (const p of ['displayName', 'isValid', 'hUtil', 'vUtil', 'rate', 'mode']) store.pget(MNG.cfBankStatus(n, p)); }
+    for (const p of ['mode', 'userName', 'cvtReducedBlk', 'fullHsyncPol', 'fullVsyncPol', 'fullCvtRate', ...CF_FIELDS.map(f => f[0])]) store.pget(MNG.cfSetting(p));
+    for (const p of ['checkResult', 'checkStatus', 'displayName', 'hTotal', 'vTotal', 'pixelFrequency', 'lineFrequency']) store.pget(MNG.cfStatus(p));
+  }
+  function reset() { read.clear(); cfRead = false; }
+
+  function canvas(k) {
+    fetch(k);
+    const aoiReads = ['mode', 'overscan', 'top', 'left', 'width', 'height'].map(p => MNG.outputAoi(k, p)).concat(['aoiWidth', 'aoiHeight', 'pitchedWidth', 'pitchedHeight'].map(p => MNG.outputCanvasStatus(k, p)));
+    const custom = store.pval(MNG.outputAoi(k, 'mode')) === 'CUSTOM';
+    const pct = (v) => (v / 1000).toFixed(1) + '%';
+    return el('details', { class: 'group' }, el('summary', {}, 'Area of interest and pitch ', awjChip(custom ? 'on' : 'off', `${store.pval(MNG.outputCanvasStatus(k, 'aoiWidth')) ?? '·'}×${store.pval(MNG.outputCanvasStatus(k, 'aoiHeight')) ?? '·'} of ${store.pval(MNG.outputCanvasStatus(k, 'maxWidth')) ?? '·'}×${store.pval(MNG.outputCanvasStatus(k, 'maxHeight')) ?? '·'}`)),
+      el('div', { class: 'row wrap' },
+        awjSelect('Area', MNG.outputAoi(k, 'mode'), [{ v: 'FIT_FORMAT', text: 'the whole format' }, { v: 'CUSTOM', text: 'custom' }]),
+        awjNumber('Overscan ‰', MNG.outputAoi(k, 'overscan'), 0, 100000, { cls: 'num', step: 100 })),
+      custom ? el('div', { class: 'row wrap' },
+        ...[['left', 'Left'], ['top', 'Top'], ['width', 'Width'], ['height', 'Height']].map(([p, l]) => awjNumber(`${l} (${pct(store.pval(MNG.outputAoi(k, p)) ?? 0)})`, MNG.outputAoi(k, p), 0, 100000, { cls: 'num', step: 100 }))) : null,
+      el('div', { class: 'row' },
+        awjTrigger(MNG.outputAoi(k, 'xUpdate'), 'Apply area', { cls: 'primary', reads: aoiReads, after: 800 }),
+        el('span', { class: 'hint', text: 'The part of the format the screen’s canvas fills — in thousandths of the format, so 25000 is a quarter. Applied with the device’s own trigger.' })),
+      el('div', { class: 'row wrap' },
+        awjNumber('Pitch H ×1000', MNG.outputPitch(k, 'pitchRatioH'), 1, 4000, { cls: 'num' }),
+        awjNumber('Pitch V ×1000', MNG.outputPitch(k, 'pitchRatioV'), 1, 4000, { cls: 'num' }),
+        awjTrigger(MNG.outputPitch(k, 'xUpdate'), 'Apply pitch', { reads: aoiReads, after: 800 }),
+        el('span', { class: 'hint', text: `Pitched ${store.pval(MNG.outputCanvasStatus(k, 'pitchedWidth')) ?? '·'}×${store.pval(MNG.outputCanvasStatus(k, 'pitchedHeight')) ?? '·'} — for LED walls whose pixel pitch differs from the format’s.` })));
+  }
+  function signal(k) {
+    fetch(k);
+    const pe = store.pval(MNG.outputPlugStatus(k, 1, 'pixelEncodingFormatValidity')) || [];
+    const audioModes = store.pval(MNG.outputPlugAudioValidity(k, 1)) || [];
+    const hdcpOk = store.pval(MNG.outputPlugStatus(k, 1, 'hdcpValidity')) || [];
+    const sdiOk = store.pval(MNG.outputPlugStatus(k, 1, 'sdiValidity')) || [];
+    const hdcpOn = store.pval(MNG.outputPlugStatus(k, 1, 'isHdcp')) === true, hdcpWarn = store.pval(MNG.outputPlugStatus(k, 1, 'hasHdcpWarning')) === true;
+    return el('details', { class: 'group' }, el('summary', { text: 'Signal, HDR and HDCP' }),
+      el('div', { class: 'row wrap' },
+        awjSelect('HDR', MNG.outputHdr(k, 'mode'), ['AUTO', 'SDR', 'HDR10', 'HLG']),
+        awjSelect('Nits', MNG.outputHdr(k, 'nitLevel'), NITS.map(v => ({ v, text: v === 'AUTO' ? 'auto' : v.replace('_NITS', '') }))),
+        awjChip('off', `sending ${awjWords(store.pval(MNG.outputHdrStatus(k, 'mode')))} ${store.pval(MNG.outputHdrStatus(k, 'nitLevel')) || ''}`)),
+      el('div', { class: 'row wrap' },
+        awjSelect('Colorimetry', MNG.outputSetting(k, 'colorSpace'), [{ v: 'AUTO', text: 'auto' }, { v: 'ITU_BT709', text: 'BT.709' }, { v: 'ITU_BT2020', text: 'BT.2020' }]),
+        awjSelect('Pixel encoding', MNG.outputPlugControl(k, 1, 'pixelEncoding'), pe.map(v => ({ v, text: v === 'AUTO' ? 'auto' : v.replace(/_/g, ' ').replace('8B', '8-bit').replace('10B', '10-bit').replace('12B', '12-bit').toLowerCase() })), { disabled: !pe.length }),
+        awjSelect('HDCP', MNG.outputPlugControl(k, 1, 'enableHdcp'), (hdcpOk.length ? HDCP_POLICY.filter(o => hdcpOk.includes(o.v)) : HDCP_POLICY)),
+        awjChip(hdcpWarn ? 'bad' : hdcpOn ? 'on' : 'off', hdcpWarn ? 'HDCP refused by the display' : hdcpOn ? 'HDCP on the link' : 'no HDCP on the link'),
+        awjChip('off', `${awjWords(store.pval(MNG.outputPlugStatus(k, 1, 'colorSpace')))} ${awjWords(store.pval(MNG.outputPlugStatus(k, 1, 'colorDepth')))}`.trim())),
+      el('div', { class: 'row wrap' },
+        awjSelect('Embedded audio', MNG.outputPlugAudioMode(k, 1), audioModes.map(v => ({ v, text: v === 'DISABLE' ? 'off' : v === 'AUTO' ? 'auto' : v.replace('_CHANNELS', ' channels') })), { disabled: !audioModes.length }),
+        sdiOk.length ? awjSelect('SDI', MNG.outputPlugControl(k, 1, 'sdiTransport'), sdiOk.map(v => ({ v, text: awjWords(v) }))) : null,
+        awjToggle(MNG.outputPlugControl(k, 1, 'forceDviMode'), 'Force DVI', { small: true })));
+  }
+  function display(k) {
+    fetch(k);
+    const data = store.pval(MNG.outputPlugEdid(k, 1, 'data'));
+    const avail = store.pval(MNG.outputPlugEdid(k, 1, 'isAvailable'));
+    const e = avail === true ? mngEdidSummary(data) : null;
+    const mon = store.pval(MNG.outputPlugStatus(k, 1, 'monitorName')), monOn = store.pval(MNG.outputPlugStatus(k, 1, 'isMonitorDetected'));
+    return el('details', { class: 'group' }, el('summary', {}, 'Connected display ', monOn === true ? awjChip('on', mon || 'detected') : monOn === false ? awjChip('off', 'none detected') : null),
+      e && !e.bad ? el('div', { class: 'hint', text: `${e.mfr} ${e.name || '(unnamed)'} — preferred ${e.pw}×${e.ph}${e.rate ? ' at ' + e.rate + ' Hz' : ''}, ${e.year}, ${e.ext} extension block${e.ext === 1 ? '' : 's'}.` })
+        : el('div', { class: 'hint', text: avail === false ? 'No display EDID on this plug.' : 'No EDID read yet.' }),
+      e && !e.bad ? el('div', { class: 'row wrap' },
+        el('label', { class: 'field' }, 'Save it to the library as ', el('input', { type: 'text', maxlength: 32, value: edidLabel, oninput: (ev) => { edidLabel = ev.target.value; } })),
+        el('label', { class: 'field' }, 'in slot ', el('input', { class: 'num', type: 'number', min: 1, max: MNG_EDID_SLOTS, value: cfSlot, onchange: (ev) => { cfSlot = Math.max(1, Math.min(MNG_EDID_SLOTS, Math.round(+ev.target.value || 1))); } })),
+        el('button', { class: 'btn primary', onclick: () => {
+          // The editor takes the bytes and a label; the save trigger files
+          // them in a user slot, from where an input plug can load them.
+          store.pset(MNG.edidEdit('data'), data);
+          store.pset(MNG.edidEdit('label'), edidLabel || `${e.mfr} ${e.name}`.trim());
+          setTimeout(() => store.pset(MNG.edidSave(cfSlot), true), 200);
+          setTimeout(() => { for (const p of ['isAvailable', 'prefFormatName', 'productName']) store.pget(MNG.edidBankStatus(String(cfSlot), p)); store.pget(MNG.edidBank(String(cfSlot), 'label')); }, 900);
+        } }, 'Save EDID')) : null,
+      el('div', { class: 'hint', text: 'What the display on this output declares. Saved into the EDID library it can be presented by any input, so a source sees the same monitor the wall does.' }));
+  }
+  function customFormats() {
+    fetchCustomFormats();
+    const mode = store.pval(MNG.cfSetting('mode'));
+    const checkReads = ['checkResult', 'checkStatus', 'displayName', 'hTotal', 'vTotal', 'pixelFrequency', 'lineFrequency'].map(p => MNG.cfStatus(p));
+    const result = store.pval(MNG.cfStatus('checkResult')), status = store.pval(MNG.cfStatus('checkStatus'));
+    const slotReads = (n) => [MNG.cfBank(n, 'userName'), ...['displayName', 'isValid', 'hUtil', 'vUtil', 'rate', 'mode'].map(p => MNG.cfBankStatus(n, p))];
+    return el('div', { class: 'panel' }, el('h2', 'Custom formats'),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Slot', 'Name', 'Timing', ''].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...Array.from({ length: MNG_CUSTOM_FORMATS }, (_, i) => i + 1).map(n => {
+          const valid = store.pval(MNG.cfBankStatus(n, 'isValid')) === true;
+          return el('tr', { class: valid ? '' : 'dim' },
+            el('td', { text: String(n) }),
+            el('td', {}, valid ? awjText(null, MNG.cfBank(n, 'userName'), 32) : el('span', { class: 'hint', text: 'empty' })),
+            el('td', { class: 'val', text: valid ? `${store.pval(MNG.cfBankStatus(n, 'displayName')) || ''} ${store.pval(MNG.cfBankStatus(n, 'hUtil')) ?? ''}×${store.pval(MNG.cfBankStatus(n, 'vUtil')) ?? ''} @ ${((store.pval(MNG.cfBankStatus(n, 'rate')) ?? 0) / 1000).toFixed(3)} Hz ${awjWords(store.pval(MNG.cfBankStatus(n, 'mode')))}`.trim() : '' }),
+            el('td', { class: 'acts' }, valid ? awjTrigger(MNG.cfBank(n, 'xDelete'), 'Erase', { reads: slotReads(n), after: 500 }) : null));
+        }))),
+      el('div', { class: 'hint pad', text: 'A saved custom format is offered in every output’s format list, after the device’s own.' }),
+      el('h2', 'New custom format'),
+      el('div', { class: 'row wrap' },
+        awjText('Name', MNG.cfSetting('userName'), 32),
+        awjSelect('Timing', MNG.cfSetting('mode'), [{ v: 'CVT', text: 'CVT (from size and rate)' }, { v: 'FULL', text: 'full (every porch typed)' }]),
+        awjNumber('Width', MNG.cfSetting('fullCvtHutil'), 64, 8192, { cls: 'num' }),
+        awjNumber('Height', MNG.cfSetting('fullCvtVutil'), 64, 8192, { cls: 'num' }),
+        awjNumber('Rate mHz', MNG.cfSetting('fullCvtRate'), 23000, 240000, { cls: 'num', step: 1 }),
+        mode === 'CVT' ? awjToggle(MNG.cfSetting('cvtReducedBlk'), 'Reduced blanking', { small: true }) : null),
+      mode === 'FULL' ? el('div', { class: 'row wrap' },
+        ...CF_FIELDS.filter(f => !f[0].includes('Cvt')).map(([p, l, min, max]) => awjNumber(l, MNG.cfSetting(p), min, max, { cls: 'num' })),
+        awjToggle(MNG.cfSetting('fullHsyncPol'), 'H sync +', { small: true }),
+        awjToggle(MNG.cfSetting('fullVsyncPol'), 'V sync +', { small: true })) : null,
+      el('div', { class: 'row wrap' },
+        awjTrigger(MNG.cfControl('xCheck'), 'Check', { cls: 'primary', reads: checkReads, after: 500 }),
+        awjStatusChip(status === 'NEVER_CHECKED' ? 'NEVER_CHECKED' : result),
+        el('span', { class: 'hint', text: status && status !== 'NEVER_CHECKED' ? `${store.pval(MNG.cfStatus('displayName')) || ''} — total ${store.pval(MNG.cfStatus('hTotal')) ?? '·'}×${store.pval(MNG.cfStatus('vTotal')) ?? '·'}, ${((store.pval(MNG.cfStatus('pixelFrequency')) ?? 0) / 1e6).toFixed(3)} MHz pixel clock, ${((store.pval(MNG.cfStatus('lineFrequency')) ?? 0) / 1000).toFixed(2)} kHz lines` : 'The device checks the timing before it can be saved.' }),
+        el('div', { class: 'grow' }),
+        el('label', { class: 'field' }, 'Save to slot ', el('input', { class: 'num', type: 'number', min: 1, max: MNG_CUSTOM_FORMATS, value: cfSlot, onchange: (ev) => { cfSlot = Math.max(1, Math.min(MNG_CUSTOM_FORMATS, Math.round(+ev.target.value || 1))); } })),
+        el('button', { class: 'btn ' + (result === 'VALID' ? 'primary' : 'ghost'), disabled: result !== 'VALID', onclick: () => { const n = cfSlot; store.pset(MNG.cfSave(n), true); setTimeout(() => { for (const p of slotReads(n)) store.pget(p); }, 600); } }, 'Save'),
+        awjTrigger(MNG.cfControl('xReset'), 'Reset editor', { reads: [...checkReads, ...['mode', 'userName', 'cvtReducedBlk', 'fullCvtRate', ...CF_FIELDS.map(f => f[0])].map(p => MNG.cfSetting(p))], after: 400 })));
+  }
+  return { reset, canvas, signal, display, customFormats };
+})();
+
+/** The base-block facts of an EDID: manufacturer, product name, preferred timing. */
+function mngEdidSummary(data) {
+  if (!Array.isArray(data) || data.length < 128) return null;
+  if (data[0] !== 0 || data[1] !== 255 || data[7] !== 0) return { bad: true };
+  const id = (data[8] << 8) | data[9];
+  const mfr = String.fromCharCode(64 + ((id >> 10) & 31), 64 + ((id >> 5) & 31), 64 + (id & 31));
+  let name = '';
+  for (let d = 54; d <= 108; d += 18) {
+    if (data[d] === 0 && data[d + 1] === 0 && data[d + 3] === 0xFC) name = String.fromCharCode(...data.slice(d + 5, d + 18)).replace(/[\n\0][^]*$/, '').trim();
+  }
+  const pw = ((data[58] & 0xF0) << 4) | data[56], ph = ((data[61] & 0xF0) << 4) | data[59];
+  const clock = ((data[55] << 8) | data[54]) / 100;
+  const hb = ((data[58] & 0x0F) << 8) | data[57], vb = ((data[61] & 0x0F) << 8) | data[60];
+  const rate = clock && pw && ph ? (clock * 1e6) / ((pw + hb) * (ph + vb)) : 0;
+  return { mfr, name, pw, ph, rate: rate ? rate.toFixed(2) : '', year: 1990 + data[17], ext: data[126] };
+}
+
+// ---------- Midra 4K / Alta 4K: configuration slots and streaming (System) ----------
+const mngSystemExtras = (() => {
+  let read = false;
+  let armed = null;       // 'delete-1' | 'delete-2' | 'restore-1' | 'restore-2'
+  let exportLabel = '';
+  let exportSlot = 1;
+  const MODULES = ['GENERAL', 'FRONTPANEL', 'DEVICE_CFG', 'INPUT', 'PRESET', 'QUICK_PRESET', 'SCREEN', 'PRESET_BANK', 'OUTPUT', 'CUSTOM_FORMAT', 'INPUT_EDID', 'EDID_BANK', 'AUDIO', 'WEBAPP_SETTINGS', 'LOG', 'STREAMING', 'HDR_INFO_BANK', 'MTVW', 'MTVW_BANK'];
+  const PROFILES = ['1920_1080_30HZ', '1920_1080_25HZ', '1280_720_60HZ', '1280_720_50HZ', '1280_720_30HZ', '1280_720_25HZ', '640_480_30HZ', '480_272_30HZ'];
+  function fetch() {
+    if (read) return;
+    read = true;
+    for (const s of [1, 2]) { store.pget(MNG.cfgSlotLabel(s)); for (const p of ['status', 'timestamp', 'versionUpdater', 'module']) store.pget(MNG.cfgSlotStatus(s, p)); }
+    for (const p of ['status', 'progress']) { store.pget(MNG.cfgExportStatus(p)); store.pget(MNG.cfgExtractStatus(p)); store.pget(MNG.cfgApplyStatus(p)); }
+    store.pget(MNG.cfgExtractStatus('module'));
+    store.pget(MNG.cfgApply('stillOption'));
+    for (let n = 1; n <= 10; n++) for (const p of ['label', 'url', 'key']) store.pget(MNG.streamSlot(n, p));
+    store.pget(MNG.streamRememberKeys());
+    for (const p of ['start', 'mode']) store.pget(MNG.streamControl(p));
+    store.pget(MNG.streamTarget());
+    for (const p of ['source', 'profile', 'quality', 'customBitrate']) store.pget(MNG.streamVideo(p));
+    for (const p of ['mode', 'directRoutingSource', 'quality', 'customBitrate']) store.pget(MNG.streamAudio(p));
+    for (const p of ['mute', 'directRoutingPair', 'followContentPair']) store.pget(MNG.streamAudioLive(p));
+    for (const p of ['status', 'mode', 'urlAndKey']) store.pget(MNG.streamStatus(p));
+    for (const p of ['source', 'sourceValidity', 'profile', 'bitrate', 'hdcpWarning']) store.pget(MNG.streamVideoStatus(p));
+    for (const p of ['source', 'sourcePair', 'bitrate']) store.pget(MNG.streamAudioStatus(p));
+  }
+  function reset() { read = false; armed = null; }
+  const arm = (key, ms = 5000) => { armed = key; store.notify(); setTimeout(() => { if (armed === key) { armed = null; store.notify(); } }, ms); };
+  const slotReads = (s) => [MNG.cfgSlotLabel(s), ...['status', 'timestamp', 'versionUpdater', 'module'].map(p => MNG.cfgSlotStatus(s, p))];
+
+  function slots() {
+    fetch();
+    const exp = store.pval(MNG.cfgExportStatus('status')), ext = store.pval(MNG.cfgExtractStatus('status')), app = store.pval(MNG.cfgApplyStatus('status'));
+    return el('div', {},
+      el('h2', 'Configuration slots'),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Slot', 'Label', 'Saved', 'Firmware', ''].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...[1, 2].map(s => {
+          const st = store.pval(MNG.cfgSlotStatus(s, 'status'));
+          const empty = st === 'EMPTY' || st == null;
+          return el('tr', { class: empty ? 'dim' : '' },
+            el('td', { text: `Slot ${s}` }),
+            el('td', {}, empty ? el('span', { class: 'hint', text: 'empty' }) : awjText(null, MNG.cfgSlotLabel(s), 32)),
+            el('td', { class: 'val', text: empty ? '' : `${store.pval(MNG.cfgSlotStatus(s, 'timestamp')) || '·'}` }),
+            el('td', { class: 'val', text: empty ? '' : `${store.pval(MNG.cfgSlotStatus(s, 'versionUpdater')) || '·'}` }),
+            el('td', { class: 'acts' }, empty ? null : [
+              el('button', { class: 'btn ' + (armed === `restore-${s}` ? 'pgm' : 'ghost'), onclick: () => {
+                if (armed !== `restore-${s}`) { arm(`restore-${s}`); return; }
+                armed = null;
+                // Restore is two steps on the device: unpack the slot, then
+                // apply the modules it holds. The second waits for the first.
+                store.pset(MNG.cfgExtract('source'), 'BANK'); store.pset(MNG.cfgExtract('slot'), `SLOT_${s}`);
+                setTimeout(() => store.pset(MNG.cfgExtract('xRequest'), true), 100);
+                const tryApply = (n) => { store.pget(MNG.cfgExtractStatus('status')); store.pget(MNG.cfgExtractStatus('module'));
+                  setTimeout(() => {
+                    const stx = store.pval(MNG.cfgExtractStatus('status'));
+                    if (stx === 'DONE' || stx === 'DONE_VERSION_WARNING') { store.pset(MNG.cfgApply('xRequest'), store.pval(MNG.cfgExtractStatus('module')) || MODULES); setTimeout(() => { store.pget(MNG.cfgApplyStatus('status')); store.pget(MNG.cfgApplyStatus('progress')); }, 1500); }
+                    else if (n < 20 && (stx === 'IN_PROGRESS' || stx === 'NO_REQUEST')) tryApply(n + 1);
+                    store.notify();
+                  }, 300); };
+                setTimeout(() => tryApply(0), 800);
+              } }, armed === `restore-${s}` ? 'Tap again to restore — the device reboots' : 'Restore'),
+              el('button', { class: 'btn ' + (armed === `delete-${s}` ? 'pgm' : 'ghost'), onclick: () => {
+                if (armed !== `delete-${s}`) { arm(`delete-${s}`); return; }
+                armed = null; store.pset(MNG.cfgSlotDelete(s), true); setTimeout(() => { for (const p of slotReads(s)) store.pget(p); }, 600);
+              } }, armed === `delete-${s}` ? 'Tap again to erase' : 'Erase')]));
+        }))),
+      el('div', { class: 'row wrap' },
+        el('label', { class: 'field' }, 'Back up the whole configuration as ', el('input', { type: 'text', maxlength: 32, value: exportLabel, oninput: (e) => { exportLabel = e.target.value; } })),
+        el('label', { class: 'field' }, 'into slot ', el('select', { onchange: (e) => { exportSlot = +e.target.value; } }, ...[1, 2].map(s => el('option', { value: s, selected: s === exportSlot, text: `slot ${s}` })))),
+        el('button', { class: 'btn primary', onclick: () => {
+          store.pset(MNG.cfgExport('destination'), 'BANK'); store.pset(MNG.cfgExport('slot'), `SLOT_${exportSlot}`); store.pset(MNG.cfgExport('label'), exportLabel);
+          setTimeout(() => store.pset(MNG.cfgExport('xRequest'), MODULES), 100);
+          const s = exportSlot, label = exportLabel;
+          // The export's own label did not reach the slot on the simulator;
+          // the slot's label is written once the backup has landed.
+          for (const ms of [800, 2500, 6000]) setTimeout(() => { store.pget(MNG.cfgExportStatus('status')); store.pget(MNG.cfgExportStatus('progress')); for (const p of slotReads(s)) store.pget(p); }, ms);
+          setTimeout(() => { if (label && store.pval(MNG.cfgSlotStatus(s, 'status')) !== 'EMPTY') store.pset(MNG.cfgSlotLabel(s), label); }, 3000);
+        } }, 'Back up'),
+        awjStatusChip(exp), ext && ext !== 'NO_REQUEST' ? awjStatusChip(ext) : null, app && app !== 'NO_REQUEST' ? awjStatusChip(app) : null),
+      el('div', { class: 'hint pad', text: 'Two slots on the device itself hold a full backup each — every module the device lists, stills included. Export to a file and import from USB stay with the Web RCS, which has the file dialogs for them.' }));
+  }
+  function streaming() {
+    fetch();
+    const st = store.pval(MNG.streamStatus('status'));
+    const running = st === 'RUNNING' || st === 'IN_PROGRESS';
+    const target = store.pval(MNG.streamTarget());
+    const sources = store.pval(MNG.streamVideoStatus('sourceValidity')) || [];
+    const srcName = (v) => v === 'NONE' ? '— none —' : /^INPUT_/.test(v) ? mngInputs.name(v) : v === 'OUTPUT_MTVW' ? 'Multiviewer' : v.replace('OUTPUT_', 'OUT ');
+    const statusReads = ['status', 'mode', 'urlAndKey'].map(p => MNG.streamStatus(p)).concat(['source', 'profile', 'bitrate', 'hdcpWarning'].map(p => MNG.streamVideoStatus(p)), ['source', 'sourcePair', 'bitrate'].map(p => MNG.streamAudioStatus(p)), [MNG.streamControl('start')]);
+    return el('div', {},
+      el('h2', {}, 'Streaming ', awjStatusChip(st)),
+      el('div', { class: 'row wrap' },
+        awjSelect('Destination', MNG.streamTarget(), Array.from({ length: 10 }, (_, i) => i + 1).map(n => ({ v: n, text: `${n} · ${store.pval(MNG.streamSlot(n, 'label')) || store.pval(MNG.streamSlot(n, 'url')) || 'empty'}` })), { write: (path, v) => awjWrite(path, +v) }),
+        awjSelect('Video', MNG.streamVideo('source'), sources.map(v => ({ v, text: srcName(v) }))),
+        awjSelect('Profile', MNG.streamVideo('profile'), PROFILES.map(v => ({ v, text: v.replace(/_(\d+)HZ$/, ' @ $1').replace('_', '×') }))),
+        awjSelect('Quality', MNG.streamVideo('quality'), ['LOW', 'MEDIUM', 'HIGH', 'CUSTOM']),
+        store.pval(MNG.streamVideo('quality')) === 'CUSTOM' ? awjNumber('kbit/s', MNG.streamVideo('customBitrate'), 100, 20000, { cls: 'num' }) : null),
+      el('div', { class: 'row wrap' },
+        awjSelect('Audio', MNG.streamAudio('mode'), [{ v: 'FOLLOW_CONTENT', text: 'follows the picture' }, { v: 'DIRECT_ROUTING', text: 'direct' }]),
+        store.pval(MNG.streamAudio('mode')) === 'DIRECT_ROUTING'
+          ? awjSelect('Source', MNG.streamAudio('directRoutingSource'), mngAudioSourceOptions(store.pval(MNG.streamAudio('directRoutingSource'))))
+          : null,
+        awjSelect('Pair', store.pval(MNG.streamAudio('mode')) === 'DIRECT_ROUTING' ? MNG.streamAudioLive('directRoutingPair') : MNG.streamAudioLive('followContentPair'), MNG_AUDIO_PAIRS.map(p => ({ v: p, text: 'channels ' + p.replace('CHANNEL_', '').replace('_', '–') }))),
+        awjSelect('Audio quality', MNG.streamAudio('quality'), ['LOW', 'MEDIUM', 'HIGH', 'CUSTOM']),
+        awjToggle(MNG.streamAudioLive('mute'), (on) => on ? 'Muted' : 'Mute', { small: true, cls: 'bad' })),
+      el('div', { class: 'row wrap' },
+        el('button', { class: 'btn ' + (running ? 'pgm' : 'primary'), onclick: () => { store.pset(MNG.streamControl('start'), !running); for (const ms of [500, 2500]) setTimeout(() => { for (const p of statusReads) store.pget(p); }, ms); } }, running ? 'Stop streaming' : 'Start streaming'),
+        el('span', { class: 'hint', text: running ? `${awjWords(store.pval(MNG.streamVideoStatus('source')))} at ${store.pval(MNG.streamVideoStatus('bitrate')) ?? '·'} kbit/s${store.pval(MNG.streamVideoStatus('hdcpWarning')) === true ? ' — HDCP content, the stream carries black' : ''}` : 'RTMP out to the chosen destination.' })),
+      el('details', { class: 'group' }, el('summary', { text: 'Destinations' }),
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['', 'Label', 'URL', 'Stream key'].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...Array.from({ length: 10 }, (_, i) => i + 1).map(n => el('tr', { class: n === target ? 'sel' : '' },
+            el('td', { text: String(n) }),
+            el('td', {}, awjText(null, MNG.streamSlot(n, 'label'), 32)),
+            el('td', {}, awjText(null, MNG.streamSlot(n, 'url'), 256, { cls: 'wide' })),
+            el('td', {}, el('input', { type: 'password', class: 'wide', maxlength: 256, value: store.pval(MNG.streamSlot(n, 'key')) ?? '', placeholder: 'stream key', onchange: (e) => awjWrite(MNG.streamSlot(n, 'key'), e.target.value) })))))),
+        el('div', { class: 'row' },
+          awjToggle(MNG.streamRememberKeys(), (on) => on ? 'Keys kept on the device' : 'Keys forgotten at power-off', { small: true, cls: 'primary' }),
+          el('span', { class: 'hint', text: 'Ten destinations; the first four come from the factory.' }))));
+  }
+  return { reset, slots, streaming };
+})();
+
+// ---------- Midra 4K / Alta 4K: what a bank save records (Presets) ----------
+// The device stores a memory through a filter set before the save: which
+// categories of each layer, which live layers, and whether the background and
+// top layers go in. The filter belongs to the destination (or the master
+// bank), so it stays until changed.
+const MNG_PRESET_CATEGORIES = ['SOURCE', 'POS', 'SIZE', 'OPACITY', 'CROPPING', 'MASK', 'BORDER', 'TRANSITIONS', 'EFFECTS', 'FLYING_CURVE', 'TIMING', 'SPEED', 'AUDIO'];
+const MNG_AUX_PRESET_CATEGORIES = ['SOURCE', 'ASPECT', 'TRANSITIONS', 'AUDIO'];
+const mngSaveFilters = (() => {
+  const read = new Set();
+  function fetch(bank, d) {
+    const k = bank.kind + (d ? d.id : '');
+    if (read.has(k)) return;
+    read.add(k);
+    if (bank.kind === 'master') { for (const p of ['screenFilter', 'screenCategoryFilter', 'screenLayerTopFilter', 'screenLayerBackFilter', 'screenLayerLiveFilter', 'auxFilter', 'auxCategoryFilter']) store.pget(MNG.masterSaveFilter(p)); return; }
+    if (!d) return;
+    store.pget(MNG.saveFilter(bank.root, d, 'categoryFilter'));
+    if (d.kind === 'screen') for (const p of ['layerFilter', 'layerTopFilter', 'layerBackFilter']) store.pget(MNG.saveFilter(bank.root, d, p));
+  }
+  function reset() { read.clear(); }
+  const layers = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const catText = (c) => ({ POS: 'position', CROPPING: 'crop', FLYING_CURVE: 'flying curve' }[c] || awjWords(c));
+  function panel(bank, d) {
+    fetch(bank, d);
+    if (bank.kind === 'master') {
+      return el('details', { class: 'group' }, el('summary', { text: 'What a master save records' }),
+        el('div', { class: 'field' }, el('span', { text: 'Screens' }), awjFlagRow(MNG.masterSaveFilter('screenFilter'), ['1', '2', '3', '4'], { text: (s) => 'S' + s })),
+        el('div', { class: 'field' }, el('span', { text: 'Auxiliaries' }), awjFlagRow(MNG.masterSaveFilter('auxFilter'), ['1', '2', '3', '4'], { text: (s) => 'A' + s })),
+        el('div', { class: 'field' }, el('span', { text: 'Of each screen' }), awjFlagRow(MNG.masterSaveFilter('screenCategoryFilter'), MNG_PRESET_CATEGORIES, { text: catText })),
+        el('div', { class: 'field' }, el('span', { text: 'Live layers' }), el('div', { class: 'row wrap' }, awjFlagRow(MNG.masterSaveFilter('screenLayerLiveFilter'), layers, { text: (l) => 'L' + l }),
+          awjToggle(MNG.masterSaveFilter('screenLayerBackFilter'), 'background', { small: true }), awjToggle(MNG.masterSaveFilter('screenLayerTopFilter'), 'top', { small: true }))),
+        el('div', { class: 'field' }, el('span', { text: 'Of each auxiliary' }), awjFlagRow(MNG.masterSaveFilter('auxCategoryFilter'), MNG_AUX_PRESET_CATEGORIES, { text: catText })),
+        el('div', { class: 'hint', text: 'A master memory records the destinations ticked here, and of each only the ticked parts; the rest is left as it is on recall.' }));
+    }
+    if (!d) return el('div', { class: 'hint pad', text: 'Pick one destination to see what its saves record.' });
+    return el('details', { class: 'group' }, el('summary', { text: `What a save of ${d.id} records` }),
+      el('div', { class: 'field' }, el('span', { text: 'Categories' }), awjFlagRow(MNG.saveFilter(bank.root, d, 'categoryFilter'), d.kind === 'aux' ? MNG_AUX_PRESET_CATEGORIES : MNG_PRESET_CATEGORIES, { text: catText })),
+      d.kind === 'screen' ? el('div', { class: 'field' }, el('span', { text: 'Layers' }), el('div', { class: 'row wrap' }, awjFlagRow(MNG.saveFilter(bank.root, d, 'layerFilter'), layers, { text: (l) => 'L' + l }),
+        awjToggle(MNG.saveFilter(bank.root, d, 'layerBackFilter'), 'background', { small: true }), awjToggle(MNG.saveFilter(bank.root, d, 'layerTopFilter'), 'top', { small: true }))) : null,
+      el('div', { class: 'hint', text: 'The filter is the device’s own and stays set for this destination; a memory saved through it recalls only what it recorded, and the slot reports the filter it was saved with.' }));
+  }
+  return { reset, panel };
 })();
 
 // ---------- AWJ: Layers (Midra 4K / Alta 4K) ----------
@@ -4221,6 +5191,51 @@ VIEWS.lplayers = (() => {
     setTimeout(() => { for (const tail of Object.values(MNG_GEOM)) store.pget(P(l, tail)); }, 120);
   }
 
+  // Snap a dragged edge or centre to the canvas edges and centre lines and to
+  // the other layers' edges and centres, within eight screen pixels. Alt held
+  // while dragging switches it off. A resize snaps only the edges that move.
+  function snapRect(r, l, scale, corner = null) {
+    const d = cur(); if (!d) return r;
+    const c = canvasPx(d), tol = 8 / scale;
+    const xs = [0, c.w / 2, c.w], ys = [0, c.h / 2, c.h];
+    for (const o of fitted(d)) { if (o === l) continue; const q = rectPx(o); xs.push(q.left, q.left + q.w, q.left + q.w / 2); ys.push(q.top, q.top + q.h, q.top + q.h / 2); }
+    const near = (v, arr) => { let best = null; for (const a of arr) { const dd = Math.abs(v - a); if (dd <= tol && (best === null || dd < Math.abs(v - best))) best = a; } return best; };
+    if (!corner) {
+      for (const [v, off] of [[r.left, 0], [r.left + r.w, r.w], [r.left + r.w / 2, r.w / 2]]) { const s = near(v, xs); if (s !== null) { r.left = s - off; break; } }
+      for (const [v, off] of [[r.top, 0], [r.top + r.h, r.h], [r.top + r.h / 2, r.h / 2]]) { const s = near(v, ys); if (s !== null) { r.top = s - off; break; } }
+      return r;
+    }
+    if (corner.includes('w')) { const s = near(r.left, xs); if (s !== null) { r.w += r.left - s; r.left = s; } } else { const s = near(r.left + r.w, xs); if (s !== null) r.w = s - r.left; }
+    if (corner.includes('n')) { const s = near(r.top, ys); if (s !== null) { r.h += r.top - s; r.top = s; } } else { const s = near(r.top + r.h, ys); if (s !== null) r.h = s - r.top; }
+    return r;
+  }
+  // Arrow keys move the selected layer a pixel, ten with Shift, once the
+  // canvas has focus (a click gives it).
+  function nudge(e) {
+    if (typeof sel !== 'number') return;
+    const step = e.shiftKey ? 10 : 1;
+    const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+    if (!dx && !dy) return;
+    e.preventDefault();
+    const r = rectPx(sel);
+    setGeom(sel, { ...r, left: r.left + dx, top: r.top + dy });
+    readBack(sel);
+  }
+  // A copied layer: every property the panel holds, source included, held in
+  // this page until pasted onto any layer of any screen or buffer.
+  let clip = null;
+  const layerTails = () => [...Object.values(MNG_GEOM).filter(tl => !tl.startsWith('status')), ...MNG_LAYER_PROPS.flatMap(g => g.items.map(it => it.tail))];
+  function copyLayer(l) {
+    const values = layerTails().map(tl => [tl, store.pval(P(l, tl))]).filter(([, v]) => v !== undefined);
+    clip = { from: `${cur().id} ${which} L${l}`, values };
+    store.notify();
+  }
+  function pasteLayer(l) {
+    if (!clip) return;
+    for (const [tl, v] of clip.values) store.pset(P(l, tl), v);
+    setTimeout(() => { for (const [tl] of clip.values) store.pget(P(l, tl)); }, 300);
+  }
+
   function dragMove(e, l, scale) {
     e.preventDefault(); e.stopPropagation();
     beginDrag(); sel = l;
@@ -4228,7 +5243,8 @@ VIEWS.lplayers = (() => {
     const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
     const move = (ev) => {
       const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
-      const r = { ...r0, left: r0.left + dx, top: r0.top + dy };
+      let r = { ...r0, left: r0.left + dx, top: r0.top + dy };
+      if (!ev.altKey) r = snapRect(r, l, scale);
       box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
       setGeom(l, r);
     };
@@ -4246,7 +5262,8 @@ VIEWS.lplayers = (() => {
       let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
       if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
       if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
-      const r = { left, top, w: right - left, h: bot - top };
+      let r = { left, top, w: right - left, h: bot - top };
+      if (!ev.altKey) r = snapRect(r, l, scale, corner);
       box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
       box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
       setGeom(l, r);
@@ -4316,8 +5333,8 @@ VIEWS.lplayers = (() => {
     const c = canvasPx(d);
     const CW = Math.min(720, Math.max(360, (window.innerWidth || 1200) - 620));
     const scale = CW / c.w, CH = c.h * scale;
-    const cv = el('div', { class: 'screen-canvas' + (sel === 'bg' ? ' bg-sel' : ''), style: `width:${CW}px;height:${Math.round(CH)}px;${bgStyle()}`,
-      onpointerdown: () => { sel = 'bg'; store.notify(); } });
+    const cv = el('div', { class: 'screen-canvas' + (sel === 'bg' ? ' bg-sel' : ''), style: `width:${CW}px;height:${Math.round(CH)}px;${bgStyle()}`, tabindex: 0,
+      onpointerdown: (e) => { e.currentTarget.focus(); sel = 'bg'; store.notify(); }, onkeydown: nudge });
     cv.append(el('span', { class: 'lrect-tag bg-tag', text: `background · ${bgLabel()}` }));
     for (const l of fitted(d)) {
       const src = gv(l, 'source');
@@ -4329,7 +5346,7 @@ VIEWS.lplayers = (() => {
         class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};` +
           (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
-        onpointerdown: (e) => dragMove(e, l, scale),
+        onpointerdown: (e) => { e.currentTarget.parentNode.focus(); dragMove(e, l, scale); },
       },
         el('span', { class: 'lrect-tag', text: `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` }),
         ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, l, scale, k) })));
@@ -4464,6 +5481,10 @@ VIEWS.lplayers = (() => {
         el('button', { class: 'btn ghost', onclick: () => store.pset(MNG.layerFadeIn(d.n, l), true) }, 'Fade in'),
         el('button', { class: 'btn ghost', onclick: () => store.pset(MNG.layerFadeOut(d.n, l), true) }, 'Fade out'),
         el('span', { class: 'hint', text: 'over the take time; a master over the layer’s own opacity' })),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn ghost', onclick: () => copyLayer(l) }, 'Copy layer'),
+        el('button', { class: 'btn ghost', disabled: !clip, onclick: () => pasteLayer(l) }, clip ? `Paste ${clip.from} onto L${l}` : 'Paste'),
+        el('span', { class: 'hint', text: 'Every property the panel holds, source included, onto any layer of any screen or buffer. Drags snap to edges and centres (Alt to free them); arrow keys nudge.' })),
       ...MNG_LAYER_PROPS.map(g => el('details', { class: 'group' },
         el('summary', { text: g.g }),
         ...g.items.map(it => field(it, l)))));
@@ -4524,13 +5545,45 @@ VIEWS.lplayers = (() => {
   return { enter, render };
 })();
 
+// ---------- Midra 4K / Alta 4K: the EDID library ----------
+// Sixty-four user slots and the factory entries, keyed by name; a slot is
+// offered where the device says it holds something.
+const MNG_EDID_SLOTS = 64;
+const MNG_EDID_DEFAULTS = ['DEFAULT_DP_UHD60', 'DEFAULT_HDMI_2_0', 'DEFAULT_DP_UHD60_RB', 'DEFAULT_HDMI_2_0_RB', 'DEFAULT_DP_1080P', 'DEFAULT_HDMI_2_0_1080P', 'DEFAULT_DP_UHD50', 'DEFAULT_HDMI_2_0_50',
+  'DEFAULT_DP_UHD50_RB', 'DEFAULT_HDMI_2_0_50_RB', 'DEFAULT_DP_1080P_50', 'DEFAULT_HDMI_2_0_1080P_50', 'DEFAULT_HDMI_1080P', 'DEFAULT_HDMI_1080P_50', 'DEFAULT_DP_1080P_120', 'DEFAULT_HDMI_2_0_1080P_120',
+  'DEFAULT_HDMI_1080P_120', 'DEFAULT_DP_1080P_240', 'DEFAULT_HDMI_2_0_1080P_240', 'DEFAULT_DP_HDR_1080P_60', 'DEFAULT_HDMI_HDR_1080P_60'];
+const mngEdidKeys = () => [...Array.from({ length: MNG_EDID_SLOTS }, (_, i) => String(i + 1)), ...MNG_EDID_DEFAULTS];
+function mngEdidName(k) {
+  const pref = store.pval(MNG.edidBankStatus(k, 'prefFormatName'));
+  if (/^\d+$/.test(k)) return `${k} · ${store.pval(MNG.edidBank(k, 'label')) || store.pval(MNG.edidBankStatus(k, 'productName')) || 'unnamed'}${pref ? ' · ' + pref : ''}`;
+  return `${k.replace(/^DEFAULT_/, '').replace(/_/g, ' ').replace('2 0', '2.0').replace(' RB', ' (reduced blanking)')}${pref ? ' · ' + pref : ''} (factory)`;
+}
+
 // ---------- AWJ: Inputs (Midra 4K / Alta 4K) ----------
+// Every input the unit has, then one input's active plug in full: the plug
+// itself, its signal, HDCP and HDR, picture, aspect and cropping, the keyer
+// (chroma, luma, cut and fill) and the EDID it presents.
 VIEWS.lpinputs = (() => {
   let read = false;    // whether the inputs were read since this view was entered
+  let sel = 1;
+  const plugRead = new Set();
+  let edidRead = false;
+  let edidPick = '';
+  const COLOR = [['brightness', 'Brightness', -128, 127], ['contrast', 'Contrast', -128, 127], ['saturation', 'Saturation', -128, 127], ['hue', 'Hue', -90, 90],
+    ['gainR', 'Gain R', -128, 127], ['gainG', 'Gain G', -128, 127], ['gainB', 'Gain B', -128, 127], ['offsetR', 'Offset R', -128, 127], ['offsetG', 'Offset G', -128, 127], ['offsetB', 'Offset B', -128, 127]];
+  const SIGNAL_ASPECTS = ['NATIVE', '5_4', '4_3', '16_10', '15_9', '16_9', '21_9', '256_135', '64_27'];
+  const CONTENT_ASPECTS = ['SIGNAL', '5_4', '4_3', '16_10', '15_9', '16_9', '21_9', 'CUSTOM'];
+  const LAYER_FILL = ['LAYER_SETTING', '1_1', 'CENTERED', 'FULLSCREEN', 'CROPPED'];
+  const PREDEF_CROP = ['NONE', 'LETTERBOX_1_78', 'LETTERBOX_1_85', 'LETTERBOX_2_35', 'PILLARBOX_1_33'];
+  const HDR_MODES = ['AUTO', 'SDR', 'HDR10', 'HLG'];
+  const NITS = ['AUTO', '100_NITS', '200_NITS', '300_NITS', '400_NITS', '500_NITS', '600_NITS', '700_NITS', '800_NITS', '900_NITS', '1000_NITS', '1200_NITS', '1400_NITS', '1600_NITS', '1800_NITS', '2000_NITS', '3000_NITS', '4000_NITS', '5000_NITS', '6000_NITS', '7000_NITS', '8000_NITS', '9000_NITS', '10000_NITS'];
+  const ratio = (v) => v.replace(/^(\d+)_(\d+)$/, '$1:$2').replace(/^LETTERBOX_(\d)_(\d+)$/, 'letterbox $1.$2').replace(/^PILLARBOX_(\d)_(\d+)$/, 'pillarbox $1.$2');
+
   function settle() {
     if (read || !store.meta || !store.connected) return;
     read = true;
     mngInputs.refresh();
+    for (let i = 1; i <= MNG_INPUTS; i++) { for (let p = 1; p <= 4; p++) store.pget(MNG.plugAvailable(i, p)); store.pget(MNG.inputKeyingAvailable(i)); store.pget(MNG.inputCutFillAvailable(i)); }
     awjViewSubs = () => [MNG.SUB_INPUTS, MNG.SUB_TALLIES];
     awjApplySubs();
     startMngSnapshots();
@@ -4538,15 +5591,44 @@ VIEWS.lpinputs = (() => {
   }
   function enter() {
     if (awjDialect() !== 'mng') return;
-    read = false;
+    read = false; plugRead.clear(); edidRead = false;
     settle();
   }
+  // The selected input's plug is read in full once per plug seen.
+  function fetchPlug(i, p) {
+    const k = `${i}:${p}`;
+    if (plugRead.has(k)) return;
+    plugRead.add(k);
+    for (const prop of ['signalType', 'enableHdcp', 'enableCropFinder', 'label']) store.pget(MNG.plugControl(i, p, prop));
+    for (const prop of ['signalTypeValidity', 'hdcpValidity', 'type', 'canUseLutProcessing']) store.pget(MNG.plugStatusProp(i, p, prop));
+    for (const prop of ['isValid', 'formatName', 'scanType', 'formatWidth', 'formatHeight', 'fieldFrequency', 'colorSpace', 'supportStatus']) store.pget(MNG.plugSignal(i, p, prop));
+    for (const prop of ['mode', 'nitLevel']) { store.pget(MNG.plugHdr(i, p, prop)); store.pget(MNG.plugHdrStatus(i, p, prop)); }
+    for (const [prop] of COLOR) store.pget(MNG.plugSetting(i, p, `color/@props/${prop}`));
+    for (const prop of ['sharpness', 'pulldown22', 'pulldown32']) store.pget(MNG.plugSetting(i, p, `processing/@props/${prop}`));
+    for (const prop of ['signal', 'transformTo', 'customRatio', 'layerFill']) store.pget(MNG.plugSetting(i, p, `aspect/@props/${prop}`));
+    for (const prop of ['predefined', 'top', 'bottom', 'left', 'right']) store.pget(MNG.plugSetting(i, p, `cropping/control/@props/${prop}`));
+    for (const prop of ['mode', 'displayMask']) store.pget(MNG.plugSetting(i, p, `keying/control/@props/${prop}`));
+    for (const prop of ['hue', 'transparency', 'colorCorrection', 'foreground', 'background']) store.pget(MNG.plugSetting(i, p, `keying/chroma/@props/${prop}`));
+    for (const prop of ['luma', 'foreground', 'transparency', 'invert']) store.pget(MNG.plugSetting(i, p, `keying/luma/@props/${prop}`));
+    store.pget(MNG.plugSetting(i, p, 'keying/cutNFill/control/@props/curve'));
+    for (const prop of ['status', 'source', 'phaseShift']) store.pget(MNG.plugSetting(i, p, `keying/cutNFill/status/@props/${prop}`));
+    for (const prop of ['enable', 'top', 'bottom', 'left', 'right']) store.pget(MNG.plugSetting(i, p, `keying/assistant/@props/${prop}`));
+    store.pget(MNG.plugEdidStatus(i, p));
+    for (let b = 1; b <= 3; b++) for (const prop of ['extensionType', 'isHdmiCompatible', 'isAudioCompatible', 'isHdrCompatible', 'prefFormatName']) store.pget(MNG.plugEdidExt(i, p, b, prop));
+  }
+  function fetchEdidLibrary() {
+    if (edidRead) return;
+    edidRead = true;
+    for (const k of mngEdidKeys()) for (const prop of ['isAvailable', 'isProtected', 'prefFormatName', 'productName']) store.pget(MNG.edidBankStatus(k, prop));
+    for (let n = 1; n <= MNG_EDID_SLOTS; n++) store.pget(MNG.edidBank(n, 'label'));
+  }
+
   function row(i) {
     const t = mngInputs.tally(i.key);
     const flag = (path, on, label) => el('button', { class: 'btn small ' + (on ? 'pgm' : 'ghost'),
-      onclick: () => { store.pset(path, !on); if (!awjLive) setTimeout(() => store.pget(path), 120); } }, label);
+      onclick: (e) => { e.stopPropagation(); store.pset(path, !on); if (!awjLive) setTimeout(() => store.pget(path), 120); } }, label);
     const shot = i.available !== false ? mngSnapshotUrl('inputs', i.n) : null;
-    return el('tr', { class: i.available === false ? 'dim' : '' },
+    return el('tr', { class: (i.available === false ? 'dim' : '') + (i.n === sel ? ' sel' : ''), onclick: () => { sel = i.n; store.notify(); } },
       el('td', {}, shot ? el('img', { class: 'thumb', src: shot, alt: '', width: 96, height: 54 }) : null),
       el('td', { text: `IN ${i.n}` }),
       el('td', { text: i.label || '—' }),
@@ -4560,27 +5642,127 @@ VIEWS.lpinputs = (() => {
         t.pvw ? el('span', { class: 'chip pvw' }, el('span', { class: 'dot' }), 'preview') : null),
       el('td', {}, flag(MNG.inputFreeze(i.n), i.frozen, i.frozen ? 'Frozen' : 'Freeze'), ' ', flag(MNG.inputBlack(i.n), i.black, i.black ? 'Black' : 'Black')));
   }
+
+  function editor(i) {
+    const inp = mngInputs.get(i);
+    if (inp.available === false) return el('div', { class: 'editor' }, el('h2', { text: `Input ${i}` }), el('div', { class: 'hint', text: 'Not fitted on this unit.' }));
+    const p = inp.plug;
+    if (p == null) return el('div', { class: 'editor' }, el('h2', { text: `Input ${i}` }), el('div', { class: 'hint', text: 'Waiting for the input’s active plug.' }));
+    fetchPlug(i, p);
+    const S = (tail) => MNG.plugSetting(i, p, tail);
+    const plugs = [1, 2, 3, 4].filter(k => store.pval(MNG.plugAvailable(i, k)) === true);
+    const keyMode = store.pval(S('keying/control/@props/mode'));
+    const keyerOk = store.pval(MNG.inputKeyingAvailable(i)), cutFillOk = store.pval(MNG.inputCutFillAvailable(i));
+    const hdcpOpts = store.pval(MNG.plugStatusProp(i, p, 'hdcpValidity')) || [];
+    const sigOpts = store.pval(MNG.plugStatusProp(i, p, 'signalTypeValidity')) || [];
+    const edid = mngEdidSummary(store.pval(MNG.plugEdidStatus(i, p)));
+    const cropReads = ['top', 'bottom', 'left', 'right', 'predefined'].map(k => S(`cropping/control/@props/${k}`));
+    return el('div', { class: 'editor' },
+      el('h2', {}, `Input ${i}`, ' ', el('span', { class: 'chip ' + (inp.signal === true ? 'on' : 'off') }, el('span', { class: 'dot' }), inp.format || (inp.signal === false ? 'no signal' : '·'))),
+      el('div', { class: 'row wrap' },
+        el('label', { class: 'field' }, 'Active plug', awjSelect(null, MNG.inputPlug(i), plugs.map(k => ({ v: String(k), text: `plug ${k} · ${(store.pval(MNG.plugType(i, k)) || '').replace('DISPLAY_PORT', 'DP').toLowerCase() || '?'}` })),
+          { write: (path, v) => { awjWrite(path, v); mngInputs.refresh(); } })),
+        awjText('Label', MNG.plugControl(i, p, 'label'), 32)),
+      el('div', { class: 'row wrap' },
+        awjSelect('Signal', MNG.plugControl(i, p, 'signalType'), sigOpts.map(v => ({ v, text: v === 'AUTO' ? 'auto' : v.replace(/^(YUV|RGB)_(\d+)_(\d+)$/, '$1 $2–$3') }))),
+        awjSelect('HDCP', MNG.plugControl(i, p, 'enableHdcp'), hdcpOpts.map(v => ({ v, text: { NONE: 'refused', DEFAULT: 'accepted', HDCP_1X_ONLY: '1.x only', HDCP_1X_AND_2X: '1.x and 2.x' }[v] || awjWords(v) })), { disabled: !hdcpOpts.length }),
+        awjSelect('HDR', MNG.plugHdr(i, p, 'mode'), HDR_MODES),
+        awjSelect('Nits', MNG.plugHdr(i, p, 'nitLevel'), NITS.map(v => ({ v, text: v === 'AUTO' ? 'auto' : v.replace('_NITS', '') })))),
+      el('div', { class: 'hint', text: `Signal: ${awjWords(store.pval(MNG.plugSignal(i, p, 'scanType')))}, ${store.pval(MNG.plugSignal(i, p, 'formatWidth')) || '·'}×${store.pval(MNG.plugSignal(i, p, 'formatHeight')) || '·'} at ${store.pval(MNG.plugSignal(i, p, 'fieldFrequency')) || '·'} Hz, ${awjWords(store.pval(MNG.plugSignal(i, p, 'colorSpace')))}; HDR seen: ${awjWords(store.pval(MNG.plugHdrStatus(i, p, 'mode')))} ${store.pval(MNG.plugHdrStatus(i, p, 'nitLevel')) || ''} nits.` }),
+      el('details', { class: 'group' }, el('summary', { text: 'Picture' }),
+        ...COLOR.map(([prop, label, min, max]) => awjRange(label, S(`color/@props/${prop}`), min, max)),
+        el('div', { class: 'row wrap' },
+          awjSelect('Sharpness', S('processing/@props/sharpness'), ['LOW', 'MEDIUM', 'HIGH']),
+          awjToggle(S('processing/@props/pulldown22'), '2:2 pulldown', { small: true }),
+          awjToggle(S('processing/@props/pulldown32'), '3:2 pulldown', { small: true }))),
+      el('details', { class: 'group' }, el('summary', { text: 'Aspect and cropping' }),
+        el('div', { class: 'row wrap' },
+          awjSelect('Signal is', S('aspect/@props/signal'), SIGNAL_ASPECTS.map(v => ({ v, text: v === 'NATIVE' ? 'as reported' : ratio(v) }))),
+          awjSelect('Show as', S('aspect/@props/transformTo'), CONTENT_ASPECTS.map(v => ({ v, text: v === 'SIGNAL' ? 'the signal’s' : v === 'CUSTOM' ? 'custom' : ratio(v) }))),
+          store.pval(S('aspect/@props/transformTo')) === 'CUSTOM' ? awjNumber('Custom ×1000', S('aspect/@props/customRatio'), 100, 10000, { cls: 'num' }) : null,
+          awjSelect('In a layer', S('aspect/@props/layerFill'), LAYER_FILL.map(v => ({ v, text: v === 'LAYER_SETTING' ? 'as the layer says' : v === '1_1' ? '1:1' : awjWords(v) })))),
+        el('div', { class: 'row wrap' },
+          awjSelect('Crop', S('cropping/control/@props/predefined'), PREDEF_CROP.map(v => ({ v, text: v === 'NONE' ? 'custom / none' : ratio(v) })), { extra: cropReads }),
+          ...['top', 'bottom', 'left', 'right'].map(k => awjNumber(k[0].toUpperCase() + k.slice(1), S(`cropping/control/@props/${k}`), 0, 8192, { cls: 'num' })),
+          awjTrigger(S('cropping/control/@props/xUpdate'), 'Apply crop', { cls: 'primary', reads: cropReads })),
+        awjToggle(MNG.plugControl(i, p, 'enableCropFinder'), 'Crop finder', { small: true, title: 'The device looks for black borders and proposes a crop' })),
+      el('details', { class: 'group', open: keyMode && keyMode !== 'DISABLE' }, el('summary', {}, 'Keying ', keyerOk === false && cutFillOk !== true ? awjChip('off', 'not on this input') : keyMode && keyMode !== 'DISABLE' ? awjChip('on', awjWords(keyMode)) : null),
+        el('div', { class: 'row wrap' },
+          awjSelect('Keyer', S('keying/control/@props/mode'), [{ v: 'DISABLE', text: 'off' }, ...(keyerOk !== false ? [{ v: 'CHROMA', text: 'chroma' }, { v: 'LUMA', text: 'luma' }] : []), ...(cutFillOk === true ? [{ v: 'CUT_AND_FILL', text: 'cut and fill' }] : [])]),
+          awjSelect('Show mask', S('keying/control/@props/displayMask'), [{ v: 'NONE', text: 'no' }, { v: 'BLACK_N_WHITE', text: 'black and white' }, { v: 'COLOR', text: 'colour' }])),
+        keyMode === 'CHROMA' ? el('div', {},
+          awjRange('Hue', S('keying/chroma/@props/hue'), 0, 359, v => v + '°'),
+          awjRange('Transparency', S('keying/chroma/@props/transparency'), 0, 100),
+          awjRange('Colour correction', S('keying/chroma/@props/colorCorrection'), 0, 100),
+          awjRange('Foreground', S('keying/chroma/@props/foreground'), 0, 100),
+          awjRange('Background', S('keying/chroma/@props/background'), 0, 100)) : null,
+        keyMode === 'LUMA' ? el('div', {},
+          awjRange('Luma', S('keying/luma/@props/luma'), 0, 255),
+          awjRange('Foreground', S('keying/luma/@props/foreground'), 0, 100),
+          awjRange('Transparency', S('keying/luma/@props/transparency'), 0, 100),
+          awjToggle(S('keying/luma/@props/invert'), 'Invert', { small: true })) : null,
+        keyMode === 'CUT_AND_FILL' ? el('div', {},
+          el('div', { class: 'row wrap' },
+            awjChip(store.pval(S('keying/cutNFill/status/@props/status')) === 'SYNCED_AND_PHASED' ? 'on' : 'bad', awjWords(store.pval(S('keying/cutNFill/status/@props/status')))),
+            el('span', { class: 'hint', text: `Cut from ${mngInputs.name(store.pval(S('keying/cutNFill/status/@props/source')))} · phase ${store.pval(S('keying/cutNFill/status/@props/phaseShift')) ?? '·'}` })),
+          el('div', { class: 'hint', text: 'The fill is this input; the cut (the alpha) is the next input, which the device names above. Both must be the same format and locked together.' })) : null,
+        keyMode && keyMode !== 'DISABLE' ? el('div', { class: 'row wrap' },
+          awjToggle(S('keying/assistant/@props/enable'), 'Assistant', { small: true, title: 'Sample a region of the picture to set the key' }),
+          ...['top', 'bottom', 'left', 'right'].map(k => awjNumber(k, S(`keying/assistant/@props/${k}`), 0, 65535, { cls: 'num' })),
+          awjTrigger(S('keying/assistant/@props/xGrab'), 'Grab', { reads: ['hue', 'transparency', 'foreground', 'background'].map(k => S(`keying/chroma/@props/${k}`)) })) : null),
+      el('details', { class: 'group' }, el('summary', { text: 'EDID' }),
+        edid ? (edid.bad ? el('div', { class: 'hint', text: 'The plug reports no EDID (blank).' })
+          : el('div', { class: 'hint', text: `Presenting ${edid.mfr} ${edid.name || '(unnamed)'} — preferred ${edid.pw}×${edid.ph}${edid.rate ? ' at ' + edid.rate + ' Hz' : ''}, ${edid.year}, ${edid.ext} extension block${edid.ext === 1 ? '' : 's'}` + [1, 2, 3].map(b => store.pval(MNG.plugEdidExt(i, p, b, 'extensionType'))).filter(t => t && t !== 'UNKNOWN').map(t => ' · ' + awjWords(t)).join('') + '.' }))
+          : el('div', { class: 'hint', text: 'No EDID read yet.' }),
+        el('div', { class: 'row wrap' },
+          el('label', { class: 'field' }, 'From the library', (() => {
+            fetchEdidLibrary();
+            const s = el('select', { onchange: (e) => { edidPick = e.target.value; store.notify(); } });
+            s.append(el('option', { value: '', selected: !edidPick, text: '— pick an EDID —' }));
+            for (const k of mngEdidKeys()) {
+              if (store.pval(MNG.edidBankStatus(k, 'isAvailable')) !== true) continue;
+              s.append(el('option', { value: k, selected: k === edidPick, text: mngEdidName(k) }));
+            }
+            return s;
+          })()),
+          el('button', { class: 'btn primary', disabled: !edidPick, onclick: () => {
+            // The library entry's bytes go to the plug as they are; the
+            // device answers with nothing, so the plug is read back after it
+            // has had time to re-present itself.
+            const go = () => { const d = store.pval(MNG.edidBankStatus(edidPick, 'data')); if (!Array.isArray(d)) return; store.pset(MNG.plugEdidCmd(i, p), d); setTimeout(() => { store.pget(MNG.plugEdidStatus(i, p)); for (let b = 1; b <= 3; b++) store.pget(MNG.plugEdidExt(i, p, b, 'extensionType')); }, 800); };
+            if (Array.isArray(store.pval(MNG.edidBankStatus(edidPick, 'data')))) go(); else { store.pget(MNG.edidBankStatus(edidPick, 'data')); setTimeout(go, 600); }
+          } }, 'Load onto this plug'),
+          el('button', { class: 'btn ghost', onclick: () => store.pget(MNG.plugEdidStatus(i, p)) }, 'Re-read')),
+        el('div', { class: 'hint', text: 'The library holds the device’s factory EDIDs and any saved from its editor; loading one writes its 256 bytes to the plug. Editing EDIDs byte by byte is the Web RCS’s job, not this page’s.' })),
+      el('div', { class: 'row' },
+        awjTrigger(S('@props/xReset'), 'Reset plug settings', { title: 'Every setting of this plug back to the device’s defaults', then: () => { plugRead.delete(`${i}:${p}`); setTimeout(() => { fetchPlug(i, p); store.notify(); }, 400); } })));
+  }
+
   function render() {
     settle();
     const rows = [];
     for (let i = 1; i <= MNG_INPUTS; i++) rows.push(mngInputs.get(i));
     const fitted = rows.filter(r => r.available !== false);
+    if (!fitted.some(r => r.n === sel) && fitted.length) sel = fitted[0].n;
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Inputs' }),
-        el('span', { class: 'hint', text: 'Every input the unit has, its active plug and signal, and where it is on air — from the device’s own tally lists' })),
-      el('div', { class: 'panel' },
-        awjLiveRow('input and tally changes'),
-        el('table', { class: 'grid' },
-          el('thead', {}, el('tr', {}, ...['', 'Input', 'Label', 'Plug', 'Type', 'Signal', 'On air', ''].map(h => el('th', { text: h })))),
-          el('tbody', {}, ...fitted.map(row))),
-        rows.length > fitted.length ? el('div', { class: 'hint pad', text: `${rows.length - fitted.length} of the model’s ${MNG_INPUTS} inputs are not fitted on this unit.` }) : null));
+        el('span', { class: 'hint', text: 'Every input the unit has, its active plug and signal, where it is on air — and, for one at a time, everything its plug can be set to' })),
+      el('div', { class: 'panel' }, awjLiveRow('input and tally changes')),
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' },
+          el('table', { class: 'grid rows' },
+            el('thead', {}, el('tr', {}, ...['', 'Input', 'Label', 'Plug', 'Type', 'Signal', 'On air', ''].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...fitted.map(row))),
+          rows.length > fitted.length ? el('div', { class: 'hint pad', text: `${rows.length - fitted.length} of the model’s ${MNG_INPUTS} inputs are not fitted on this unit. Tap an input to set it up.` }) : el('div', { class: 'hint pad', text: 'Tap an input to set it up.' })),
+        el('div', { class: 'panel' }, fitted.length ? editor(sel) : el('div', { class: 'hint pad', text: store.connected ? 'No input has answered yet.' : 'Waiting for the processor.' }))));
   }
   return { enter, render };
 })();
 
 // ---------- AWJ: Screens ----------
 VIEWS.lpscreens = (() => {
+  let picked = new Set();   // destination ids ticked for a grouped take
   function enter() {
     // The server inventories on connect; this covers a view opened later, or
     // after a device has been away.
@@ -4632,7 +5814,9 @@ VIEWS.lpscreens = (() => {
     const { program, preview } = D.buffers(d);
     const times = D.takeTimes(d).map(awjSeconds).join(' / ');
     const mem = ['program', 'preview'].map(w => D.memoryOn(d, w));
-    return el('tr', {},
+    return el('tr', { class: picked.has(d.id) ? 'sel' : '' },
+      D.takeMany ? el('td', {}, el('input', { type: 'checkbox', checked: picked.has(d.id), title: 'Include in the grouped take',
+        onchange: (e) => { if (e.target.checked) picked.add(d.id); else picked.delete(d.id); store.notify(); } })) : null,
       el('td', { text: d.id }),
       el('td', { text: D.label(d) || '—' }),
       el('td', { class: 'val', text: t == null ? '·' : String(t) }),
@@ -4661,7 +5845,7 @@ VIEWS.lpscreens = (() => {
     const D = awj();
     const used = D.destinations();
     const mismatch = awjMismatch();
-    const heads = ['Screen', 'Label', 'Transition', 'PGM / PRW',
+    const heads = [...(D.takeMany ? [''] : []), 'Screen', 'Label', 'Transition', 'PGM / PRW',
       ...(D.showsMemory ? ['Memory'] : []), D.takeTimesHead, 'State', ...(D.setTbar ? ['T-bar'] : []), ''];
     return el('div', {},
       el('div', { class: 'view-head' },
@@ -4672,9 +5856,23 @@ VIEWS.lpscreens = (() => {
       mismatch ? el('div', { class: 'panel' }, el('div', { class: 'hint bad pad', text: mismatch })) : null,
       el('div', { class: 'panel' },
         awjLiveRow('transition changes'),
-        D.takeMany && used.length ? el('div', { class: 'row' },
-          el('button', { class: 'btn pgm', onclick: () => D.takeMany(used) }, `Take all (${used.length})`),
-          el('span', { class: 'hint', text: 'Every destination in service, each with its own take time.' })) : null,
+        D.takeMany && used.length ? (() => {
+          const sel = used.filter(d => picked.has(d.id));
+          const pick = (ds) => { picked = new Set(ds.map(d => d.id)); store.notify(); };
+          return el('div', { class: 'row wrap' },
+            el('button', { class: 'btn pgm', onclick: () => D.takeMany(used) }, `Take all (${used.length})`),
+            el('button', { class: 'btn pgm', disabled: !sel.length, onclick: () => D.takeMany(sel) }, `Take selected (${sel.length})`),
+            el('button', { class: 'btn ghost', disabled: !sel.length, onclick: () => { for (const d of sel) D.cut(d); } }, 'Cut selected'),
+            D.setTbar ? el('input', { class: 'tbar', type: 'range', min: 0, max: 65535, step: 1, value: sel.length ? (D.tbar(sel[0]) ?? 0) : 0, disabled: !sel.length, title: 'T-bar over the selected destinations',
+              onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+              oninput: (e) => { for (const d of sel) D.setTbar(d, +e.target.value); } }) : null,
+            el('div', { class: 'seg' },
+              el('button', { onclick: () => pick(used) }, 'All'),
+              el('button', { onclick: () => pick(used.filter(d => d.kind === 'screen')) }, 'Screens'),
+              el('button', { onclick: () => pick(used.filter(d => d.kind === 'aux')) }, 'Auxes'),
+              el('button', { onclick: () => pick([]) }, 'None')),
+            el('span', { class: 'hint', text: 'Tick destinations to take, cut or T-bar them as one group; each keeps its own take time.' }));
+        })() : null,
         D.quickPreset && used.length ? quickPresetRow(D, used) : null,
         used.length
           ? el('table', { class: 'grid' },
@@ -4722,6 +5920,7 @@ VIEWS.lppresets = (() => {
 
   function enter() {
     if (!awj().banks.some(b => b.kind === bankKind)) bankKind = awj().banks[0].kind;
+    if (awjDialect() === 'mng') mngSaveFilters.reset();
   }
 
   function recall(slot) {
@@ -4864,6 +6063,7 @@ VIEWS.lppresets = (() => {
           ? el('div', { class: 'hint pad', text: `A master save from ${target.toLowerCase()} also stores every screen and auxiliary in service into its own bank, at the same slot number as the master. Slots already in use block the save.` })
           : null,
         blocked ? el('div', { class: 'hint bad pad', text: blocked }) : null,
+        mode === 'save' && awjDialect() === 'mng' ? mngSaveFilters.panel(b, dest !== null ? awjDest(dest) : null) : null,
         el('div', { class: 'mem-grid' }, ...slots),
         mode === 'label' && armed !== null ? el('div', { class: 'row' },
           el('label', { text: `Slot ${armed} ` }),

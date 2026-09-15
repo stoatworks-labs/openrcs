@@ -419,7 +419,58 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
 - **Inputs** (Midra 4K / Alta 4K) — every input the unit has, with its
   picture, its active plug, connector and the signal on it, **Freeze** and
   **Black**, and where the device says it is on air (program / preview) — from
-  the processor's own tally lists, so nothing is inferred.
+  the processor's own tally lists, so nothing is inferred. Tap an input to set
+  its plug up: which plug is active, its label, signal type and HDCP from the
+  lists the device allows, HDR mode and nits, the picture (brightness through
+  RGB offsets, sharpness, pulldown), aspect (what the signal is, what to show
+  it as, how a layer fills it), a predefined or typed **crop** applied with the
+  device's own trigger, the **keyer** — off, chroma, luma or cut and fill, with
+  the parameters of whichever is chosen and the sampling assistant; the device
+  says which inputs have a keyer and which can be a fill, and offers only
+  those — and the **EDID** the plug presents, decoded (make, name, preferred
+  timing) and replaceable from the device's library of factory and saved
+  EDIDs.
+- **Audio** (Midra 4K / Alta 4K) — the clock and rate, then every routing
+  point the device has: for each screen and auxiliary the **audio layer** its
+  program and preview buffers carry (one source per buffer, saved with the
+  memory and swapped by the take), whether its output follows that layer, a
+  live layer's content or a source routed straight; each video output (the
+  screen it shows, direct, or none), the multiviewer (a widget or direct, and
+  which widget shows VU meters), the two line outs and the four Dante groups
+  (a screen or direct, and the channel pair), mutes on all of them, the ten
+  **custom sources** built channel by channel from any embedded, Dante or
+  analogue channel the unit lists, and **level readings** of one input and one
+  output at a time, on request. What the quick preset does to audio is here
+  too. The Dante panel shows the card's state and its channels' subscriptions;
+  the subscriptions themselves are made in Dante Controller.
+- **Setup** (Midra 4K / Alta 4K) — the device's **configuration**: a template
+  to load, the four layer resources (off, one seamless layer or two split ones,
+  and which screen), every output's role (screen, auxiliary, multiviewer, off)
+  and the screen or auxiliary it feeds, which screens and auxiliaries are in
+  service and each screen's background layer type — every choice from the
+  device's own validity lists — then **Compute**, a side-by-side of the
+  computed and the applied state, and **Apply** behind a second tap, since
+  applying rebuilds the whole pipeline and blanks every output for a few
+  seconds. The second tab is each screen's **canvas**: one output, a grid of
+  outputs (columns, rows, empty-cell size, gaps, which cell each output sits
+  in) or free placement (canvas size and each output's top-left corner), each
+  applied with the device's trigger, plus the screen's **test pattern**.
+- **Presets** (Midra 4K / Alta 4K) — in Save mode a panel shows **what a save
+  records**: for a screen the categories (source, position, size, opacity,
+  crop, mask, border, transitions, effects, flying curve, timing, speed,
+  audio), which live layers, and whether the background and top layers go in;
+  for an auxiliary its four categories; for the master bank which screens and
+  auxiliaries and what of each. The filter is the device's own and stays set;
+  a memory recalls only what it recorded.
+- **Screens** (Midra 4K / Alta 4K) — tick destinations to **take, cut or
+  T-bar them as one group** (All / Screens / Auxes / None pick them quickly);
+  each keeps its own take time.
+- **Layers** (Midra 4K / Alta 4K) — drags **snap** to the canvas edges and
+  centre lines and to the other layers' edges and centres (hold Alt to drag
+  free); the arrow keys **nudge** the selected layer a pixel, ten with Shift,
+  once the canvas has focus; **Copy layer** takes every property the panel
+  holds, source included, and **Paste** puts it onto any layer of any screen or
+  buffer.
 - **Multiviewer** (Midra 4K / Alta 4K) — the monitoring output's windows on a
   canvas at that output's size: drag to move, corners to resize, **Quad / 3×3
   / 4×3 / 4×4** grids over the windows this unit can use. The panel sets a
@@ -432,7 +483,18 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   and — tap one — its label, a format from the list the device allows for
   that role (applied through the device's own update trigger), a **test
   pattern** switched on and off, and the picture settings: gamma, brightness,
-  contrast, saturation, hue and RGB gains.
+  contrast, saturation, hue and RGB gains. Below those: the **area of
+  interest** (the part of the format the screen's canvas fills, in thousandths,
+  with overscan) and the **pitch** for LED walls, each applied with its own
+  trigger; HDR mode and nits with what the output is sending; colorimetry; the
+  plug's pixel encoding, HDCP policy (from the list the plug allows), embedded
+  audio and SDI level, with whether HDCP is up on the link; the **connected
+  display's EDID**, decoded, with a button to save it into the device's EDID
+  library under a name and slot so an input can present it; and **custom
+  formats** — sixteen slots to name and erase, and an editor that takes a
+  size and rate (CVT) or every porch and sync (full), **Check**s it on the
+  device, shows the totals and pixel clock it worked out, and saves it into a
+  slot, after which every output's format list offers it.
 - **Stills** (Midra 4K / Alta 4K) — the fifty-slot still library with each
   image's name and size, erase behind a second tap, a **capture** of any input,
   output or the multiviewer into the next free slot or one you pick, and every
@@ -440,14 +502,24 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   points at and its picture.
 - **System** (Midra 4K / Alta 4K) — model, series, firmware and serial, the
   network address, the temperature sensors and case fans with their alarms,
-  the front-panel lock and brightness, and a reboot behind a second tap.
+  the front-panel lock and brightness, and a reboot behind a second tap. Below:
+  the two **configuration slots** on the device — back the whole configuration
+  up into one under a label (every module the device lists, stills included),
+  label, **restore** (behind a second tap; the device unpacks the slot, applies
+  every module it holds and reboots) or erase it; export to a file and import
+  from USB stay with the Web RCS — and **streaming**: ten RTMP destinations
+  (label, URL, key, whether keys are kept), which one to stream to, the picture
+  source, profile and quality, the audio (following the picture or a source,
+  which pair, mute) and start / stop with the device's status.
 - **Inspector** (every AWJ family) — every property this bridge has read so
   far, searchable; a box to read any path and write any value as JSON; and
   the wire log. What the dedicated views do not cover yet is reachable here.
 
-Three things the simulators accept but do not act on, so they are written but
-unproven: a timer never leaves *idle*, a capture never completes, and the tally
-lists never fill.
+What the simulators accept but do not act on is written but unproven: a timer
+never leaves *idle*, a capture never completes, the tally lists never fill, a
+stream never starts, a custom format is never erased (the slot stays), a grid
+change never moves the canvas size, and no simulator input reports a chroma /
+luma keyer (cut and fill is offered on the odd inputs and was set).
 
 The pictures come from the processor's own HTTP server — port 80 on a unit.
 A simulator serves them wherever it was started, so **Connection** has a

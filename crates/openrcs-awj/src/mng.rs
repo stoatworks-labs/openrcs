@@ -1042,6 +1042,728 @@ pub fn output_plug_status(key: &str, plug: u8, prop: &str) -> String {
     format!("DeviceObject/$output/@items/{key}/$plug/@items/{plug}/status/@props/{prop}")
 }
 
+/// A plug's settings on an output: `enableHdcp` (`DISABLE` / `AUTO` /
+/// `HDCP_1X` / `HDCP_2X_TYPE_0` / `HDCP_2X_TYPE_1`), `pixelEncoding` (from
+/// the status `pixelEncodingFormatValidity`), `sdiTransport` (`LEVEL_A` /
+/// `LEVEL_B`), `forceDviMode`.
+pub fn output_plug_control(key: &str, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/$plug/@items/{plug}/control/@props/{prop}")
+}
+
+/// Embedded audio on an output plug: `DISABLE`, `AUTO`, `2_CHANNELS` …
+/// `8_CHANNELS`, from the plug's `audio/status/@props/modeValidity`.
+pub fn output_plug_audio_mode(key: &str, plug: u8) -> String {
+    format!("DeviceObject/$output/@items/{key}/$plug/@items/{plug}/audio/control/@props/mode")
+}
+
+/// The EDID of the display on an output plug: `isAvailable`, `isValid`,
+/// `data` (the 256 bytes), `hashCode`. Read-only; save it into the library
+/// with [`edid_edit`] + [`edid_save`] to present it on an input.
+pub fn output_plug_edid(key: &str, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/$plug/@items/{plug}/edid/status/@props/{prop}")
+}
+
+/// An output's area of interest — the part of its format the screen's canvas
+/// fills: `mode` (`FIT_FORMAT` / `CUSTOM`), `overscan`, `top`, `left`,
+/// `width`, `height` in thousandths of the format (`100000` = all of it), and
+/// the trigger `xUpdate` that applies them.
+pub fn output_aoi(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/canvas/aoi/@props/{prop}")
+}
+
+/// Pitch compensation for LED walls: `pitchRatioH` / `pitchRatioV` (×1000)
+/// and the trigger `xUpdate`. Answered by the real Pulse 4K in the field
+/// test sweep.
+pub fn output_pitch(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/canvas/pitch/@props/{prop}")
+}
+
+/// The output canvas as built: `aoiWidth`, `aoiHeight`, `pitchedWidth`,
+/// `pitchedHeight`, `maxWidth`, `maxHeight`, `isUsedInScreen`, `top`, `left`.
+pub fn output_canvas_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/canvas/status/@props/{prop}")
+}
+
+/// An output's HDR: `mode` (`AUTO` / `SDR` / `HDR10` / `HLG`) and `nitLevel`
+/// (`AUTO` or `<n>_NITS`).
+pub fn output_hdr(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/hdr/control/@props/{prop}")
+}
+
+/// What the output is sending: `mode`, `nitLevel`, `warning`.
+pub fn output_hdr_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/hdr/status/@props/{prop}")
+}
+
+// ---------------------------------------------------------- custom formats
+
+/// Custom output format slots, `1`…`16`.
+pub const CUSTOM_FORMATS: u8 = 16;
+
+/// The custom-format editor's settings: `mode` (`CVT` / `FULL`), `userName`,
+/// `cvtReducedBlk`, `fullCvtHutil` / `fullCvtVutil` (active size),
+/// `fullCvtRate` (mHz), and in `FULL` mode the sync widths, porches and
+/// polarities (`fullHsync`, `fullHbackPorch`, `fullHfrontPorch`,
+/// `fullHsyncPol`, and the `V` set).
+pub fn custom_format_setting(prop: &str) -> String {
+    format!("DeviceObject/customFormats/create/settings/@props/{prop}")
+}
+
+/// The editor's triggers: `xCheck` validates the timing, `xReset` clears it.
+pub fn custom_format_control(prop: &str) -> String {
+    format!("DeviceObject/customFormats/create/control/@props/{prop}")
+}
+
+/// The editor's verdict: `checkStatus` (`NEVER_CHECKED` / `CHECKED` /
+/// `MODIFIED`), `checkResult` (`VALID` / `INVALID`), `displayName`,
+/// `hTotal`, `vTotal`, `pixelFrequency`, `lineFrequency`.
+pub fn custom_format_status(prop: &str) -> String {
+    format!("DeviceObject/customFormats/create/status/@props/{prop}")
+}
+
+/// File the checked timing in a slot. A trigger.
+pub fn custom_format_save(slot: u8) -> String {
+    format!("DeviceObject/customFormats/create/save/$bank/@items/{slot}/@props/xRequest")
+}
+
+/// A slot's control: `userName`, or the trigger `xDelete`.
+pub fn custom_format_slot(slot: u8, prop: &str) -> String {
+    format!("DeviceObject/customFormats/$bank/@items/{slot}/control/@props/{prop}")
+}
+
+/// A slot's status: `isValid`, `displayName`, `hUtil`, `vUtil`, `rate`,
+/// `mode` and the full timing.
+pub fn custom_format_slot_status(slot: u8, prop: &str) -> String {
+    format!("DeviceObject/customFormats/$bank/@items/{slot}/status/@props/{prop}")
+}
+
+// ------------------------------------------------------------- input plugs
+
+/// Whether a plug exists on input `n`.
+pub fn plug_is_available(n: u8, plug: u8) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/status/@props/isAvailable")
+}
+
+/// A plug's control: `signalType` (from the status `signalTypeValidity`),
+/// `enableHdcp` (from `hdcpValidity`), `enableCropFinder`, `label`.
+pub fn plug_control(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/control/@props/{prop}")
+}
+
+/// A plug's status: `type`, `signalTypeValidity`, `hdcpValidity`,
+/// `canUseLutProcessing`.
+pub fn plug_status(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/status/@props/{prop}")
+}
+
+/// The signal on a plug: `isValid`, `formatName`, `currentFormat`,
+/// `scanType`, `formatWidth`, `formatHeight`, `fieldFrequency`, `colorSpace`.
+pub fn plug_signal(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/status/signal/@props/{prop}")
+}
+
+/// Any setting of a plug by the tail of its path under `settings`:
+/// `color/@props/brightness`, `processing/@props/sharpness`,
+/// `aspect/@props/transformTo`, `cropping/control/@props/top`,
+/// `keying/control/@props/mode`, `keying/chroma/@props/hue`,
+/// `keying/luma/@props/luma`, `keying/cutNFill/control/@props/curve`,
+/// `keying/assistant/@props/xGrab`, `@props/xReset` and so on.
+pub fn plug_setting(n: u8, plug: u8, tail: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/settings/{tail}")
+}
+
+/// The keyer's mode on a plug: `DISABLE`, `CHROMA`, `LUMA`, `CUT_AND_FILL`.
+/// [`input_keying_is_available`] says whether the input has a keyer at all
+/// and [`input_cut_fill_is_available`] whether it can be a fill.
+pub fn plug_keying_mode(n: u8, plug: u8) -> String {
+    plug_setting(n, plug, "keying/control/@props/mode")
+}
+
+/// Whether input `n` carries a chroma / luma keyer.
+pub fn input_keying_is_available(n: u8) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/status/keying/@props/isAvailable")
+}
+
+/// Whether input `n` can be the fill of a cut-and-fill pair — the cut is the
+/// next input, which the plug's `keying/cutNFill/status/@props/source` names.
+pub fn input_cut_fill_is_available(n: u8) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/status/keying/cutNFill/@props/isAvailable")
+}
+
+/// A plug's HDR handling: `mode` (`AUTO` / `SDR` / `HDR10` / `HLG`),
+/// `nitLevel`.
+pub fn plug_hdr(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/control/hdr/@props/{prop}")
+}
+
+/// What the plug sees: `mode`, `nitLevel`, `warning`.
+pub fn plug_hdr_status(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/status/hdr/@props/{prop}")
+}
+
+/// The EDID a plug presents to its source, as 256 bytes. Write here to
+/// change it — typically the `data` of a library entry.
+pub fn plug_edid_cmd(n: u8, plug: u8) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/edid/cmd/@props/data")
+}
+
+/// The EDID a plug is presenting, as 256 bytes. Read-only.
+pub fn plug_edid_status(n: u8, plug: u8) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/edid/status/@props/data")
+}
+
+/// The extension blocks of a plug's EDID, `BLOCK_1`…`BLOCK_3`:
+/// `extensionType` (`CEA_861` / `UNKNOWN`), `isHdmiCompatible`,
+/// `isAudioCompatible`, `isHdrCompatible`, `prefFormatName`.
+pub fn plug_edid_extension(n: u8, plug: u8, block: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/edid/status/$extension/@items/BLOCK_{block}/@props/{prop}")
+}
+
+// ------------------------------------------------------------ EDID library
+
+/// User slots in the EDID library, `1`…`64`; the factory entries beside them
+/// are keyed by name (`DEFAULT_HDMI_2_0`, `DEFAULT_DP_UHD60`…).
+pub const EDID_SLOTS: u8 = 64;
+
+/// A library entry's control: `label`, `xRequestPrefFormat`, and the
+/// triggers `xUpdate`, `xDelete`. The key is a slot number or a factory name.
+pub fn edid_bank(key: &str, prop: &str) -> String {
+    format!("DeviceObject/system/edid/$bank/@items/{key}/control/@props/{prop}")
+}
+
+/// A library entry's status: `isAvailable`, `isProtected` (factory),
+/// `productName`, `prefFormatName`, `hid`, `dataSize`, `data`.
+pub fn edid_bank_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/system/edid/$bank/@items/{key}/status/@props/{prop}")
+}
+
+/// The EDID editor: `label` and `data`. [`edid_save`] files it in a slot,
+/// [`edid_load`] fills it from one.
+pub fn edid_edit(prop: &str) -> String {
+    format!("DeviceObject/system/edid/edit/control/@props/{prop}")
+}
+
+/// What the editor holds, decoded: `productName`, `serialNumber`,
+/// `prefFormatAvailable`, `hashCode`.
+pub fn edid_edit_status(prop: &str) -> String {
+    format!("DeviceObject/system/edid/edit/status/@props/{prop}")
+}
+
+/// Save the editor into a user slot. A trigger.
+pub fn edid_save(slot: u8) -> String {
+    format!("DeviceObject/system/edid/save/$bank/@items/{slot}/@props/xRequest")
+}
+
+/// Load a user slot into the editor. A trigger.
+pub fn edid_load(slot: u8) -> String {
+    format!("DeviceObject/system/edid/load/$bank/@items/{slot}/@props/xRequest")
+}
+
+// --------------------------------------------------------- screen canvases
+
+/// How a screen is built from its outputs: `SINGLE_OUT`, `GRID` or `FREE`,
+/// from `status/@props/modeValidity`.
+pub fn screen_mode(screen: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/control/@props/mode")
+}
+
+/// The modes the applied configuration allows a screen.
+pub fn screen_mode_validity(screen: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/status/@props/modeValidity")
+}
+
+/// Whether the outputs of a screen's canvas overlap.
+pub fn screen_canvas_has_overlap(screen: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/status/@props/hasOverlapWarning")
+}
+
+/// A grid canvas: `columnQty`, `rowQty`, `emptyCellWidth`, `emptyCellHeight`
+/// and the trigger `xUpdate` (plus `xSoftedgeUpdate` on models that blend).
+pub fn screen_grid(screen: u8, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/grid/control/@props/{prop}")
+}
+
+/// The grid as built: `columnQty`, `rowQty`.
+pub fn screen_grid_status(screen: u8, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/grid/status/@props/{prop}")
+}
+
+/// Where an output sits in a screen's grid: `column`, `row` (strings, `"1"`…).
+pub fn screen_grid_output(screen: u8, output: &str, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/grid/$output/@items/{output}/control/@props/{prop}")
+}
+
+/// The gap after column / row `i` of a grid, in pixels (negative overlaps).
+pub fn screen_grid_spacing(screen: u8, dim: GridDim, i: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/grid/${}Spacing/@items/{i}/control/@props/size", dim.word())
+}
+
+/// A grid's two dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridDim {
+    Column,
+    Row,
+}
+
+impl GridDim {
+    fn word(self) -> &'static str {
+        match self {
+            GridDim::Column => "column",
+            GridDim::Row => "row",
+        }
+    }
+}
+
+/// Apply a free canvas. A trigger.
+pub fn screen_free_update(screen: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/free/control/@props/xUpdate")
+}
+
+/// A free canvas's size: `mode` (`AUTO` / `CUSTOM`), `sizeH`, `sizeV`.
+pub fn screen_free_size(screen: u8, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/free/control/size/@props/{prop}")
+}
+
+/// Where an output's top-left corner sits on a free canvas: `left`, `top`.
+pub fn screen_free_output(screen: u8, output: &str, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/free/control/$output/@items/{output}/@props/{prop}")
+}
+
+/// A screen's test pattern: `type` (`NONE`, `GEOMETRIC`, grey scales, colour
+/// bars, `GRID_CUSTOM`, `SMPTE`, gradients, `CROSSHATCH`, `CHECKERBOARD`,
+/// `SOFTEDGE`, `THIRTY_BPP_1/2`) and `inhibit`.
+pub fn screen_pattern(screen: u8, prop: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/pattern/control/@props/{prop}")
+}
+
+// --------------------------------------------------------------- preconfig
+
+/// The preconfiguration's triggers: `xCompute` works out the pipeline from
+/// the working configuration, `xApply` rebuilds the device to it (every
+/// output goes dark for a few seconds), `xCopyFromCurrent` fills the working
+/// configuration from what is applied.
+pub fn preconfig_control(prop: &str) -> String {
+    format!("DeviceObject/preconfig/control/@props/{prop}")
+}
+
+/// The template: `select` (from the status `templateValidity` — `MIXER`,
+/// `MATRIX`, and on some models `BLEND`, `BLEND_VERTICAL`) and the trigger
+/// `xLoad`.
+pub fn preconfig_template(prop: &str) -> String {
+    format!("DeviceObject/preconfig/control/template/@props/{prop}")
+}
+
+/// A layer resource (scaler) `1`…`4`: `mode` (`DISABLE` / `SEAMLESS` for one
+/// layer / `SPLIT` for two) and `useOnScreen`.
+pub fn preconfig_resource(n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/control/$resources/@items/{n}/@props/{prop}")
+}
+
+/// An output in the working configuration: `mode` (`DISABLE`, `SCREEN_FORMAT`,
+/// `AUX`, `AUX_INPUT_AND_PROGRAM`, `AUX_INPUT_ONLY`, `MULTIVIEWER`),
+/// `useOnScreen`, `useOnAux`.
+pub fn preconfig_output(key: &str, prop: &str) -> String {
+    format!("DeviceObject/preconfig/control/$output/@items/{key}/@props/{prop}")
+}
+
+/// A screen in the working configuration: `enable` and `backgroundLayerType`
+/// (`DISABLE` / `LIVE_OR_FRAME` / `ONLY_LIVE` / `ONLY_FRAME`).
+pub fn preconfig_screen(n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/control/$screen/@items/{n}/@props/{prop}")
+}
+
+/// Whether an auxiliary is in the working configuration.
+pub fn preconfig_aux_enable(n: u8) -> String {
+    format!("DeviceObject/preconfig/control/$auxiliaryScreen/@items/{n}/@props/enable")
+}
+
+/// The preconfiguration's status: `hasBeenAppliedOnce`, `applyDone`,
+/// `computeDone`, `templateValidity`, `screenValidity`, `auxValidity`.
+pub fn preconfig_status(prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/@props/{prop}")
+}
+
+/// What a resource may be set to: `modeValidity`, `useOnScreenValidity`.
+pub fn preconfig_resource_validity(n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$resources/@items/{n}/@props/{prop}")
+}
+
+/// What an output may be set to: `modeValidity`, `useOnScreenValidity`,
+/// `useOnAuxValidity`.
+pub fn preconfig_output_validity(key: &str, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$output/@items/{key}/@props/{prop}")
+}
+
+/// What a screen may be set to: `backgroundLayerTypeValidity`,
+/// `topLayerValidity`.
+pub fn preconfig_screen_validity(n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$screen/@items/{n}/@props/{prop}")
+}
+
+/// The two states a preconfiguration exists in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreconfigState {
+    /// The last computed one, not yet applied.
+    New,
+    /// The applied one — what the device is running.
+    Current,
+}
+
+impl PreconfigState {
+    fn key(self) -> &'static str {
+        match self {
+            PreconfigState::New => "NEW",
+            PreconfigState::Current => "CURRENT",
+        }
+    }
+}
+
+/// A screen in a computed or applied state: `enable`, `outputCount`,
+/// `$output` (the store's `outputList` — a list-valued property is spelled
+/// like a collection on the wire, and the device answers under that name
+/// whichever way it is asked), `layerCount`, `backgroundLayerType`,
+/// `isCoveringEnabled`.
+pub fn preconfig_state_screen(state: PreconfigState, n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$state/@items/{}/$screen/@items/{n}/@props/{prop}", state.key())
+}
+
+/// An auxiliary in a computed or applied state: `mode`, `$output`.
+pub fn preconfig_state_aux(state: PreconfigState, n: u8, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$state/@items/{}/$auxiliaryScreen/@items/{n}/@props/{prop}", state.key())
+}
+
+/// An output in a computed or applied state: `mode`, `usedOnScreen`,
+/// `usedOnAux`. [`output_role`] is the `CURRENT` case.
+pub fn preconfig_state_output(state: PreconfigState, key: &str, prop: &str) -> String {
+    format!("DeviceObject/preconfig/status/$state/@items/{}/$output/@items/{key}/@props/{prop}", state.key())
+}
+
+// ----------------------------------------------------- configuration slots
+
+/// The two configuration slots on the device, `SLOT_1` and `SLOT_2`.
+pub const CONFIG_SLOTS: u8 = 2;
+
+/// A configuration slot's label.
+pub fn config_slot_label(slot: u8) -> String {
+    format!("DeviceObject/system/configuration/storage/$bank/@items/SLOT_{slot}/control/@props/label")
+}
+
+/// A configuration slot's status: `status` (`EMPTY` / `VALID` /
+/// `VALID_WARNING` / `INVALID`), `timestamp`, `versionUpdater`, `module`.
+pub fn config_slot_status(slot: u8, prop: &str) -> String {
+    format!("DeviceObject/system/configuration/storage/$bank/@items/SLOT_{slot}/status/@props/{prop}")
+}
+
+/// Erase a configuration slot. A trigger.
+pub fn config_slot_delete(slot: u8) -> String {
+    format!("DeviceObject/system/configuration/storage/$bank/@items/SLOT_{slot}/delete/cmd/@props/xRequest")
+}
+
+/// The backup command: `destination` (`BANK` for a slot, `EXTERNAL` for a
+/// file), `slot`, `path`, `label`, and `xRequest` — which takes the **list
+/// of modules** to back up (`GENERAL`, `INPUT`, `PRESET`, `SCREEN`,
+/// `PRESET_BANK`, `OUTPUT`, `AUDIO`, `MTVW`…), not a flag.
+pub fn config_export(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/export/cmd/@props/{prop}")
+}
+
+/// The backup's progress: `status`, `progress`, `fileName`.
+pub fn config_export_status(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/export/status/@props/{prop}")
+}
+
+/// The first half of a restore — unpack a slot or file: `source` (`BANK` /
+/// `EXTERNAL`), `slot`, `path`, and the flag triggers `xRequest`, `xCancel`.
+pub fn config_import_extract(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/import/extract/cmd/@props/{prop}")
+}
+
+/// The unpack's progress: `status` (`DONE` / `DONE_VERSION_WARNING` /
+/// errors), `progress`, `module` (what the backup holds).
+pub fn config_import_extract_status(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/import/extract/status/@props/{prop}")
+}
+
+/// The second half of a restore — apply what was unpacked: `stillOption`
+/// (`MERGE_AND_REPLACE` / `MERGE_WITHOUT_REPLACE` / `SQUASH`) and `xRequest`,
+/// again a list of modules. The device reboots.
+pub fn config_import_apply(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/import/apply/cmd/@props/{prop}")
+}
+
+/// The apply's progress: `status`, `progress`.
+pub fn config_import_apply_status(prop: &str) -> String {
+    format!("DeviceObject/system/configuration/backup/import/apply/status/@props/{prop}")
+}
+
+// --------------------------------------------------------------- streaming
+
+/// Streaming destinations, `1`…`10`; the first four come from the factory.
+pub const STREAM_DESTINATIONS: u8 = 10;
+
+/// A destination: `label`, `url`, `key`, and the trigger `xReset`.
+pub fn stream_destination(n: u8, prop: &str) -> String {
+    format!("DeviceObject/streaming/destinationBank/$slot/@items/{n}/@props/{prop}")
+}
+
+/// Whether stream keys survive a power cycle.
+pub fn stream_remember_keys() -> String {
+    String::from("DeviceObject/streaming/destinationBank/@props/rememberKeys")
+}
+
+/// The stream's control: `start` (a flag — true streams, false stops) and
+/// `mode` (`SERVER` / `CLIENT`).
+pub fn stream_control(prop: &str) -> String {
+    format!("DeviceObject/streaming/control/@props/{prop}")
+}
+
+/// Which destination to stream to, `1`…`10` as a number.
+pub fn stream_target() -> String {
+    String::from("DeviceObject/streaming/control/destination/@props/target")
+}
+
+/// The stream's picture: `source` (from the status `sourceValidity`),
+/// `profile` (`1920_1080_30HZ` … `480_272_30HZ`), `quality` (`LOW` /
+/// `MEDIUM` / `HIGH` / `CUSTOM`), `customBitrate` (kbit/s).
+pub fn stream_video(prop: &str) -> String {
+    format!("DeviceObject/streaming/control/video/@props/{prop}")
+}
+
+/// The stream's sound: `mode` (`FOLLOW_CONTENT` / `DIRECT_ROUTING`),
+/// `directRoutingSource`, `quality`, `customBitrate`.
+pub fn stream_audio(prop: &str) -> String {
+    format!("DeviceObject/streaming/control/audio/@props/{prop}")
+}
+
+/// The pair the stream carries and its mute: `mute`, `directRoutingPair`,
+/// `followContentPair` (`CHANNEL_1_2` … `CHANNEL_7_8`).
+pub fn stream_audio_live(prop: &str) -> String {
+    format!("DeviceObject/streaming/control/audio/live/@props/{prop}")
+}
+
+/// The stream's status: `status` (`NO_REQUEST` / `IN_PROGRESS` / `RUNNING` /
+/// errors), `mode`, `urlAndKey`.
+pub fn stream_status(prop: &str) -> String {
+    format!("DeviceObject/streaming/status/@props/{prop}")
+}
+
+/// What the stream is sending: `source`, `sourceValidity`, `profile`,
+/// `bitrate`, `hdcpWarning`.
+pub fn stream_video_status(prop: &str) -> String {
+    format!("DeviceObject/streaming/status/video/@props/{prop}")
+}
+
+// ------------------------------------------------------------------- audio
+
+/// Audio on this platform travels as eight-channel **sources** — `IN1`…`IN16`
+/// (an input's embedded audio, whichever plug is active), `IN_DANTE_CH1_8`…
+/// `IN_DANTE_CH25_32`, `IN_ANALOG_1/2`, `IN_MEDIA_PLAYER`, `CUSTOM_1`…
+/// `CUSTOM_10` — and every place it comes out is a **routing point** that
+/// carries one source directly or follows something. The audio layer of a
+/// preset buffer is the part a show programs: it is saved with the memory
+/// and swapped by the take exactly as the picture is.
+///
+/// The clock: `mode` (`MASTER` / `DANTE`), `masterRate` (`32K` / `44K1` /
+/// `48K`), `transitionDelay`.
+pub fn audio_control(prop: &str) -> String {
+    format!("DeviceObject/audio/control/@props/{prop}")
+}
+
+/// The clock as running: `mode`, `rate`, `frequency`, `isDanteRateInvalid`.
+pub fn audio_status(prop: &str) -> String {
+    format!("DeviceObject/audio/status/@props/{prop}")
+}
+
+/// Whether a source key (`IN3`, `IN_DANTE_CH1_8`, `CUSTOM_2`…) exists on this
+/// unit.
+pub fn audio_source_is_available(key: &str) -> String {
+    format!("DeviceObject/audio/$source/@items/{key}/status/@props/isAvailable")
+}
+
+/// An audio input (`IN1_SDI_EMBEDDED`, `IN6_RJ45_EMBEDDED`, `IN_ANALOG_1`…):
+/// `isAvailable`, `isAudioDetected`, `channelCount`.
+pub fn audio_input_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/audio/$input/@items/{key}/status/@props/{prop}")
+}
+
+/// Mute one channel of an audio input.
+pub fn audio_input_channel_mute(key: &str, channel: u8) -> String {
+    format!("DeviceObject/audio/$input/@items/{key}/$channel/@items/{channel}/control/@props/mute")
+}
+
+/// Which side of the unit a level meter reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioSide {
+    Input,
+    Output,
+}
+
+impl AudioSide {
+    fn list(self) -> &'static str {
+        match self {
+            AudioSide::Input => "$input",
+            AudioSide::Output => "$output",
+        }
+    }
+}
+
+/// The unit reports one level per side, for the key selected here.
+pub fn audio_level_select(side: AudioSide) -> String {
+    format!("DeviceObject/audio/{}/level/control/@props/select", side.list())
+}
+
+/// Ask for a fresh reading. A trigger.
+pub fn audio_level_refresh(side: AudioSide) -> String {
+    format!("DeviceObject/audio/{}/level/control/@props/xRefresh", side.list())
+}
+
+/// The reading.
+pub fn audio_level(side: AudioSide) -> String {
+    format!("DeviceObject/audio/{}/level/status/@props/level", side.list())
+}
+
+/// Mute an audio output as a whole (`VIDEO_OUT_1`…`VIDEO_OUT_6`,
+/// `VIDEO_MULTIVIEWER`, `DANTE_CH1_8`…, `ANALOG_1/2`).
+pub fn audio_output_mute(key: &str) -> String {
+    format!("DeviceObject/audio/$output/@items/{key}/control/@props/mute")
+}
+
+/// An audio output's status: `isAvailable`, `source` (what it is carrying).
+pub fn audio_output_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/audio/$output/@items/{key}/status/@props/{prop}")
+}
+
+/// A line out `1`…`2`: `mode` (`DIRECT_ROUTING` / `FOLLOW_SCREEN`) and
+/// `selectedAudioPair`.
+pub fn audio_line_out(n: u8, prop: &str) -> String {
+    format!("DeviceObject/audio/$lineOut/@items/{n}/control/@props/{prop}")
+}
+
+/// The source a line out carries when routed directly.
+pub fn audio_line_out_direct(n: u8) -> String {
+    format!("DeviceObject/audio/$lineOut/@items/{n}/control/directRouting/@props/source")
+}
+
+/// The screen a line out follows.
+pub fn audio_line_out_follow(n: u8) -> String {
+    format!("DeviceObject/audio/$lineOut/@items/{n}/control/followScreen/@props/screen")
+}
+
+/// Mute a destination's audio.
+pub fn audio_destination_mute(d: Dest) -> String {
+    format!("DeviceObject/audio/{}/control/@props/mute", d.item())
+}
+
+/// The channels a custom source may be built from, as the unit lists them.
+pub fn audio_custom_channels() -> String {
+    String::from("DeviceObject/audio/custom/status/@props/availableChannels")
+}
+
+/// A custom source `1`…`10`: `label` and `channelMapping` (eight channel
+/// keys, `NONE` where empty).
+pub fn audio_custom(n: u8, prop: &str) -> String {
+    format!("DeviceObject/audio/custom/$source/@items/CUSTOM_{n}/control/@props/{prop}")
+}
+
+/// The Dante card's status: `global`, `type`, `id`, `version`,
+/// `ethernetMode`, `hasInitFailed`.
+pub fn dante_status(prop: &str) -> String {
+    format!("DeviceObject/audio/dante/status/@props/{prop}")
+}
+
+/// A Dante output group `1`…`4` (eight channels each): `mode`
+/// (`DIRECT_ROUTING` / `FOLLOW_SCREEN`).
+pub fn dante_group(n: u8, prop: &str) -> String {
+    format!("DeviceObject/audio/dante/$outputGroup/@items/{n}/control/@props/{prop}")
+}
+
+/// The source a Dante group carries when routed directly.
+pub fn dante_group_direct(n: u8) -> String {
+    format!("DeviceObject/audio/dante/$outputGroup/@items/{n}/control/directRouting/@props/source")
+}
+
+/// The screen a Dante group follows.
+pub fn dante_group_follow(n: u8) -> String {
+    format!("DeviceObject/audio/dante/$outputGroup/@items/{n}/control/followScreen/@props/screen")
+}
+
+/// A destination's routing point: `mode` — for a screen `DIRECT_ROUTING`,
+/// `FOLLOW_LIVE_LAYER_CONTENT` or `FOLLOW_AUDIO_LAYER`; for an auxiliary
+/// `DIRECT_ROUTING`, `FOLLOW_CONTENT` or `FOLLOW_AUDIO_LAYER`. The factory
+/// default is the audio layer.
+pub fn destination_audio_mode(d: Dest) -> String {
+    format!("DeviceObject/{}/audio/control/@props/mode", d.item())
+}
+
+/// The source a destination carries when routed directly.
+pub fn destination_audio_direct(d: Dest) -> String {
+    format!("DeviceObject/{}/audio/control/directRouting/@props/source", d.item())
+}
+
+/// The live layer whose content a screen follows in
+/// `FOLLOW_LIVE_LAYER_CONTENT`.
+pub fn screen_audio_follow_layer(screen: u8) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/audio/control/followLiveLayer/@props/layer")
+}
+
+/// The audio layer of a buffer — the source that takes with the preset.
+pub fn audio_layer(d: Dest, buffer: Buffer) -> String {
+    format!("DeviceObject/{}/$preset/@items/{}/audio/control/@props/source", d.item(), buffer.key())
+}
+
+/// A video output's audio: `mode` (`NONE` / `AUTO` for the screen it shows /
+/// `DIRECT_ROUTING`).
+pub fn output_audio_mode(key: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/audio/control/@props/mode")
+}
+
+/// The source a video output carries when routed directly.
+pub fn output_audio_direct(key: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/audio/control/directRouting/@props/source")
+}
+
+/// The multiviewer's audio: `mode` (`DIRECT_ROUTING` / `FOLLOW_WIDGET`).
+pub fn mvw_audio(prop: &str) -> String {
+    format!("DeviceObject/multiviewer/audio/control/@props/{prop}")
+}
+
+/// The widget the multiviewer's audio follows.
+pub fn mvw_audio_follow_widget() -> String {
+    String::from("DeviceObject/multiviewer/audio/control/followWidget/@props/widget")
+}
+
+/// The widget that shows VU meters, or `NONE`; from
+/// `multiviewer/audio/status/vuMeters/@props/widgetValidity`.
+pub fn mvw_audio_vu_widget() -> String {
+    String::from("DeviceObject/multiviewer/audio/control/vuMeters/@props/widget")
+}
+
+/// What the quick preset does to audio: `PRESET`, `KEEP`, `MUTE` or
+/// `FORCE_SOURCE` (with `quickPreset/control/audio/forceSource/@props/source`).
+pub fn quick_preset_audio_mode() -> String {
+    String::from("DeviceObject/quickPreset/control/audio/@props/mode")
+}
+
+// ------------------------------------------------------------ save filters
+
+/// What a bank save of a destination records, set before the save and kept:
+/// `categoryFilter` (`SOURCE`, `POS`, `SIZE`, `OPACITY`, `CROPPING`, `MASK`,
+/// `BORDER`, `TRANSITIONS`, `EFFECTS`, `FLYING_CURVE`, `TIMING`, `SPEED`,
+/// `AUDIO`; an auxiliary has `SOURCE`, `ASPECT`, `TRANSITIONS`, `AUDIO`),
+/// and on a screen `layerFilter` (`"1"`…`"8"`), `layerTopFilter`,
+/// `layerBackFilter`. A slot's status reports the filter it was saved with.
+pub fn save_filter(d: Dest, prop: &str) -> String {
+    format!("DeviceObject/{}/control/save/{}/@props/{prop}", d.bank().root(), d.item())
+}
+
+/// What a master save records: `screenFilter`, `auxFilter` (which
+/// destinations), `screenCategoryFilter`, `auxCategoryFilter`,
+/// `screenLayerLiveFilter`, `screenLayerTopFilter`, `screenLayerBackFilter`.
+/// Beside [`master_save_mode`] on the same node.
+pub fn master_save_filter(prop: &str) -> String {
+    format!("DeviceObject/preset/masterBank/control/save/@props/{prop}")
+}
+
 /// A subscription prefix that covers every destination's transition control
 /// and status — both lists, since the pushes are filtered by prefix.
 pub const SUB_TRANSITIONS: &str = "DeviceObject/transition";
@@ -1052,6 +1774,14 @@ pub const SUB_MULTIVIEWER: &str = "DeviceObject/multiviewer";
 pub const SUB_TIMERS: &str = "DeviceObject/$timer";
 pub const SUB_STILLS: &str = "DeviceObject/stillLibrary";
 pub const SUB_OUTPUTS: &str = "DeviceObject/$output";
+
+/// Subscription prefixes for audio, the preconfiguration, every screen (wide),
+/// streaming and the custom formats.
+pub const SUB_AUDIO: &str = "DeviceObject/audio";
+pub const SUB_PRECONFIG: &str = "DeviceObject/preconfig";
+pub const SUB_SCREENS: &str = "DeviceObject/$screen";
+pub const SUB_STREAMING: &str = "DeviceObject/streaming";
+pub const SUB_CUSTOM_FORMATS: &str = "DeviceObject/customFormats";
 
 /// A subscription prefix covering the quick preset's switch and status.
 pub const SUB_QUICK_PRESET: &str = "DeviceObject/quickPreset";

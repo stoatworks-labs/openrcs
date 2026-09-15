@@ -504,3 +504,134 @@ fn the_two_object_models_share_no_destination_path() {
         assert!(!b.contains("presetBank"), "{b}");
     }
 }
+
+#[test]
+fn input_plugs_carry_the_settings_the_keyer_and_the_edid() {
+    // Spelled from the Pulse 4K store dump and answered by both simulators
+    // (2026-09-15): the settings hang off the plug, the keyer under them.
+    assert_eq!(mng::plug_control(1, 1, "enableHdcp"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/control/@props/enableHdcp");
+    assert_eq!(mng::plug_status(1, 1, "hdcpValidity"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/status/@props/hdcpValidity");
+    assert_eq!(mng::plug_signal(1, 1, "formatWidth"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/status/signal/@props/formatWidth");
+    assert_eq!(mng::plug_setting(1, 1, "color/@props/brightness"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/settings/color/@props/brightness");
+    assert_eq!(mng::plug_keying_mode(1, 1), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/settings/keying/control/@props/mode");
+    assert_eq!(mng::plug_setting(1, 1, "keying/cutNFill/status/@props/source"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/settings/keying/cutNFill/status/@props/source");
+    assert_eq!(mng::input_keying_is_available(1), "DeviceObject/$input/@items/INPUT_1/status/keying/@props/isAvailable");
+    assert_eq!(mng::input_cut_fill_is_available(1), "DeviceObject/$input/@items/INPUT_1/status/keying/cutNFill/@props/isAvailable");
+    assert_eq!(mng::plug_hdr(1, 1, "mode"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/control/hdr/@props/mode");
+    assert_eq!(mng::plug_edid_cmd(1, 1), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/edid/cmd/@props/data");
+    assert_eq!(mng::plug_edid_extension(1, 1, 1, "extensionType"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/edid/status/$extension/@items/BLOCK_1/@props/extensionType");
+    // The library: numbered user slots and named factory entries in one collection.
+    assert_eq!(mng::edid_bank_status("DEFAULT_HDMI_2_0", "isProtected"), "DeviceObject/system/edid/$bank/@items/DEFAULT_HDMI_2_0/status/@props/isProtected");
+    assert_eq!(mng::edid_save(3), "DeviceObject/system/edid/save/$bank/@items/3/@props/xRequest");
+    assert_eq!(mng::edid_edit("data"), "DeviceObject/system/edid/edit/control/@props/data");
+    assert_eq!(mng::EDID_SLOTS, 64);
+}
+
+#[test]
+fn outputs_have_a_canvas_hdr_a_plug_and_custom_formats() {
+    assert_eq!(mng::output_aoi("1", "xUpdate"), "DeviceObject/$output/@items/1/canvas/aoi/@props/xUpdate");
+    // Pitch was answered by the real Pulse 4K in the field-test sweep.
+    assert_eq!(mng::output_pitch("2", "pitchRatioH"), "DeviceObject/$output/@items/2/canvas/pitch/@props/pitchRatioH");
+    assert_eq!(mng::output_canvas_status("1", "aoiWidth"), "DeviceObject/$output/@items/1/canvas/status/@props/aoiWidth");
+    assert_eq!(mng::output_hdr("1", "nitLevel"), "DeviceObject/$output/@items/1/hdr/control/@props/nitLevel");
+    assert_eq!(mng::output_plug_control("1", 1, "enableHdcp"), "DeviceObject/$output/@items/1/$plug/@items/1/control/@props/enableHdcp");
+    assert_eq!(mng::output_plug_audio_mode("1", 1), "DeviceObject/$output/@items/1/$plug/@items/1/audio/control/@props/mode");
+    assert_eq!(mng::output_plug_edid("1", 1, "data"), "DeviceObject/$output/@items/1/$plug/@items/1/edid/status/@props/data");
+    assert_eq!(mng::custom_format_setting("fullCvtRate"), "DeviceObject/customFormats/create/settings/@props/fullCvtRate");
+    assert_eq!(mng::custom_format_control("xCheck"), "DeviceObject/customFormats/create/control/@props/xCheck");
+    assert_eq!(mng::custom_format_save(4), "DeviceObject/customFormats/create/save/$bank/@items/4/@props/xRequest");
+    assert_eq!(mng::custom_format_slot_status(16, "isValid"), "DeviceObject/customFormats/$bank/@items/16/status/@props/isValid");
+    assert_eq!(mng::CUSTOM_FORMATS, 16);
+}
+
+#[test]
+fn a_screen_is_a_grid_or_a_free_canvas_with_its_own_pattern() {
+    assert_eq!(mng::screen_mode(1), "DeviceObject/$screen/@items/1/control/@props/mode");
+    assert_eq!(mng::screen_grid(1, "columnQty"), "DeviceObject/$screen/@items/1/canvas/grid/control/@props/columnQty");
+    assert_eq!(mng::screen_grid_output(1, "MTVW", "row"), "DeviceObject/$screen/@items/1/canvas/grid/$output/@items/MTVW/control/@props/row");
+    assert_eq!(mng::screen_grid_spacing(1, mng::GridDim::Column, 2), "DeviceObject/$screen/@items/1/canvas/grid/$columnSpacing/@items/2/control/@props/size");
+    assert_eq!(mng::screen_grid_spacing(1, mng::GridDim::Row, 1), "DeviceObject/$screen/@items/1/canvas/grid/$rowSpacing/@items/1/control/@props/size");
+    assert_eq!(mng::screen_free_size(1, "sizeH"), "DeviceObject/$screen/@items/1/canvas/free/control/size/@props/sizeH");
+    // Free placement is by top-left corner — `left`/`top`, not `posH`/`posV`
+    // (that spelling answered E12 on the simulator).
+    assert_eq!(mng::screen_free_output(1, "1", "left"), "DeviceObject/$screen/@items/1/canvas/free/control/$output/@items/1/@props/left");
+    assert_eq!(mng::screen_pattern(2, "inhibit"), "DeviceObject/$screen/@items/2/pattern/control/@props/inhibit");
+    assert_eq!(mng::screen_canvas_has_overlap(1), "DeviceObject/$screen/@items/1/canvas/status/@props/hasOverlapWarning");
+}
+
+#[test]
+fn the_preconfig_is_staged_computed_and_applied() {
+    use mng::PreconfigState;
+    assert_eq!(mng::preconfig_control("xApply"), "DeviceObject/preconfig/control/@props/xApply");
+    assert_eq!(mng::preconfig_template("xLoad"), "DeviceObject/preconfig/control/template/@props/xLoad");
+    // `resourcesList` keeps its plural: `$resources`.
+    assert_eq!(mng::preconfig_resource(1, "mode"), "DeviceObject/preconfig/control/$resources/@items/1/@props/mode");
+    assert_eq!(mng::preconfig_output("MTVW", "mode"), "DeviceObject/preconfig/control/$output/@items/MTVW/@props/mode");
+    assert_eq!(mng::preconfig_screen(1, "backgroundLayerType"), "DeviceObject/preconfig/control/$screen/@items/1/@props/backgroundLayerType");
+    assert_eq!(mng::preconfig_aux_enable(2), "DeviceObject/preconfig/control/$auxiliaryScreen/@items/2/@props/enable");
+    assert_eq!(mng::preconfig_status("computeDone"), "DeviceObject/preconfig/status/@props/computeDone");
+    assert_eq!(mng::preconfig_output_validity("1", "modeValidity"), "DeviceObject/preconfig/status/$output/@items/1/@props/modeValidity");
+    // The store's `outputList` property answers as `$output` — the device
+    // rewrites the reply path even when asked for `outputList`.
+    assert_eq!(mng::preconfig_state_screen(PreconfigState::New, 1, "$output"), "DeviceObject/preconfig/status/$state/@items/NEW/$screen/@items/1/@props/$output");
+    // The applied state is where `output_role` and `screen_is_enabled` already read.
+    assert_eq!(mng::preconfig_state_output(PreconfigState::Current, "1", "mode"), mng::output_role("1"));
+    assert_eq!(mng::preconfig_state_aux(PreconfigState::Current, 1, "mode"), "DeviceObject/preconfig/status/$state/@items/CURRENT/$auxiliaryScreen/@items/1/@props/mode");
+}
+
+#[test]
+fn configuration_slots_back_up_and_restore_in_two_steps() {
+    assert_eq!(mng::config_slot_status(1, "status"), "DeviceObject/system/configuration/storage/$bank/@items/SLOT_1/status/@props/status");
+    assert_eq!(mng::config_slot_delete(2), "DeviceObject/system/configuration/storage/$bank/@items/SLOT_2/delete/cmd/@props/xRequest");
+    assert_eq!(mng::config_export("xRequest"), "DeviceObject/system/configuration/backup/export/cmd/@props/xRequest");
+    assert_eq!(mng::config_import_extract("source"), "DeviceObject/system/configuration/backup/import/extract/cmd/@props/source");
+    assert_eq!(mng::config_import_apply("stillOption"), "DeviceObject/system/configuration/backup/import/apply/cmd/@props/stillOption");
+    assert_eq!(mng::config_import_apply_status("progress"), "DeviceObject/system/configuration/backup/import/apply/status/@props/progress");
+    assert_eq!(mng::CONFIG_SLOTS, 2);
+}
+
+#[test]
+fn streaming_has_ten_destinations_and_one_stream() {
+    assert_eq!(mng::stream_destination(1, "url"), "DeviceObject/streaming/destinationBank/$slot/@items/1/@props/url");
+    assert_eq!(mng::stream_remember_keys(), "DeviceObject/streaming/destinationBank/@props/rememberKeys");
+    assert_eq!(mng::stream_control("start"), "DeviceObject/streaming/control/@props/start");
+    assert_eq!(mng::stream_target(), "DeviceObject/streaming/control/destination/@props/target");
+    assert_eq!(mng::stream_video("profile"), "DeviceObject/streaming/control/video/@props/profile");
+    assert_eq!(mng::stream_audio_live("mute"), "DeviceObject/streaming/control/audio/live/@props/mute");
+    assert_eq!(mng::stream_video_status("sourceValidity"), "DeviceObject/streaming/status/video/@props/sourceValidity");
+    assert_eq!(mng::STREAM_DESTINATIONS, 10);
+}
+
+#[test]
+fn audio_is_sources_and_routing_points_not_a_matrix() {
+    use mng::AudioSide;
+    // Every spelling written on the simulator and read back (mynah, 2026-09-13; this crate, 2026-09-15).
+    assert_eq!(mng::audio_control("masterRate"), "DeviceObject/audio/control/@props/masterRate");
+    assert_eq!(mng::audio_source_is_available("IN_DANTE_CH1_8"), "DeviceObject/audio/$source/@items/IN_DANTE_CH1_8/status/@props/isAvailable");
+    assert_eq!(mng::audio_input_status("IN1_SDI_EMBEDDED", "isAudioDetected"), "DeviceObject/audio/$input/@items/IN1_SDI_EMBEDDED/status/@props/isAudioDetected");
+    assert_eq!(mng::audio_input_channel_mute("IN1_SDI_EMBEDDED", 3), "DeviceObject/audio/$input/@items/IN1_SDI_EMBEDDED/$channel/@items/3/control/@props/mute");
+    // `inputList/level` is a sibling of `items`, so it is `$input/level`.
+    assert_eq!(mng::audio_level_select(AudioSide::Input), "DeviceObject/audio/$input/level/control/@props/select");
+    assert_eq!(mng::audio_level(AudioSide::Output), "DeviceObject/audio/$output/level/status/@props/level");
+    assert_eq!(mng::audio_output_mute("VIDEO_OUT_1"), "DeviceObject/audio/$output/@items/VIDEO_OUT_1/control/@props/mute");
+    assert_eq!(mng::audio_line_out_direct(2), "DeviceObject/audio/$lineOut/@items/2/control/directRouting/@props/source");
+    assert_eq!(mng::audio_line_out_follow(1), "DeviceObject/audio/$lineOut/@items/1/control/followScreen/@props/screen");
+    assert_eq!(mng::audio_destination_mute(Dest::Aux(2)), "DeviceObject/audio/$auxiliaryScreen/@items/2/control/@props/mute");
+    assert_eq!(mng::audio_custom(10, "channelMapping"), "DeviceObject/audio/custom/$source/@items/CUSTOM_10/control/@props/channelMapping");
+    assert_eq!(mng::dante_group_follow(4), "DeviceObject/audio/dante/$outputGroup/@items/4/control/followScreen/@props/screen");
+    assert_eq!(mng::destination_audio_mode(Dest::Screen(1)), "DeviceObject/$screen/@items/1/audio/control/@props/mode");
+    assert_eq!(mng::screen_audio_follow_layer(1), "DeviceObject/$screen/@items/1/audio/control/followLiveLayer/@props/layer");
+    assert_eq!(mng::audio_layer(Dest::Screen(1), Buffer::Down), "DeviceObject/$screen/@items/1/$preset/@items/DOWN/audio/control/@props/source");
+    assert_eq!(mng::output_audio_mode("MTVW"), "DeviceObject/$output/@items/MTVW/audio/control/@props/mode");
+    assert_eq!(mng::mvw_audio_vu_widget(), "DeviceObject/multiviewer/audio/control/vuMeters/@props/widget");
+    assert_eq!(mng::quick_preset_audio_mode(), "DeviceObject/quickPreset/control/audio/@props/mode");
+}
+
+#[test]
+fn a_save_records_what_its_filter_says() {
+    assert_eq!(mng::save_filter(Dest::Screen(2), "layerFilter"), "DeviceObject/preset/bank/control/save/$screen/@items/2/@props/layerFilter");
+    assert_eq!(mng::save_filter(Dest::Aux(1), "categoryFilter"), "DeviceObject/preset/auxBank/control/save/$auxiliaryScreen/@items/1/@props/categoryFilter");
+    assert_eq!(mng::master_save_filter("screenFilter"), "DeviceObject/preset/masterBank/control/save/@props/screenFilter");
+    // The mode and the bank slots sit on the same node as the filters.
+    assert!(mng::master_save_mode().starts_with("DeviceObject/preset/masterBank/control/save/@props/"));
+}

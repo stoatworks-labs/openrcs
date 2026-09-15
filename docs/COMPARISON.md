@@ -20,7 +20,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 2 | 5 | 1 | 47 | 3 |
-| Midra 4K | Web RCS | 12 | 14 | 1 | 27 | 4 |
+| Midra 4K | Web RCS | 23 | 17 | 2 | 12 | 4 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -325,25 +325,25 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Preset toggle, auto-take, dynamic fit | Yes | **Partial** — the preset toggle (swap) per destination; no auto-take or dynamic fit |
 | Fade to black / master fade | Yes — Quick Preset → Fade to Black | **Full** — the device's own quick preset from the Screens view: fade to black, a library image or a master memory on every covered destination, on and off from one switch |
 | Freeze | Yes — layer, screen and input freeze | **Full** — destination freeze, per-layer freeze (holds through a take), input freeze |
-| Screen groups / destinations | Yes — TAKE ALL / selection | **Missing** |
+| Screen groups / destinations | Yes — TAKE ALL / selection | **Full** — tick any set of screens and auxiliaries and take, cut or T-bar them as one group, or Take all; each keeps its own take time |
 | Sequencer / cue list | No — none | **Missing** — Cues are not offered on this family |
-| User keys / macros / quick presets | Yes — Quick Preset on the front panel: fade to black, a library image or a master memory | **Missing** |
+| User keys / macros / quick presets | Yes — Quick Preset on the front panel: fade to black, a library image or a master memory | **Full** — the device's quick preset — fade to black, a library image or a master memory, on and off from one switch, with the destinations it covers and what it does to audio; the Midra 4K has no user keys or macros beyond it |
 | Timers (clock, countdown, stopwatch) | Yes — three timers in the multiviewer | **Partial** — the three timers: type, label, countdown duration, start/pause/stop — the transport verbs are written but the simulator never leaves idle |
 | Input backup / failover | No | **Missing** |
-| Undo | Yes — Step Back; quick overwrite or revert | **Missing** |
+| Undo | Yes — Step Back; quick overwrite or revert | **Partial** — Step Back (the device's own edit undo, one step) from the Screens view; no revert of a memory |
 
 ### Composition
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Graphical layer editor | Yes | **Partial** — one screen at a time on a canvas at the applied size: drag to move, corners to resize, layouts; an auxiliary is one background source |
+| Graphical layer editor | Yes | **Partial** — one screen at a time on a canvas at the applied size: drag to move (snapping), corners to resize, layouts, arrow-key nudge, copy and paste; an auxiliary is one background source |
 | All screens editable at once | Yes | **Missing** — one destination at a time |
 | Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Partial** — source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, freeze, fader with fade in/out, plus the background set/colour and the top frame; not the timing bars, flying curve points, speed points or a COLOR layer's colour |
 | Layout presets | Yes — live-layer layouts | **Partial** — Fill / 2-up / 3-up / Quad / PiP over the fitted layers, in slot order |
-| Snap, align, multi-select | Yes | **Missing** |
+| Snap, align, multi-select | Yes | **Partial** — drags snap to the canvas edges and centre lines and to the other layers’ edges and centres (Alt to drag free), arrow-key nudge (Shift ×10); no multi-select or align commands |
 | Native background / background sets | Yes — background sets | **Full** — the preset's background set (or colour) and opacity, and its top frame with position, on the Layers canvas |
-| Input keying | Yes — chroma, luma | **Missing** |
-| Cut & Fill | Yes — on odd inputs | **Missing** |
+| Input keying | Yes — chroma, luma | **Partial** — keyer mode (off / chroma / luma / cut and fill), the chroma and luma parameters, mask display and the sampling assistant, offered only where the device says the input has a keyer — no simulator input does, so written and read back but never seen keying |
+| Cut & Fill | Yes — on odd inputs | **Full** — cut-and-fill mode on the inputs the device says can be a fill (the odd ones), with the cut input, sync status and phase it reports; set on the simulator |
 | Perspective / 3D layers | — | — |
 | Working-area constraint | No — the output AOI serves the need instead | **Missing** |
 | Live thumbnails | Yes | **Partial** — the unit's own pictures of inputs on the Layers canvas and the Inputs page, and of frame slots; no program or preview render exists to fetch |
@@ -354,8 +354,8 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 |---|---|---|
 | Screen memories | Yes — 200 screen + 200 aux | **Full** — recall, save (from program or preview), label and erase on the 200-slot screen and aux banks, paged 50 at a time, with a red/green mark on the slot each buffer holds |
 | Master memories | Yes — 50, self-contained or from screen memories | **Full** — recall, save, label and erase on the 50-slot master bank; a save from a buffer writes the bank slots the device would otherwise put in slot 1, and refuses when they are in use; or record the memories the buffers already hold |
-| Layer memories | No | **Missing** |
-| Recall filters (categories) | Yes | **Missing** |
+| Layer memories | No | **Beyond stock** — copy a layer’s whole property set — source, geometry and every property the panel holds — and paste it onto any layer of any screen or buffer (held in the page, not stored on the device) |
+| Recall filters (categories) | Yes | **Full** — what a save records, as the device models it: the thirteen categories, which live layers, background and top for a screen; four categories for an auxiliary; which destinations and what of each for a master memory — a slot reports the filter it was saved with |
 | Labels, colours, inspect | Yes | **Partial** — labels read and written; no colours, no inspect thumbnail |
 | Autoscale on recall | Yes | **Missing** |
 | Confidence screens and memories | — | — |
@@ -365,24 +365,24 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Preconfig: outputs → screens, canvas | Yes — system, screens / aux, canvas, background, audio, quick preset | **Missing** |
-| Output setup | Yes | **Partial** — role, format from the device's allowed list applied through its update trigger, plug state, test pattern on/off, gamma/brightness/contrast/saturation/hue/gains, label, a picture of each output; no HDR, LUT, framelock or pixel encoding |
+| Preconfig: outputs → screens, canvas | Yes — system, screens / aux, canvas, background, audio, quick preset | **Full** — template, layer resources (off / seamless / split and their screen), every output’s role and destination, screens and auxiliaries in service, background layer type — from the device’s validity lists — computed and shown against the applied state, applied behind a second tap; each screen’s canvas as a grid of outputs or free placement; background sets, audio and the quick preset on their own pages |
+| Output setup | Yes | **Full** — role, format from the device’s allowed list applied through its update trigger, plug state, test pattern, picture and gains, area of interest and pitch, HDR and colorimetry, the plug’s HDCP policy, pixel encoding, embedded audio and SDI level, the connected display’s EDID |
 | Midra video out (the second output) | — | — |
-| Area of interest (output crop) | Yes | **Missing** |
-| Custom output formats | Yes | **Missing** |
-| Input setup | Yes — plug, LUT allocation, signal, correction, aspect, keying | **Partial** — availability, active plug, connector and signal format per input, freeze and black; no plug selection, image, aspect or keying |
-| EDID | Yes — same | **Missing** |
+| Area of interest (output crop) | Yes | **Full** — the whole format or a custom area in thousandths with overscan, applied with the device’s trigger and read back from its canvas status; pitch compensation beside it |
+| Custom output formats | Yes | **Full** — sixteen slots named and erased, an editor that takes a size and rate (CVT) or every porch and sync (full), checks it on the device and saves it into a slot; the erase is written but the simulator keeps the slot |
+| Input setup | Yes — plug, LUT allocation, signal, correction, aspect, keying | **Full** — active plug, label, signal type and HDCP from the device’s lists, HDR mode and nits, picture, sharpness and pulldown, aspect (signal / shown as / in a layer), predefined or typed crop applied with the device’s trigger, crop finder, keyer, EDID; no LUT allocation |
+| EDID | Yes — same | **Full** — the EDID each input plug presents, decoded (make, name, preferred timing, extensions), replaced from the device’s library of 21 factory and 64 saved EDIDs; a connected display’s EDID saved into that library from the Outputs page; no byte editor |
 | Stills / image library | Yes — library, background and foreground image slots | **Partial** — the 50-slot library with names and sizes, erase, a capture of any input/output/multiviewer into it (written, unproven on the simulator), and each screen's frame slots with pictures; no upload from the computer |
 | Multiviewer / monitoring | Yes — one multiviewer, audio monitoring, 20 memories | **Full** — drag/resize designer over the usable widgets on the MTVW output, sources from the device's own list, OSD, grid presets, twenty layout memories with recall/save/erase/label; no audio monitoring |
 | Soft edge blending | Yes — Eikos 4K blend mode | **Missing** |
-| Audio | Yes — routing, Dante, VU meters, custom sources | **Missing** |
+| Audio | Yes — routing, Dante, VU meters, custom sources | **Full** — the audio layer per preset buffer, every routing point (screens, auxiliaries, outputs, multiviewer, line outs, Dante groups) following a layer, its content, a screen or a widget or routed direct, mutes, the ten custom sources channel by channel, level readings, the clock, the quick preset’s audio; Dante subscriptions are read, not made |
 | GPIO and tally | Yes — TSL tally protocol; no GPIO | **Partial** — the device's own on-air lists per input are read and shown; never seen populated on the simulator, so unverified |
 | System, network, health, front panel | Yes | **Full** — identity, network, temperature sensors and fans with alarms, front-panel lock and brightness, reboot; no erase or factory reset |
 | Firmware update | Yes | **Missing** |
-| Backup / restore | Yes — configuration slots, export / import, USB | **Missing** |
+| Backup / restore | Yes — configuration slots, export / import, USB | **Partial** — the two on-device configuration slots: back up every module into one under a label, restore (unpack then apply, the device reboots) or erase behind a second tap; export to a file and import from USB are not offered — restore never fired on the simulator |
 | Multi-unit link | — | — |
 | LUTs, HDR, colour processing | Yes — LUT libraries, LUT allocation, HDR conversion | **Missing** |
-| AVoIP and streaming | Yes — Dante (optional card); RTMP streaming out to a network or a platform | **Missing** |
+| AVoIP and streaming | Yes — Dante (optional card); RTMP streaming out to a network or a platform | **Partial** — RTMP: ten destinations with label, URL and key, the picture source, profile and quality, the audio and its pair, start and stop with the device’s status — the simulator never starts a stream; Dante is shown, not configured |
 
 ### Diagnostics and beyond
 

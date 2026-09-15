@@ -637,8 +637,8 @@
         "text": "TAKE ALL / selection"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "tick any set of screens and auxiliaries and take, cut or T-bar them as one group, or Take all; each keeps its own take time"
        }
       }
      }
@@ -727,8 +727,8 @@
         "text": "Quick Preset on the front panel: fade to black, a library image or a master memory"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "the device's quick preset — fade to black, a library image or a master memory, on and off from one switch, with the destinations it covers and what it does to audio; the Midra 4K has no user keys or macros beyond it"
        }
       }
      }
@@ -862,8 +862,8 @@
         "text": "Step Back; quick overwrite or revert"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "Step Back (the device's own edit undo, one step) from the Screens view; no revert of a memory"
        }
       }
      }
@@ -913,7 +913,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "one screen at a time on a canvas at the applied size: drag to move, corners to resize, layouts; an auxiliary is one background source"
+        "text": "one screen at a time on a canvas at the applied size: drag to move (snapping), corners to resize, layouts, arrow-key nudge, copy and paste; an auxiliary is one background source"
        }
       }
      }
@@ -1092,8 +1092,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "drags snap to the canvas edges and centre lines and to the other layers’ edges and centres (Alt to drag free), arrow-key nudge (Shift ×10); no multi-select or align commands"
        }
       }
      }
@@ -1182,8 +1182,8 @@
         "text": "chroma, luma"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "keyer mode (off / chroma / luma / cut and fill), the chroma and luma parameters, mask display and the sampling assistant, offered only where the device says the input has a keyer — no simulator input does, so written and read back but never seen keying"
        }
       }
      }
@@ -1227,8 +1227,8 @@
         "text": "on odd inputs"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "cut-and-fill mode on the inputs the device says can be a fill (the odd ones), with the cut input, sync status and phase it reports; set on the simulator"
        }
       }
      }
@@ -1502,8 +1502,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "B",
+        "text": "copy a layer’s whole property set — source, geometry and every property the panel holds — and paste it onto any layer of any screen or buffer (held in the page, not stored on the device)"
        }
       }
      }
@@ -1547,8 +1547,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "what a save records, as the device models it: the thirteen categories, which live layers, background and top for a screen; four categories for an auxiliary; which destinations and what of each for a master memory — a slot reports the filter it was saved with"
        }
       }
      }
@@ -1777,8 +1777,8 @@
         "text": "system, screens / aux, canvas, background, audio, quick preset"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "template, layer resources (off / seamless / split and their screen), every output’s role and destination, screens and auxiliaries in service, background layer type — from the device’s validity lists — computed and shown against the applied state, applied behind a second tap; each screen’s canvas as a grid of outputs or free placement; background sets, audio and the quick preset on their own pages"
        }
       }
      }
@@ -1822,8 +1822,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "P",
-        "text": "role, format from the device's allowed list applied through its update trigger, plug state, test pattern on/off, gamma/brightness/contrast/saturation/hue/gains, label, a picture of each output; no HDR, LUT, framelock or pixel encoding"
+        "state": "F",
+        "text": "role, format from the device’s allowed list applied through its update trigger, plug state, test pattern, picture and gains, area of interest and pitch, HDR and colorimetry, the plug’s HDCP policy, pixel encoding, embedded audio and SDI level, the connected display’s EDID"
        }
       }
      }
@@ -1912,8 +1912,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "the whole format or a custom area in thousandths with overscan, applied with the device’s trigger and read back from its canvas status; pitch compensation beside it"
        }
       }
      }
@@ -1957,8 +1957,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "sixteen slots named and erased, an editor that takes a size and rate (CVT) or every porch and sync (full), checks it on the device and saves it into a slot; the erase is written but the simulator keeps the slot"
        }
       }
      }
@@ -2002,8 +2002,8 @@
         "text": "plug, LUT allocation, signal, correction, aspect, keying"
        },
        "openrcs": {
-        "state": "P",
-        "text": "availability, active plug, connector and signal format per input, freeze and black; no plug selection, image, aspect or keying"
+        "state": "F",
+        "text": "active plug, label, signal type and HDCP from the device’s lists, HDR mode and nits, picture, sharpness and pulldown, aspect (signal / shown as / in a layer), predefined or typed crop applied with the device’s trigger, crop finder, keyer, EDID; no LUT allocation"
        }
       }
      }
@@ -2047,8 +2047,8 @@
         "text": "same"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "the EDID each input plug presents, decoded (make, name, preferred timing, extensions), replaced from the device’s library of 21 factory and 64 saved EDIDs; a connected display’s EDID saved into that library from the Outputs page; no byte editor"
        }
       }
      }
@@ -2227,8 +2227,8 @@
         "text": "routing, Dante, VU meters, custom sources"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "the audio layer per preset buffer, every routing point (screens, auxiliaries, outputs, multiviewer, line outs, Dante groups) following a layer, its content, a screen or a widget or routed direct, mutes, the ten custom sources channel by channel, level readings, the clock, the quick preset’s audio; Dante subscriptions are read, not made"
        }
       }
      }
@@ -2407,8 +2407,8 @@
         "text": "configuration slots, export / import, USB"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the two on-device configuration slots: back up every module into one under a label, restore (unpack then apply, the device reboots) or erase behind a second tap; export to a file and import from USB are not offered — restore never fired on the simulator"
        }
       }
      }
@@ -2542,8 +2542,8 @@
         "text": "Dante (optional card); RTMP streaming out to a network or a platform"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "RTMP: ten destinations with label, URL and key, the picture source, profile and quality, the audio and its pair, start and stop with the device’s status — the simulator never starts a stream; Dante is shown, not configured"
        }
       }
      }

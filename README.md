@@ -155,13 +155,31 @@ device's own tally lists; **Multiviewer** — the monitoring output's windows
 on a canvas, drag and resize, sources, twenty layout memories and the three
 timers; **Outputs** — role, format (applied through the device's own update
 trigger), plug, test pattern and picture settings; **Stills** — the fifty-slot
-library, a capture into it, and each screen's frame slots; **System** —
-identity, network, temperatures, fans, the front panel and a reboot; and an
-**Inspector** over any AWJ path with the wire log, which LivePremier gets too.
-All of it has been driven end to end against the vendor's **Midra 4K (3.2.29)
-and Alta 4K (1.3.7) simulators** only — and three things the simulators do not
-do are written but unproven: a timer never leaves `IDLE`, a capture never
-completes, and the tally lists never fill. The paths
+library, a capture into it, and each screen's frame slots; **Audio** — the
+audio layer each preset buffer carries, what every screen, auxiliary, output,
+line out and Dante group follows or carries, mutes, the ten custom sources,
+level readings and the Dante card's state; **Setup** — the device's
+configuration (outputs to screens, layer resources to screens, auxiliaries,
+templates) staged, computed against the applied one and applied behind a
+second tap, each screen's canvas as a grid of outputs or free placement, and
+its test pattern; **System** — identity, network, temperatures, fans, the
+front panel, a reboot, the two on-device **configuration slots** (back up,
+restore, erase) and **RTMP streaming**; and an **Inspector** over any AWJ path
+with the wire log, which LivePremier gets too. The Inputs page sets up a plug
+in full — signal type, HDCP, HDR, picture, aspect and cropping, the chroma /
+luma / cut-and-fill **keyer**, and the **EDID** it presents, loaded from the
+device's library; the Outputs page adds the **area of interest** and pitch,
+HDR, colorimetry, the plug's HDCP, pixel encoding and embedded audio, the
+connected display's EDID (saved into the library from here) and **custom
+formats**; Presets show and set **what a save records**; Screens take, cut and
+T-bar a ticked **group** of destinations; the Layers canvas **snaps** to edges
+and centres, nudges from the arrow keys and copies a layer's whole property set
+onto any other. All of it has been driven end to end against the vendor's
+**Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only — and what the
+simulators accept but do not act on is written but unproven: a timer never
+leaves `IDLE`, a capture never completes, the tally lists never fill, a stream
+never starts, a custom format is never erased, and a grid change never moves
+the canvas size. The paths
 behind the newer views were spelled from the Pulse 4K's own store dump rather
 than answered over AWJ by the unit — the simulators answer every one — so a
 `get` of those on a real unit is still owed. One difference from the LivePremier

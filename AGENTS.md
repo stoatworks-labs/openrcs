@@ -182,9 +182,26 @@ std binary and may use crates. Keep the split.
   role being the applied preconfig's `mode` for that output (`SCREEN_FORMAT`,
   `AUX*`, `MULTIVIEWER`, `DISABLE`). Write `format`, then `xUpdate`; the status
   follows within a second. Outputs are keyed `1`…`6` and `MTVW`.
+- **A list-valued property is spelled like a collection on the wire.** The
+  store's `outputList` under a preconfig state is `@props/$output` in the
+  device's reply, whichever way it was asked for — a `get` of
+  `…/@props/outputList` answers with the path rewritten to `$output`, so the
+  hub keys the value under the name you did not ask for. Ask for `$output`.
+  Same rule as `xxxList/items/K` → `$xxx/@items/K`, one level lower.
 - **Unproven on the simulators (written, never acted on):** timer `xStart`
   (state stays `IDLE`), still `capture/cmd/@props/xRequest` (status stays
-  `NO_REQUEST`), and the tally lists. Keep those three words in the docs.
+  `NO_REQUEST`), the tally lists, `streaming/control/@props/start` (status
+  stays `NO_REQUEST`), `customFormats/$bank/@items/N/control/@props/xDelete`
+  (the slot stays valid), and a grid `xUpdate` (the canvas size does not
+  follow). Keep those words in the docs.
+- **The preconfig `xApply` rebuilds the pipeline.** Every output goes dark
+  for seconds and layers reset; the surface arms it behind a second tap and
+  re-reads everything three seconds later. Never fire it in a test that other
+  views depend on without re-checking the applied state afterwards.
+- **A backup's `xRequest` is a list of modules, not a flag** — the same for
+  the restore's apply step; only the extract step is a boolean. The slot's own
+  `control/@props/label` is what names it; the export command's `label` did
+  not reach the slot on the simulator.
 - **Tallies have never been seen populated.** `tallies/inputs/@props/*` reads
   as four empty lists on the simulator whatever is on a layer, and the real
   unit had nothing on its layers when dumped. The Inputs view shows them; do
