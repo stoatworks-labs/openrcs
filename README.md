@@ -151,9 +151,17 @@ a colour) and **top frame**, or an auxiliary's background source; **Presets**
 that save, label and erase as well as recall, with a master save that refuses
 to overwrite the screen and aux slots the device would otherwise write
 silently; **Inputs** with thumbnails, plug, signal, freeze, black and the
-device's own tally lists; and **System** — identity, network, temperatures,
-fans, the front panel and a reboot. All of it has been driven end to end
-against the vendor's **Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only. The paths
+device's own tally lists; **Multiviewer** — the monitoring output's windows
+on a canvas, drag and resize, sources, twenty layout memories and the three
+timers; **Outputs** — role, format (applied through the device's own update
+trigger), plug, test pattern and picture settings; **Stills** — the fifty-slot
+library, a capture into it, and each screen's frame slots; **System** —
+identity, network, temperatures, fans, the front panel and a reboot; and an
+**Inspector** over any AWJ path with the wire log, which LivePremier gets too.
+All of it has been driven end to end against the vendor's **Midra 4K (3.2.29)
+and Alta 4K (1.3.7) simulators** only — and three things the simulators do not
+do are written but unproven: a timer never leaves `IDLE`, a capture never
+completes, and the tally lists never fill. The paths
 behind the newer views were spelled from the Pulse 4K's own store dump rather
 than answered over AWJ by the unit — the simulators answer every one — so a
 `get` of those on a real unit is still owed. One difference from the LivePremier

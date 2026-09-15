@@ -605,6 +605,46 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K: multiviewer, stills, outputs, inspector — 2026-09-15, round three
+
+Four more views, still simulator-only, all on paths from the store dump and
+the sweep (`multiviewer/$bank/control/load|save/$slot/@items/N/@props/xRequest`
+was in the hardware sweep).
+
+- **Multiviewer:** `multiviewer/$widget/@items/N/control/@props/{enable, source,
+  posH, posV, sizeH, sizeV, displayOsd}` (top-left geometry, OSD OFF/BASIC/
+  DETAILED), `status/@props/{isEnabled,…}`; sources from `multiviewer/status/
+  @props/sourceValidity` (inputs, `SCREEN_PRGM_n`/`SCREEN_PRW_n`, `TIMER_n`);
+  usable slots from `widgetValidity` (16 on the Pulse sim, 27 on the Zenith
+  200 sim — and the Zenith carries 27 slots where the Pulse carries 20, slot 28
+  E12). Bank `multiviewer/$bank/@items/N/{status/isValid, control/label|xDelete}`
+  1..20. The MTVW output's size is the canvas (`$output/@items/MTVW/status`).
+  Verified: W1 source, Quad grid (4 widgets at 960×540, rest disabled), memory 3
+  recall restored the 4×4.
+- **Timers:** `$timer/@items/TIMER_n/control/@props/{type, label, countdownDuration
+  (0..86399 s), currentTimeMode, xStart, xPause, xStop}`, `status/@props/state`
+  (IDLE/RUNNING/PAUSED/ELAPSED). Type and duration write; **xStart leaves the sim
+  at IDLE** — unproven.
+- **Stills:** `stillLibrary/$bank/@items/1..50/{status/@props/{isValid, isUsed,
+  fileName, fileSize, width, height}, control/@props/{label, xDelete}}`; capture
+  `stillLibrary/capture/cmd/@props/{stream, destination LIBRARY|FILE, libraryMode
+  AUTO_SLOT|SPECIFIC_SLOT, librarySlot, fileType PNG|BMP|JPEG, mode INCREMENTAL|
+  OVERWRITE, xRequest}`, `capture/status/@props/{status, fileName, streamValidity}`.
+  **The sim never performs a capture** (status stays NO_REQUEST) — unproven. The
+  `images/download/N` HTTP route answers 500 on the sim, so no library thumbnails.
+- **Outputs:** keys 1..6 + `MTVW`; role from `CURRENT/$output/@items/K/@props/
+  mode` (SCREEN_FORMAT / AUX* / MULTIVIEWER / DISABLE) picks `format/{screen|
+  auxiliary|multiviewer}/control/@props/{format, xUpdate}` and `status/@props/
+  formatValidity`; `status/@props/{isAvailable, format, rate, sizeH, sizeV,
+  ledColor}`; `pattern/control/@props/{type (17 OPATTERN_TYPE values), inhibit}`
+  — inhibit=false shows it; `settings/@props/{gamma 5..40 tenths, brightness/
+  contrast/saturation −128..127, hue −90..90, gainR/G/B, offsetR/G/B}`;
+  `$plug/@items/1/status/@props/{plugStatus, type}`. Verified: SMPTE pattern on/
+  off, format HDTV_720P applied via xUpdate (status 1280×720) and back.
+- **Inspector:** the AWJ side of the mnemonic Inspector/Console — every path in
+  `store.paths`, get/set any path (JSON), the rx/tx/er log (capped at 400
+  entries in the store). Offered on LivePremier too.
+
 ## Midra 4K / Alta 4K: pictures, background/top layers, quick preset, System — 2026-09-15, round two
 
 Still simulator-only. Grounded the same way as the morning's round (sweep, store

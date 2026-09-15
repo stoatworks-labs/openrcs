@@ -455,7 +455,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -517,7 +517,8 @@ function header() {
 
 const NAV = [
   { section: () => awjSeriesName() },
-  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpinputs', 'Inputs'], ['lpsystem', 'System'],
+  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpmultiview', 'Multiviewer'],
+  ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsystem', 'System'], ['lpinspector', 'Inspector'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -549,6 +550,9 @@ const VIEW_REQUIRES = {
   lplayers: () => awjDialect() === 'mng',
   lpinputs: () => awjDialect() === 'mng',
   lpsystem: () => awjDialect() === 'mng',
+  lpmultiview: () => awjDialect() === 'mng',
+  lpoutputs: () => awjDialect() === 'mng',
+  lpstills: () => awjDialect() === 'mng',
 };
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
@@ -3062,13 +3066,50 @@ const MNG = {
   ipv4Dhcp: () => 'DeviceObject/system/network/ipv4/control/@props/enableDhcp',
   reboot: () => 'DeviceObject/system/shutdown/@props/xReboot',
   standbyIsOn: () => 'DeviceObject/system/shutdown/standby/status/@props/isStandbyOn',
+  // The multiviewer: twenty widgets on the MTVW output, twenty layout memories.
+  mvwWidget: (n, prop) => `DeviceObject/multiviewer/$widget/@items/${n}/control/@props/${prop}`,
+  mvwWidgetStatus: (n, prop) => `DeviceObject/multiviewer/$widget/@items/${n}/status/@props/${prop}`,
+  mvwSourceValidity: () => 'DeviceObject/multiviewer/status/@props/sourceValidity',
+  mvwWidgetValidity: () => 'DeviceObject/multiviewer/status/@props/widgetValidity',
+  mvwPresetValid: (s) => `DeviceObject/multiviewer/$bank/@items/${s}/status/@props/isValid`,
+  mvwPresetLabel: (s) => `DeviceObject/multiviewer/$bank/@items/${s}/control/@props/label`,
+  mvwPresetDelete: (s) => `DeviceObject/multiviewer/$bank/@items/${s}/control/@props/xDelete`,
+  mvwLoad: (s) => `DeviceObject/multiviewer/$bank/control/load/$slot/@items/${s}/@props/xRequest`,
+  mvwSave: (s) => `DeviceObject/multiviewer/$bank/control/save/$slot/@items/${s}/@props/xRequest`,
+  // Timers.
+  timer: (n, prop) => `DeviceObject/$timer/@items/TIMER_${n}/control/@props/${prop}`,
+  timerState: (n) => `DeviceObject/$timer/@items/TIMER_${n}/status/@props/state`,
+  // The still library and the capture into it.
+  stillStatus: (s, prop) => `DeviceObject/stillLibrary/$bank/@items/${s}/status/@props/${prop}`,
+  stillLabel: (s) => `DeviceObject/stillLibrary/$bank/@items/${s}/control/@props/label`,
+  stillDelete: (s) => `DeviceObject/stillLibrary/$bank/@items/${s}/control/@props/xDelete`,
+  captureCmd: (prop) => `DeviceObject/stillLibrary/capture/cmd/@props/${prop}`,
+  captureStatus: (prop) => `DeviceObject/stillLibrary/capture/status/@props/${prop}`,
+  // Outputs, keyed 1..6 and MTVW; the role (applied preconfig) picks the format node.
+  outputRole: (k) => `${MNG_CURRENT}/$output/@items/${k}/@props/mode`,
+  outputStatus: (k, prop) => `DeviceObject/$output/@items/${k}/status/@props/${prop}`,
+  outputLabel: (k) => `DeviceObject/$output/@items/${k}/control/@props/label`,
+  outputFormat: (k, role) => `DeviceObject/$output/@items/${k}/format/${role}/control/@props/format`,
+  outputFormatUpdate: (k, role) => `DeviceObject/$output/@items/${k}/format/${role}/control/@props/xUpdate`,
+  outputFormatValidity: (k, role) => `DeviceObject/$output/@items/${k}/format/${role}/status/@props/formatValidity`,
+  outputSetting: (k, prop) => `DeviceObject/$output/@items/${k}/settings/@props/${prop}`,
+  outputPattern: (k, prop) => `DeviceObject/$output/@items/${k}/pattern/control/@props/${prop}`,
+  outputPlugStatus: (k, plug, prop) => `DeviceObject/$output/@items/${k}/$plug/@items/${plug}/status/@props/${prop}`,
   // Both lists' control and status, one prefix.
   SUB_TRANSITIONS: 'DeviceObject/transition',
   SUB_TALLIES: 'DeviceObject/tallies',
   SUB_INPUTS: 'DeviceObject/$input',
   SUB_QUICK_PRESET: 'DeviceObject/quickPreset',
   SUB_SYSTEM: 'DeviceObject/system',
+  SUB_MULTIVIEWER: 'DeviceObject/multiviewer',
+  SUB_TIMERS: 'DeviceObject/$timer',
+  SUB_STILLS: 'DeviceObject/stillLibrary',
+  SUB_OUTPUTS: 'DeviceObject/$output',
 };
+const MNG_MVW_WIDGETS = 27;   // slots on an Alta 4K; a Midra 4K has 20, and widgetValidity says which are usable
+const MNG_TIMERS = 3;
+const MNG_STILL_SLOTS = 50;
+const MNG_OUTPUTS = ['1', '2', '3', '4', '5', '6', 'MTVW'];
 const MNG_INPUTS = 16;
 const MNG_TALLY_BUSES = ['usedOnScreenPgm', 'usedOnScreenPrw', 'usedOnAuxPgm', 'usedOnAuxPrw'];
 
@@ -3458,7 +3499,7 @@ function startMngSnapshots() {
   if (startMngSnapshots.timer) return;
   startMngSnapshots.timer = setInterval(() => {
     if (!mngSnapshotsWork() || document.hidden) return;
-    if (currentView !== 'lplayers' && currentView !== 'lpinputs') return;
+    if (!['lplayers', 'lpinputs', 'lpmultiview', 'lpoutputs', 'lpstills'].includes(currentView)) return;
     MNG_SNAP_TICK++;
     store.notify();
   }, 4000);
@@ -3567,6 +3608,499 @@ function alarmChipMng(a) {
   const bad = a !== 'NONE' && a !== false;
   return el('span', { class: 'chip ' + (bad ? 'bad' : 'on') }, el('span', { class: 'dot' }), bad ? String(a).toLowerCase() : 'ok');
 }
+
+// ---------- AWJ: Multiviewer (Midra 4K / Alta 4K) ----------
+// The one multiviewer, on the output keyed MTVW: up to twenty windows the
+// model calls widgets, each with a source the device lists as valid, laid out
+// in the multiviewer output's pixels (top-left, unlike a layer's centre).
+// Twenty layout memories, and the three timers a widget can show.
+VIEWS.lpmultiview = (() => {
+  let read = false;
+  let sel = 1;
+  let mode = 'recall';        // memories: recall | save | erase | label
+  let armed = null;
+  let labelDraft = '';
+  const OSD = ['OFF', 'BASIC', 'DETAILED'];
+  const TIMER_TYPES = ['CURRENT_TIME', 'COUNTDOWN', 'STOPWATCH'];
+
+  const validWidgets = () => (store.pval(MNG.mvwWidgetValidity()) || []).map(Number).filter(n => n >= 1 && n <= MNG_MVW_WIDGETS);
+  const outputPx = () => {
+    const w = store.pval(MNG.outputStatus('MTVW', 'sizeH')), h = store.pval(MNG.outputStatus('MTVW', 'sizeV'));
+    return { w: w > 0 ? w : 1920, h: h > 0 ? h : 1080, reported: w > 0 && h > 0 };
+  };
+  const W = (n, prop) => MNG.mvwWidget(n, prop);
+  const wv = (n, prop) => store.pval(W(n, prop));
+
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    for (const p of [MNG.mvwWidgetValidity(), MNG.mvwSourceValidity(), MNG.outputStatus('MTVW', 'sizeH'), MNG.outputStatus('MTVW', 'sizeV')]) store.pget(p);
+    // Only the slots this unit says it has: the model carries up to 27 and
+    // the rest answer E12.
+    const slots = validWidgets();
+    for (const n of (slots.length ? slots : Array.from({ length: 16 }, (_, i) => i + 1))) {
+      for (const p of ['enable', 'source', 'posH', 'posV', 'sizeH', 'sizeV', 'displayOsd']) store.pget(W(n, p));
+      store.pget(MNG.mvwWidgetStatus(n, 'isEnabled'));
+    }
+    for (let s = 1; s <= 20; s++) { store.pget(MNG.mvwPresetValid(s)); store.pget(MNG.mvwPresetLabel(s)); }
+    for (let t = 1; t <= MNG_TIMERS; t++) { for (const p of ['type', 'label', 'countdownDuration']) store.pget(MNG.timer(t, p)); store.pget(MNG.timerState(t)); }
+    mngInputs.refresh();
+    awjViewSubs = () => [MNG.SUB_MULTIVIEWER, MNG.SUB_TIMERS];
+    awjApplySubs();
+    startMngSnapshots();
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armed = null; settle(); }
+  const readBack = (n) => { if (awjLive) return; setTimeout(() => { for (const p of ['enable', 'source', 'posH', 'posV', 'sizeH', 'sizeV', 'displayOsd']) store.pget(W(n, p)); store.pget(MNG.mvwWidgetStatus(n, 'isEnabled')); }, 150); };
+
+  // A source the device lists, named for an operator.
+  function sourceName(v) {
+    if (!v || v === 'NONE') return '— none —';
+    let m;
+    if ((m = /^INPUT_(\d+)$/.exec(v))) return mngInputs.name(v);
+    if ((m = /^SCREEN_PRGM_(\d+)$/.exec(v))) return `Screen ${m[1]} program`;
+    if ((m = /^SCREEN_PRW_(\d+)$/.exec(v))) return `Screen ${m[1]} preview`;
+    if ((m = /^AUX_PRGM_(\d+)$/.exec(v))) return `Aux ${m[1]} program`;
+    if ((m = /^AUX_PRW_(\d+)$/.exec(v))) return `Aux ${m[1]} preview`;
+    if ((m = /^TIMER_(\d+)$/.exec(v))) return `Timer ${m[1]}${store.pval(MNG.timer(+m[1], 'label')) ? ' · ' + store.pval(MNG.timer(+m[1], 'label')) : ''}`;
+    return String(v).toLowerCase().replace(/_/g, ' ');
+  }
+  function sourceColor(v) {
+    if (/^INPUT_/.test(v)) return mngSourceColor(v);
+    if (/^SCREEN_PRGM|^AUX_PRGM/.test(v)) return 'var(--pgm)';
+    if (/^SCREEN_PRW|^AUX_PRW/.test(v)) return 'var(--pvw)';
+    if (/^TIMER_/.test(v)) return 'var(--armed)';
+    return 'transparent';
+  }
+
+  // ---- geometry: top-left plus size, in output pixels
+  const rectPx = (n) => ({ left: wv(n, 'posH') ?? 0, top: wv(n, 'posV') ?? 0, w: wv(n, 'sizeH') ?? 0, h: wv(n, 'sizeV') ?? 0 });
+  function setGeom(n, r) {
+    pthrottledSet(W(n, 'posH'), Math.max(0, Math.round(r.left)));
+    pthrottledSet(W(n, 'posV'), Math.max(0, Math.round(r.top)));
+    pthrottledSet(W(n, 'sizeH'), Math.max(16, Math.round(r.w)));
+    pthrottledSet(W(n, 'sizeV'), Math.max(16, Math.round(r.h)));
+  }
+  function dragMove(e, n, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = n;
+    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = rectPx(n);
+    const move = (ev) => {
+      const r = { ...r0, left: r0.left + (ev.clientX - sx) / scale, top: r0.top + (ev.clientY - sy) / scale };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      setGeom(n, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(n); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragResize(e, n, scale, corner) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = n;
+    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = rectPx(n);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      const r = { left, top, w: right - left, h: bot - top };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
+      setGeom(n, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(n); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  // Grid presets over the usable widgets in slot order; the rest are disabled.
+  function grid(cols, rows) {
+    const o = outputPx(), ws = validWidgets();
+    const cw = o.w / cols, ch = o.h / rows;
+    ws.forEach((n, i) => {
+      const on = i < cols * rows;
+      store.pset(W(n, 'enable'), on);
+      if (on) setGeom(n, { left: (i % cols) * cw, top: Math.floor(i / cols) * ch, w: cw, h: ch });
+      readBack(n);
+    });
+  }
+
+  function canvas() {
+    const o = outputPx();
+    const CW = Math.min(720, Math.max(360, (window.innerWidth || 1200) - 620));
+    const scale = CW / o.w, CH = o.h * scale;
+    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
+    for (const n of validWidgets()) {
+      const on = wv(n, 'enable') === true;
+      // a disabled widget keeps its old box; drawing every one of them buries
+      // the layout, so only the selected one shows dashed
+      if (!on && n !== sel) continue;
+      const src = wv(n, 'source');
+      const r = rectPx(n);
+      const m = /^INPUT_(\d+)$/.exec(String(src || ''));
+      const shot = on && m ? mngSnapshotUrl('inputs', +m[1]) : null;
+      cv.append(el('div', {
+        class: 'lrect' + (n === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${n};` +
+          (shot ? `background-image:url(${shot})` : on && src && src !== 'NONE' ? `background:color-mix(in srgb, ${sourceColor(src)} 45%, transparent)` : ''),
+        onpointerdown: (e) => dragMove(e, n, scale),
+      },
+        el('span', { class: 'lrect-tag', text: `W${n}${on && src && src !== 'NONE' ? ' · ' + sourceName(src) : on ? '' : ' · off'}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, n, scale, k) }))));
+    }
+    return el('div', { class: 'canvas-wrap' }, cv);
+  }
+
+  function panel() {
+    const n = sel;
+    const on = wv(n, 'enable') === true;
+    const src = wv(n, 'source');
+    const write = (p, v) => { store.pset(W(n, p), v); readBack(n); };
+    const srcSel = el('select', { onchange: (e) => write('source', e.target.value) });
+    for (const v of (store.pval(MNG.mvwSourceValidity()) || ['NONE'])) srcSel.append(el('option', { value: v, selected: v === src, text: sourceName(v) }));
+    if (src != null && !(store.pval(MNG.mvwSourceValidity()) || []).includes(src)) srcSel.append(el('option', { value: src, selected: true, text: String(src) }));
+    const num = (prop, label) => el('label', { class: 'field' }, label,
+      el('input', { type: 'number', step: 1, min: 0, value: wv(n, prop) ?? '', onchange: (e) => write(prop, Math.max(0, Math.round(+e.target.value || 0))) }));
+    return el('div', { class: 'editor' },
+      el('h2', {}, `Widget ${n} `, el('span', { class: 'chip ' + (store.pval(MNG.mvwWidgetStatus(n, 'isEnabled')) === true ? 'on' : 'off') }, el('span', { class: 'dot' }), store.pval(MNG.mvwWidgetStatus(n, 'isEnabled')) === true ? 'shown' : 'hidden')),
+      el('button', { class: 'btn ' + (on ? 'primary' : 'ghost'), onclick: () => write('enable', !on) }, on ? 'Enabled' : 'Enable'),
+      el('label', { class: 'field' }, 'Source', srcSel),
+      el('label', { class: 'field' }, 'On-screen label',
+        el('select', { onchange: (e) => write('displayOsd', e.target.value) },
+          ...OSD.map(v => el('option', { value: v, selected: v === wv(n, 'displayOsd'), text: v.toLowerCase() })))),
+      el('div', { class: 'nrow' }, num('posH', 'Left'), num('posV', 'Top')),
+      el('div', { class: 'nrow' }, num('sizeH', 'Width'), num('sizeV', 'Height')));
+  }
+
+  // ---- layout memories, the same four modes as the preset banks
+  function afterWrite(s) { const re = () => { store.pget(MNG.mvwPresetValid(s)); store.pget(MNG.mvwPresetLabel(s)); }; re(); setTimeout(re, 300); }
+  function tap(s) {
+    const valid = store.pval(MNG.mvwPresetValid(s)) === true;
+    if (mode === 'recall') { if (!valid) return; store.pset(MNG.mvwLoad(s), true); setTimeout(() => { for (const n of validWidgets()) readBack(n); }, 400); return; }
+    if (mode === 'save') { store.pset(MNG.mvwSave(s), true); afterWrite(s); return; }
+    if (mode === 'label') { armed = s; labelDraft = store.pval(MNG.mvwPresetLabel(s)) || ''; store.notify(); return; }
+    if (mode === 'erase') { if (!valid) return; if (armed !== s) { armed = s; store.notify(); return; } store.pset(MNG.mvwPresetDelete(s), true); armed = null; afterWrite(s); store.notify(); }
+  }
+  function memories() {
+    const tiles = [];
+    for (let s = 1; s <= 20; s++) {
+      const valid = store.pval(MNG.mvwPresetValid(s)) === true;
+      const label = store.pval(MNG.mvwPresetLabel(s));
+      tiles.push(el('button', { class: 'slot' + (valid ? ' valid' : '') + (armed === s ? ' sel' : ''),
+        disabled: mode === 'recall' || mode === 'erase' ? !valid : false,
+        title: { recall: valid ? `Recall layout ${s}` : `Slot ${s} is empty`, save: `Store the layout in slot ${s}${valid ? ' (overwrites)' : ''}`, erase: armed === s ? `Tap again to erase ${s}` : `Erase ${s}`, label: `Label ${s}` }[mode],
+        onclick: () => tap(s) },
+        el('span', { class: 'num', text: String(s) }), valid ? el('span', { class: 'lbl', text: label || 'layout' }) : null));
+    }
+    return el('div', { class: 'panel' }, el('h2', 'Layout memories'),
+      el('div', { class: 'row' },
+        el('div', { class: 'seg' }, ...[['recall', 'Recall', 'recall'], ['save', 'Save', 'save'], ['erase', 'Erase', 'take'], ['label', 'Label', 'recall']].map(([m, t, cls]) =>
+          el('button', { class: mode === m ? 'on ' + cls : '', onclick: () => { mode = m; armed = null; store.notify(); } }, t))),
+        el('span', { class: 'hint', text: { recall: 'Tap a memory to recall its layout.', save: 'Tap a slot to store the current layout in it.', erase: 'Tap a memory, then tap it again to erase it.', label: 'Tap a memory to name it.' }[mode] })),
+      el('div', { class: 'mem-grid' }, ...tiles),
+      mode === 'label' && armed !== null ? el('div', { class: 'row' },
+        el('label', { text: `Slot ${armed} ` }),
+        el('input', { type: 'text', maxlength: 64, value: labelDraft, oninput: (e) => { labelDraft = e.target.value; } }),
+        el('button', { class: 'btn primary', onclick: () => { store.pset(MNG.mvwPresetLabel(armed), labelDraft); afterWrite(armed); armed = null; store.notify(); } }, 'Set label'),
+        el('button', { class: 'btn ghost', onclick: () => { armed = null; store.notify(); } }, 'Cancel')) : null);
+  }
+
+  function timers() {
+    const rows = [];
+    for (let t = 1; t <= MNG_TIMERS; t++) {
+      const type = store.pval(MNG.timer(t, 'type')), st = store.pval(MNG.timerState(t));
+      const write = (p, v) => { store.pset(MNG.timer(t, p), v); if (!awjLive) setTimeout(() => { store.pget(MNG.timer(t, p)); store.pget(MNG.timerState(t)); }, 150); };
+      const fire = (p) => { store.pset(MNG.timer(t, p), true); if (!awjLive) setTimeout(() => store.pget(MNG.timerState(t)), 200); };
+      const secs = store.pval(MNG.timer(t, 'countdownDuration'));
+      rows.push(el('tr', {},
+        el('td', { text: `Timer ${t}` }),
+        el('td', {}, el('input', { type: 'text', maxlength: 32, value: store.pval(MNG.timer(t, 'label')) ?? '', onchange: (e) => write('label', e.target.value) })),
+        el('td', {}, el('select', { onchange: (e) => write('type', e.target.value) }, ...TIMER_TYPES.map(v => el('option', { value: v, selected: v === type, text: v.toLowerCase().replace(/_/g, ' ') })))),
+        el('td', {}, type === 'COUNTDOWN' ? el('input', { class: 'num', type: 'number', min: 0, max: 86399, step: 1, value: secs ?? '', title: 'seconds', onchange: (e) => write('countdownDuration', Math.max(0, Math.min(86399, Math.round(+e.target.value || 0)))) }) : el('span', { class: 'hint', text: '—' })),
+        el('td', {}, el('span', { class: 'chip ' + (st && st !== 'IDLE' ? 'on' : 'off') }, el('span', { class: 'dot' }), String(st ?? '·').toLowerCase())),
+        el('td', { class: 'acts' },
+          el('button', { class: 'btn small primary', onclick: () => fire('xStart') }, 'Start'),
+          el('button', { class: 'btn small ghost', onclick: () => fire('xPause') }, 'Pause'),
+          el('button', { class: 'btn small ghost', onclick: () => fire('xStop') }, 'Stop'))));
+    }
+    return el('div', { class: 'panel' }, el('h2', 'Timers'),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['', 'Label', 'Type', 'Countdown (s)', 'State', ''].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...rows)),
+      el('div', { class: 'hint pad', text: 'A widget shows a timer as its source. Pause and stop are the device’s own verbs; a stopwatch counts up, a countdown counts its duration down.' }));
+  }
+
+  function render() {
+    settle();
+    const o = outputPx();
+    const ws = validWidgets();
+    if (!ws.includes(sel)) sel = ws[0] ?? 1;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Multiviewer' }), el('span', { class: 'hint', text: 'The monitoring output’s windows — drag to move, corners to resize; twenty layout memories; the three timers' })),
+      el('div', { class: 'panel' },
+        awjLiveRow('multiviewer changes'),
+        el('div', { class: 'row' },
+          el('span', { class: 'hint', text: `${o.w}×${o.h}${o.reported ? '' : ' (assumed)'} · ${ws.length} widgets this unit can use` }),
+          el('div', { class: 'grow' }),
+          el('div', { class: 'seg' }, ...[[2, 2, 'Quad'], [3, 3, '3×3'], [4, 3, '4×3'], [4, 4, '4×4']].map(([c, r, t]) => el('button', { onclick: () => grid(c, r) }, t))))),
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' },
+          el('div', { class: 'row' }, el('div', { class: 'seg' }, ...ws.map(n => el('button', { class: n === sel ? 'on recall' : '', onclick: () => { sel = n; store.notify(); } }, `W${n}`)))),
+          canvas()),
+        el('div', { class: 'panel' }, ws.length ? panel() : el('div', { class: 'hint pad', text: 'Waiting for the multiviewer.' }))),
+      memories(),
+      timers());
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Stills (Midra 4K / Alta 4K) ----------
+// The still library — fifty slots the device fills from a capture or an
+// upload — and the frame slots each screen points at it with.
+VIEWS.lpstills = (() => {
+  let read = false;
+  let armed = null;
+  let erasing = false;
+  const cap = { stream: null, libraryMode: 'AUTO_SLOT', librarySlot: 1, fileType: 'PNG' };
+
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    for (let s = 1; s <= MNG_STILL_SLOTS; s++) { for (const p of ['isValid', 'fileName', 'width', 'height', 'fileSize']) store.pget(MNG.stillStatus(s, p)); store.pget(MNG.stillLabel(s)); }
+    for (const p of ['stream', 'libraryMode', 'librarySlot', 'fileType', 'mode', 'destination']) store.pget(MNG.captureCmd(p));
+    for (const p of ['status', 'fileName', 'streamValidity']) store.pget(MNG.captureStatus(p));
+    for (const d of awj().destinations()) if (d.kind === 'screen')
+      for (const list of ['back', 'top']) for (let f = 1; f <= 4; f++) for (const tail of ['status/@props/isValid', 'control/@props/label', 'control/@props/librarySlot']) store.pget(MNG.frame(d.n, list, f, tail));
+    mngInputs.refresh();
+    awjViewSubs = () => [MNG.SUB_STILLS];
+    awjApplySubs();
+    startMngSnapshots();
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armed = null; settle(); }
+  const kb = (n) => (n == null ? '·' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB');
+
+  function library() {
+    const tiles = [];
+    for (let s = 1; s <= MNG_STILL_SLOTS; s++) {
+      const valid = store.pval(MNG.stillStatus(s, 'isValid')) === true;
+      const name = store.pval(MNG.stillStatus(s, 'fileName')) || store.pval(MNG.stillLabel(s)) || 'image';
+      const w = store.pval(MNG.stillStatus(s, 'width')), h = store.pval(MNG.stillStatus(s, 'height'));
+      tiles.push(el('button', { class: 'slot still' + (valid ? ' valid' : '') + (armed === s ? ' sel' : ''),
+        disabled: erasing && !valid,
+        title: valid ? `${name} · ${w}×${h} · ${kb(store.pval(MNG.stillStatus(s, 'fileSize')))}${erasing ? (armed === s ? ' — tap again to erase' : ' — tap to erase') : ''}` : `Slot ${s} is empty`,
+        onclick: () => {
+          if (!erasing) { armed = armed === s ? null : s; store.notify(); return; }
+          if (!valid) return;
+          if (armed !== s) { armed = s; store.notify(); return; }
+          store.pset(MNG.stillDelete(s), true); armed = null;
+          setTimeout(() => { for (const p of ['isValid', 'fileName']) store.pget(MNG.stillStatus(s, p)); }, 300);
+          store.notify();
+        } },
+        el('span', { class: 'num', text: String(s) }),
+        valid ? el('span', { class: 'lbl', text: name }) : null,
+        valid && w ? el('span', { class: 'lbl', text: `${w}×${h}` }) : null));
+    }
+    return el('div', { class: 'panel' }, el('h2', 'Library'),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn ' + (erasing ? 'pgm' : 'ghost'), onclick: () => { erasing = !erasing; armed = null; store.notify(); } }, erasing ? 'Erasing — tap a slot twice' : 'Erase…'),
+        el('span', { class: 'hint', text: 'Fifty slots. The device fills one from a capture below, or from an upload in its own Web RCS; a frame slot on a screen points at one of these.' })),
+      el('div', { class: 'mem-grid' }, ...tiles));
+  }
+
+  function capture() {
+    const cur = (p) => store.pval(MNG.captureCmd(p));
+    const st = store.pval(MNG.captureStatus('status'));
+    const streams = store.pval(MNG.captureStatus('streamValidity')) || [];
+    const name = (v) => /^INPUT_/.test(v) ? mngInputs.name(v) : /^OUTPUT_(\d+)$/.test(v) ? `Output ${v.slice(7)}` : v === 'MTVW' ? 'Multiviewer' : String(v);
+    const write = (p, v) => { store.pset(MNG.captureCmd(p), v); if (!awjLive) setTimeout(() => store.pget(MNG.captureCmd(p)), 150); };
+    return el('div', { class: 'panel' }, el('h2', 'Capture'),
+      el('div', { class: 'row wrap' },
+        el('label', { class: 'field' }, 'Grab',
+          el('select', { onchange: (e) => write('stream', e.target.value) }, ...streams.map(v => el('option', { value: v, selected: v === cur('stream'), text: name(v) })))),
+        el('label', { class: 'field' }, 'Into',
+          el('select', { onchange: (e) => write('libraryMode', e.target.value) },
+            el('option', { value: 'AUTO_SLOT', selected: cur('libraryMode') === 'AUTO_SLOT', text: 'the next free slot' }),
+            el('option', { value: 'SPECIFIC_SLOT', selected: cur('libraryMode') === 'SPECIFIC_SLOT', text: 'a slot I pick' }))),
+        cur('libraryMode') === 'SPECIFIC_SLOT' ? el('label', { class: 'field' }, 'Slot',
+          el('input', { class: 'num', type: 'number', min: 1, max: MNG_STILL_SLOTS, step: 1, value: cur('librarySlot') ?? 1, onchange: (e) => write('librarySlot', Math.max(1, Math.min(MNG_STILL_SLOTS, Math.round(+e.target.value || 1)))) })) : null,
+        el('label', { class: 'field' }, 'File',
+          el('select', { onchange: (e) => write('fileType', e.target.value) }, ...['PNG', 'BMP', 'JPEG'].map(v => el('option', { value: v, selected: v === cur('fileType'), text: v })))),
+        el('button', { class: 'btn primary', onclick: () => {
+          store.pset(MNG.captureCmd('destination'), 'LIBRARY');
+          store.pset(MNG.captureCmd('xRequest'), true);
+          const re = () => { for (const p of ['status', 'fileName']) store.pget(MNG.captureStatus(p)); for (let s = 1; s <= MNG_STILL_SLOTS; s++) for (const p of ['isValid', 'fileName', 'width', 'height', 'fileSize']) store.pget(MNG.stillStatus(s, p)); };
+          setTimeout(re, 800); setTimeout(re, 3000);
+        } }, 'Capture now'),
+        el('span', { class: 'chip ' + (st === 'DONE' ? 'on' : st && st !== 'NO_REQUEST' ? 'bad' : 'off') }, el('span', { class: 'dot' }), String(st ?? '·').toLowerCase().replace(/_/g, ' ')),
+        store.pval(MNG.captureStatus('fileName')) ? el('span', { class: 'hint', text: store.pval(MNG.captureStatus('fileName')) }) : null),
+      el('div', { class: 'hint pad', text: 'A frame of the chosen source, into the library. The device reports the result; a source with no signal fails.' }));
+  }
+
+  function frames() {
+    const screens = awj().destinations().filter(d => d.kind === 'screen');
+    if (!screens.length) return null;
+    return el('div', { class: 'panel' }, el('h2', 'Frame slots'),
+      el('div', { class: 'hint pad', text: 'Each screen has four back frames (what a background set can show) and four top frames (what the top layer can show), each pointing at a library slot. Set them in the unit’s Preconfig; this is what they hold.' }),
+      el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, ...['Screen', 'Slot', 'Back frame', 'Library', 'Top frame', 'Library'].map(h => el('th', { text: h })))),
+        el('tbody', {}, ...screens.flatMap(d => [1, 2, 3, 4].map(f => {
+          const cell = (list) => {
+            const valid = store.pval(MNG.frame(d.n, list, f, 'status/@props/isValid'));
+            const lbl = store.pval(MNG.frame(d.n, list, f, 'control/@props/label'));
+            const shot = valid ? mngSnapshotUrl(`screens/${d.n}/${list}`, f) : null;
+            return [el('td', {}, shot ? el('img', { class: 'thumb', src: shot, alt: '', width: 96, height: 54 }) : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), valid === false ? 'empty' : '·'), lbl ? ' ' + lbl : ''),
+              el('td', { class: 'val', text: String(store.pval(MNG.frame(d.n, list, f, 'control/@props/librarySlot')) ?? '·') })];
+          };
+          return el('tr', {}, el('td', { text: f === 1 ? d.id : '' }), el('td', { class: 'val', text: String(f) }), ...cell('back'), ...cell('top'));
+        })))));
+  }
+
+  function render() {
+    settle();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }), el('span', { class: 'hint', text: 'The still library, a capture into it, and the frame slots each screen points at it with' })),
+      el('div', { class: 'panel' }, awjLiveRow('library changes')),
+      capture(), library(), frames());
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Outputs (Midra 4K / Alta 4K) ----------
+VIEWS.lpoutputs = (() => {
+  let read = false;
+  let sel = '1';
+  const PATTERNS = ['NO_PATTERN', 'COLOR', 'VERTICAL_GREY_SCALE', 'HORIZONTAL_GREY_SCALE', 'VERTICAL_COLOR_BAR', 'HORIZONTAL_COLOR_BAR', 'GRID_16_16', 'GRID_32_32', 'GRID_CUSTOM', 'SMPTE', 'BURST_H', 'BURST_V', 'VERTICAL_GRADIENT', 'HORIZONTAL_GRADIENT', 'CHECKERBOARD', 'SOFTEDGE', 'PATHOLOGICAL'];
+  const SETTINGS = [['gamma', 'Gamma', 5, 40, v => (v / 10).toFixed(1)], ['brightness', 'Brightness', -128, 127, v => v], ['contrast', 'Contrast', -128, 127, v => v],
+    ['saturation', 'Saturation', -128, 127, v => v], ['hue', 'Hue', -90, 90, v => v + '°'], ['gainR', 'Gain R', -128, 127, v => v], ['gainG', 'Gain G', -128, 127, v => v], ['gainB', 'Gain B', -128, 127, v => v]];
+  const roleOf = (key) => {
+    const m = store.pval(MNG.outputRole(key));
+    return m === 'SCREEN_FORMAT' ? 'screen' : m === 'MULTIVIEWER' ? 'multiviewer' : typeof m === 'string' && m.startsWith('AUX') ? 'auxiliary' : null;
+  };
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    for (const k of MNG_OUTPUTS) {
+      for (const p of ['isAvailable', 'isValid', 'format', 'rate', 'sizeH', 'sizeV', 'ledColor', 'isFormatInterlaced']) store.pget(MNG.outputStatus(k, p));
+      store.pget(MNG.outputLabel(k)); store.pget(MNG.outputRole(k));
+      store.pget(MNG.outputPlugStatus(k, 1, 'plugStatus')); store.pget(MNG.outputPlugStatus(k, 1, 'type'));
+      store.pget(MNG.outputPattern(k, 'type')); store.pget(MNG.outputPattern(k, 'inhibit'));
+      for (const [p] of SETTINGS) store.pget(MNG.outputSetting(k, p));
+    }
+    awjViewSubs = () => [MNG.SUB_OUTPUTS];
+    awjApplySubs();
+    startMngSnapshots();
+  }
+  function fetchFormats(k) {
+    const role = roleOf(k);
+    if (!role) return;
+    store.pget(MNG.outputFormat(k, role)); store.pget(MNG.outputFormatValidity(k, role));
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; settle(); }
+
+  function row(k) {
+    const avail = store.pval(MNG.outputStatus(k, 'isAvailable'));
+    const fmt = store.pval(MNG.outputStatus(k, 'format')), rate = store.pval(MNG.outputStatus(k, 'rate'));
+    const w = store.pval(MNG.outputStatus(k, 'sizeH')), h = store.pval(MNG.outputStatus(k, 'sizeV'));
+    const role = store.pval(MNG.outputRole(k));
+    const shot = avail !== false ? mngSnapshotUrl(k === 'MTVW' ? 'multiviewer' : 'outputs', k === 'MTVW' ? 1 : +k) : null;
+    return el('tr', { class: (avail === false ? 'dim' : '') + (k === sel ? ' sel' : ''), onclick: () => { sel = k; fetchFormats(k); store.notify(); } },
+      el('td', {}, shot ? el('img', { class: 'thumb', src: shot, alt: '', width: 96, height: 54 }) : null),
+      el('td', { text: k === 'MTVW' ? 'MVW' : `OUT ${k}` }),
+      el('td', { text: store.pval(MNG.outputLabel(k)) || '—' }),
+      el('td', { class: 'val', text: role ? String(role).toLowerCase().replace(/_/g, ' ') : '·' }),
+      el('td', { class: 'val', text: fmt ? `${String(fmt).replace(/_/g, ' ')}${rate ? ' @ ' + rate : ''}` : '·' }),
+      el('td', { class: 'val', text: w ? `${w}×${h}` : '·' }),
+      el('td', {}, el('span', { class: 'chip ' + (store.pval(MNG.outputPlugStatus(k, 1, 'plugStatus')) === 'ACTIVE' ? 'on' : 'off') }, el('span', { class: 'dot' }),
+        `${store.pval(MNG.outputPlugStatus(k, 1, 'type')) || ''} ${String(store.pval(MNG.outputPlugStatus(k, 1, 'plugStatus')) || '·').toLowerCase()}`.trim())),
+      el('td', {}, store.pval(MNG.outputPattern(k, 'inhibit')) === false ? el('span', { class: 'chip bad' }, el('span', { class: 'dot' }), 'pattern') : null));
+  }
+
+  function editor(k) {
+    const role = roleOf(k);
+    const write = (p, v) => { store.pset(p, v); if (!awjLive) setTimeout(() => store.pget(p), 150); };
+    const fmtSel = role ? (() => {
+      const cur = store.pval(MNG.outputFormat(k, role));
+      const opts = store.pval(MNG.outputFormatValidity(k, role)) || (cur ? [cur] : []);
+      const s = el('select', { onchange: (e) => { store.pset(MNG.outputFormat(k, role), e.target.value); store.pset(MNG.outputFormatUpdate(k, role), true); setTimeout(() => { store.pget(MNG.outputFormat(k, role)); for (const p of ['format', 'rate', 'sizeH', 'sizeV']) store.pget(MNG.outputStatus(k, p)); }, 800); } });
+      for (const v of opts) s.append(el('option', { value: v, selected: v === cur, text: String(v).replace(/_/g, ' ') }));
+      return s;
+    })() : null;
+    const inhibit = store.pval(MNG.outputPattern(k, 'inhibit'));
+    return el('div', { class: 'editor' },
+      el('h2', { text: k === 'MTVW' ? 'Multiviewer output' : `Output ${k}` }),
+      el('label', { class: 'field' }, 'Label', el('input', { type: 'text', maxlength: 32, value: store.pval(MNG.outputLabel(k)) ?? '', onchange: (e) => write(MNG.outputLabel(k), e.target.value) })),
+      role ? el('label', { class: 'field' }, `Format (${role})`, fmtSel) : el('div', { class: 'hint', text: 'Not in service in the applied configuration; no format to set.' }),
+      el('label', { class: 'field' }, 'Test pattern',
+        el('select', { onchange: (e) => write(MNG.outputPattern(k, 'type'), e.target.value) },
+          ...PATTERNS.map(v => el('option', { value: v, selected: v === store.pval(MNG.outputPattern(k, 'type')), text: v.toLowerCase().replace(/_/g, ' ') })))),
+      el('button', { class: 'btn ' + (inhibit === false ? 'pgm' : 'ghost'), onclick: () => write(MNG.outputPattern(k, 'inhibit'), inhibit !== false ? false : true) }, inhibit === false ? 'Pattern on the output' : 'Show pattern'),
+      el('details', { class: 'group', open: true }, el('summary', { text: 'Picture' }),
+        ...SETTINGS.map(([p, label, min, max, fmt]) => {
+          const path = MNG.outputSetting(k, p), v = store.pval(path);
+          return el('label', { class: 'field slider' },
+            el('span', {}, label, el('b', { class: 'sv', text: v == null ? '·' : fmt(v) })),
+            el('input', { type: 'range', min, max, step: 1, value: v ?? 0,
+              onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+              oninput: (e) => { pthrottledSet(path, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); } }));
+        })));
+  }
+
+  function render() {
+    settle();
+    if (!store.pval(MNG.outputFormatValidity(sel, roleOf(sel) || 'screen')) && roleOf(sel)) fetchFormats(sel);
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }), el('span', { class: 'hint', text: 'Every output, what it is for, its format and signal, a test pattern and picture settings' })),
+      el('div', { class: 'panel' }, awjLiveRow('output changes')),
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' },
+          el('table', { class: 'grid rows' },
+            el('thead', {}, el('tr', {}, ...['', 'Output', 'Label', 'Role', 'Format', 'Size', 'Plug', ''].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...MNG_OUTPUTS.map(row))),
+          el('div', { class: 'hint pad', text: 'Tap an output to edit it. A format change is applied with the device’s own update trigger and read back after it has settled.' })),
+        el('div', { class: 'panel' }, editor(sel))));
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Inspector (any path) ----------
+// Every path this bridge has seen from the processor, with its value, plus a
+// way to read or write any path at all — the AWJ side of the Inspector and
+// Console the mnemonic families have. What it lists is what has been read;
+// the object model is far larger than any inventory, so the search is over
+// what the surface has touched, and the get is for the rest.
+VIEWS.lpinspector = (() => {
+  let q = '';
+  let path = '';
+  let value = '';
+  let showLog = true;
+  function render() {
+    const rows = [];
+    const needle = q.trim().toLowerCase();
+    let n = 0;
+    for (const [p, v] of store.paths) {
+      if (needle && !p.toLowerCase().includes(needle)) continue;
+      if (n++ >= 400) break;
+      rows.push(el('tr', {}, el('td', { class: 'mono path', text: p.replace(/^DeviceObject\//, '') , onclick: () => { path = p; value = JSON.stringify(v); store.notify(); } }), el('td', { class: 'val', text: JSON.stringify(v) })));
+    }
+    const log = (store.log || []).slice(-80).reverse();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inspector' }), el('span', { class: 'hint', text: `${store.paths.size} properties read so far — search them, read any path, write any value` })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('input', { type: 'text', class: 'wide', placeholder: 'DeviceObject/… (a full path)', value: path, oninput: (e) => { path = e.target.value; } }),
+          el('button', { class: 'btn', onclick: () => { if (path.trim()) store.pget(path.trim()); } }, 'Get'),
+          el('input', { type: 'text', placeholder: 'value, as JSON', value: value, oninput: (e) => { value = e.target.value; } }),
+          el('button', { class: 'btn pgm', onclick: () => {
+            let v; try { v = JSON.parse(value); } catch { v = value; }
+            if (path.trim()) { store.pset(path.trim(), v); setTimeout(() => store.pget(path.trim()), 200); }
+          } }, 'Set')),
+        el('div', { class: 'hint pad', text: 'A write goes to the processor as typed. Numbers, true/false, lists and strings are JSON; anything that does not parse is sent as a string. A path the processor does not have answers E12 in the log below.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('input', { type: 'text', class: 'wide', placeholder: 'filter the properties read so far', value: q, oninput: (e) => { q = e.target.value; store.notify(); } })),
+        el('div', { class: 'scroll' }, el('table', { class: 'grid' }, el('tbody', {}, ...rows)))),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('h2', 'Console'), el('button', { class: 'btn small ghost', onclick: () => { showLog = !showLog; store.notify(); } }, showLog ? 'Hide' : 'Show')),
+        showLog ? el('div', { class: 'log', style: 'max-height:40vh' }, ...log.map(l => el('div', { class: 'line ' + l.dir, text: `${l.dir === 'tx' ? '»' : l.dir === 'er' ? '✗' : '«'} ${l.text}` }))) : null));
+  }
+  return { render };
+})();
 
 // ---------- AWJ: Layers (Midra 4K / Alta 4K) ----------
 // One screen at a time, program or preview, its fitted live layers on a canvas

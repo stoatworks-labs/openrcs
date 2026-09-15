@@ -783,3 +783,11 @@ img.thumb { display: block; width: 96px; height: 54px; object-fit: cover; border
 .lrect-tag.bg-tag { position: absolute; left: 0; bottom: 0; border-radius: 0 3px 0 0; opacity: .8; }
 .lrect.top { border-color: var(--armed); }
 .lrect.top.sel { box-shadow: 0 0 0 1px var(--armed), 0 0 14px color-mix(in srgb, var(--armed) 60%, transparent); }
+.slot.still { min-height: 58px; }
+.slot.still .lbl + .lbl { opacity: .7; }
+input.wide { flex: 1; min-width: 240px; }
+td.path { cursor: pointer; }
+td.path:hover { color: var(--accent); }
+.scroll { max-height: 50vh; overflow: auto; }
+table.grid.rows tbody tr { cursor: pointer; }
+table.grid.rows tbody tr.sel { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }

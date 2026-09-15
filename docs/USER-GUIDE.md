@@ -420,9 +420,34 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   picture, its active plug, connector and the signal on it, **Freeze** and
   **Black**, and where the device says it is on air (program / preview) — from
   the processor's own tally lists, so nothing is inferred.
+- **Multiviewer** (Midra 4K / Alta 4K) — the monitoring output's windows on a
+  canvas at that output's size: drag to move, corners to resize, **Quad / 3×3
+  / 4×3 / 4×4** grids over the windows this unit can use. The panel sets a
+  window's source (an input, a screen's program or preview, a timer), its
+  on-screen label and whether it is shown. Twenty **layout memories** with the
+  same recall / save / erase / label modes as the preset banks, and the three
+  **timers** — clock, countdown or stopwatch, with start, pause and stop.
+- **Outputs** (Midra 4K / Alta 4K) — every output with its picture, what the
+  applied configuration uses it for, its format and rate, the plug's state,
+  and — tap one — its label, a format from the list the device allows for
+  that role (applied through the device's own update trigger), a **test
+  pattern** switched on and off, and the picture settings: gamma, brightness,
+  contrast, saturation, hue and RGB gains.
+- **Stills** (Midra 4K / Alta 4K) — the fifty-slot still library with each
+  image's name and size, erase behind a second tap, a **capture** of any input,
+  output or the multiviewer into the next free slot or one you pick, and every
+  screen's four back and four top frame slots with the library slot each
+  points at and its picture.
 - **System** (Midra 4K / Alta 4K) — model, series, firmware and serial, the
   network address, the temperature sensors and case fans with their alarms,
   the front-panel lock and brightness, and a reboot behind a second tap.
+- **Inspector** (every AWJ family) — every property this bridge has read so
+  far, searchable; a box to read any path and write any value as JSON; and
+  the wire log. What the dedicated views do not cover yet is reachable here.
+
+Three things the simulators accept but do not act on, so they are written but
+unproven: a timer never leaves *idle*, a capture never completes, and the tally
+lists never fill.
 
 The pictures come from the processor's own HTTP server — port 80 on a unit.
 A simulator serves them wherever it was started, so **Connection** has a

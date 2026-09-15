@@ -19,8 +19,8 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 |---|---|--:|--:|--:|--:|--:|
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
-| LivePremier | Web RCS | 1 | 5 | 1 | 48 | 3 |
-| Midra 4K | Web RCS | 10 | 11 | 1 | 32 | 4 |
+| LivePremier | Web RCS | 2 | 5 | 1 | 47 | 3 |
+| Midra 4K | Web RCS | 12 | 14 | 1 | 27 | 4 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -296,7 +296,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Every device variable, raw protocol | No | **Missing** — no Inspector for the AWJ tree here (awj-surface and livepremier-plus's Console cover it) |
+| Every device variable, raw protocol | No | **Full** — the same Inspector: get/set any AWJ path, the wire log |
 | Verified writes | No | **Partial** — preset recalls read the screen back rather than assuming; a wrong platform pick is named by the processor's own identity |
 | Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
 
@@ -328,7 +328,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Screen groups / destinations | Yes — TAKE ALL / selection | **Missing** |
 | Sequencer / cue list | No — none | **Missing** — Cues are not offered on this family |
 | User keys / macros / quick presets | Yes — Quick Preset on the front panel: fade to black, a library image or a master memory | **Missing** |
-| Timers (clock, countdown, stopwatch) | Yes — three timers in the multiviewer | **Missing** |
+| Timers (clock, countdown, stopwatch) | Yes — three timers in the multiviewer | **Partial** — the three timers: type, label, countdown duration, start/pause/stop — the transport verbs are written but the simulator never leaves idle |
 | Input backup / failover | No | **Missing** |
 | Undo | Yes — Step Back; quick overwrite or revert | **Missing** |
 
@@ -366,14 +366,14 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Feature | Web RCS | openrcs |
 |---|---|---|
 | Preconfig: outputs → screens, canvas | Yes — system, screens / aux, canvas, background, audio, quick preset | **Missing** |
-| Output setup | Yes | **Missing** |
+| Output setup | Yes | **Partial** — role, format from the device's allowed list applied through its update trigger, plug state, test pattern on/off, gamma/brightness/contrast/saturation/hue/gains, label, a picture of each output; no HDR, LUT, framelock or pixel encoding |
 | Midra video out (the second output) | — | — |
 | Area of interest (output crop) | Yes | **Missing** |
 | Custom output formats | Yes | **Missing** |
 | Input setup | Yes — plug, LUT allocation, signal, correction, aspect, keying | **Partial** — availability, active plug, connector and signal format per input, freeze and black; no plug selection, image, aspect or keying |
 | EDID | Yes — same | **Missing** |
-| Stills / image library | Yes — library, background and foreground image slots | **Missing** |
-| Multiviewer / monitoring | Yes — one multiviewer, audio monitoring, 20 memories | **Missing** |
+| Stills / image library | Yes — library, background and foreground image slots | **Partial** — the 50-slot library with names and sizes, erase, a capture of any input/output/multiviewer into it (written, unproven on the simulator), and each screen's frame slots with pictures; no upload from the computer |
+| Multiviewer / monitoring | Yes — one multiviewer, audio monitoring, 20 memories | **Full** — drag/resize designer over the usable widgets on the MTVW output, sources from the device's own list, OSD, grid presets, twenty layout memories with recall/save/erase/label; no audio monitoring |
 | Soft edge blending | Yes — Eikos 4K blend mode | **Missing** |
 | Audio | Yes — routing, Dante, VU meters, custom sources | **Missing** |
 | GPIO and tally | Yes — TSL tally protocol; no GPIO | **Partial** — the device's own on-air lists per input are read and shown; never seen populated on the simulator, so unverified |
@@ -388,7 +388,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Every device variable, raw protocol | No | **Missing** — no Inspector for the AWJ tree here (livepremier-plus's Console covers it) |
+| Every device variable, raw protocol | No | **Full** — Inspector: every property read so far, get/set any AWJ path as JSON, and the wire log |
 | Verified writes | No | **Partial** — every write reads its target back; recalls read the destination twice because the bookkeeping lands late; a master save is refused rather than allowed to overwrite bank slots |
 | Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
 

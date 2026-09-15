@@ -697,6 +697,17 @@ fn mng_inventory() -> Vec<String> {
         out.push(mng::quick_preset_filter(d));
         out.push(mng::quick_preset_on(d));
     }
+    // The outputs' standing and what they are for, and the multiviewer's
+    // canvas: the Outputs and Multiviewer views open on these.
+    for key in mng::OUTPUTS {
+        out.push(mng::output_role(key));
+        out.push(mng::output_label(key));
+        for prop in ["isAvailable", "format", "rate", "sizeH", "sizeV"] {
+            out.push(mng::output_status(key, prop));
+        }
+    }
+    out.push(mng::mvw_widget_validity());
+    out.push(mng::mvw_source_validity());
     out
 }
 

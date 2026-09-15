@@ -841,9 +841,217 @@ pub fn standby_is_on() -> String {
     String::from("DeviceObject/system/shutdown/standby/status/@props/isStandbyOn")
 }
 
+// ------------------------------------------------------------- multiviewer
+//
+// One multiviewer on this platform, on the output keyed `MTVW`: up to twenty
+// widgets (the model says how many are real), each a window with a source,
+// and twenty layout memories. Same shape as LiveCore's monitoring output.
+
+/// The output the multiviewer leaves on. Not a number, unlike the others.
+pub const MULTIVIEWER_OUTPUT: &str = "MTVW";
+
+/// The most widget slots the object model carries: 27 on an Alta 4K, 20 on a
+/// Midra 4K (slot 21 answers `E12` there). [`mvw_widget_validity`] says which
+/// of them this unit can use — 16 on a Pulse 4K.
+pub const MVW_WIDGETS: u8 = 27;
+
+/// A widget's control property: `enable`, `source`, `posH`, `posV` (top-left,
+/// in multiviewer output pixels), `sizeH`, `sizeV`, or `displayOsd`
+/// (`OFF` / `BASIC` / `DETAILED`).
+pub fn mvw_widget(n: u8, prop: &str) -> String {
+    format!("DeviceObject/multiviewer/$widget/@items/{n}/control/@props/{prop}")
+}
+
+/// A widget's status: `isEnabled`, `isDuplicated`, `isOverlapped`, or the
+/// geometry as laid out.
+pub fn mvw_widget_status(n: u8, prop: &str) -> String {
+    format!("DeviceObject/multiviewer/$widget/@items/{n}/status/@props/{prop}")
+}
+
+/// What a widget may show, as the device lists it: `NONE`, the fitted inputs,
+/// `SCREEN_PRGM_<n>` / `SCREEN_PRW_<n>` and `TIMER_<n>`.
+pub fn mvw_source_validity() -> String {
+    String::from("DeviceObject/multiviewer/status/@props/sourceValidity")
+}
+
+/// Which widget slots this unit can use.
+pub fn mvw_widget_validity() -> String {
+    String::from("DeviceObject/multiviewer/status/@props/widgetValidity")
+}
+
+/// Whether a multiviewer layout memory holds anything, `1`…`20`.
+pub fn mvw_preset_is_valid(slot: u8) -> String {
+    format!("DeviceObject/multiviewer/$bank/@items/{slot}/status/@props/isValid")
+}
+
+/// A layout memory's label.
+pub fn mvw_preset_label(slot: u8) -> String {
+    format!("DeviceObject/multiviewer/$bank/@items/{slot}/control/@props/label")
+}
+
+/// Erase a layout memory. A trigger.
+pub fn mvw_preset_delete(slot: u8) -> String {
+    format!("DeviceObject/multiviewer/$bank/@items/{slot}/control/@props/xDelete")
+}
+
+/// Recall a layout memory. A trigger.
+pub fn mvw_load(slot: u8) -> String {
+    format!("DeviceObject/multiviewer/$bank/control/load/$slot/@items/{slot}/@props/xRequest")
+}
+
+/// Store the current layout in a memory. A trigger; what it records is the
+/// `categoryFilter` on `multiviewer/$bank/control/save`.
+pub fn mvw_save(slot: u8) -> String {
+    format!("DeviceObject/multiviewer/$bank/control/save/$slot/@items/{slot}/@props/xRequest")
+}
+
+// ------------------------------------------------------------------ timers
+
+/// Three timers a multiviewer widget can show.
+pub const TIMERS: u8 = 3;
+
+/// A timer's control property: `type` (`CURRENT_TIME` / `COUNTDOWN` /
+/// `STOPWATCH`), `label`, `countdownDuration` (seconds), `currentTimeMode`,
+/// or the triggers `xStart`, `xPause`, `xStop`.
+pub fn timer(n: u8, prop: &str) -> String {
+    format!("DeviceObject/$timer/@items/TIMER_{n}/control/@props/{prop}")
+}
+
+/// A timer's state: `IDLE`, or running.
+pub fn timer_state(n: u8) -> String {
+    format!("DeviceObject/$timer/@items/TIMER_{n}/status/@props/state")
+}
+
+// ---------------------------------------------------------- still library
+
+/// Library slots, `1`…`50`.
+pub const STILL_SLOTS: u8 = 50;
+
+/// A library slot's status: `isValid`, `isUsed`, `fileName`, `fileSize`,
+/// `width`, `height`.
+pub fn still_status(slot: u8, prop: &str) -> String {
+    format!("DeviceObject/stillLibrary/$bank/@items/{slot}/status/@props/{prop}")
+}
+
+/// A library slot's label.
+pub fn still_label(slot: u8) -> String {
+    format!("DeviceObject/stillLibrary/$bank/@items/{slot}/control/@props/label")
+}
+
+/// Erase a library slot. A trigger.
+pub fn still_delete(slot: u8) -> String {
+    format!("DeviceObject/stillLibrary/$bank/@items/{slot}/control/@props/xDelete")
+}
+
+/// The capture command's properties: `stream` (an input, output or `MTVW`),
+/// `destination` (`LIBRARY` / `FILE`), `libraryMode` (`AUTO_SLOT` /
+/// `SPECIFIC_SLOT`), `librarySlot`, `fileType` (`PNG` / `BMP` / `JPEG`),
+/// `mode` (`INCREMENTAL` / `OVERWRITE`), and the trigger `xRequest`.
+pub fn capture_cmd(prop: &str) -> String {
+    format!("DeviceObject/stillLibrary/capture/cmd/@props/{prop}")
+}
+
+/// The capture's status: `status` (`DONE`, `FAILED`, `NO_ACTIVE_INPUT`,
+/// `INPUT_NO_SIGNAL`…), `fileName`, `streamValidity`.
+pub fn capture_status(prop: &str) -> String {
+    format!("DeviceObject/stillLibrary/capture/status/@props/{prop}")
+}
+
+// ----------------------------------------------------------------- outputs
+
+/// The outputs a Pulse 4K carries: six numbered and the multiviewer's.
+pub const OUTPUTS: [&str; 7] = ["1", "2", "3", "4", "5", "6", MULTIVIEWER_OUTPUT];
+
+/// What an output is for in the applied configuration: `DISABLE`, `AUX`,
+/// `AUX_INPUT_AND_PROGRAM`, `AUX_INPUT_ONLY`, `MULTIVIEWER` or
+/// `SCREEN_FORMAT`. Decides which of the three format nodes applies.
+pub fn output_role(key: &str) -> String {
+    format!("{CURRENT}/$output/@items/{key}/@props/mode")
+}
+
+/// An output's status: `isAvailable`, `isValid`, `format`, `rate`, `sizeH`,
+/// `sizeV`, `ledColor`, `isFormatInterlaced`…
+pub fn output_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/status/@props/{prop}")
+}
+
+/// The operator's name for an output.
+pub fn output_label(key: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/control/@props/label")
+}
+
+/// Which format node an output's role uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputRole {
+    Screen,
+    Auxiliary,
+    Multiviewer,
+}
+
+impl OutputRole {
+    /// From the applied configuration's `mode` word.
+    pub fn parse(mode: &str) -> Option<OutputRole> {
+        match mode {
+            "SCREEN_FORMAT" => Some(OutputRole::Screen),
+            "MULTIVIEWER" => Some(OutputRole::Multiviewer),
+            m if m.starts_with("AUX") => Some(OutputRole::Auxiliary),
+            _ => None,
+        }
+    }
+    fn node(self) -> &'static str {
+        match self {
+            OutputRole::Screen => "screen",
+            OutputRole::Auxiliary => "auxiliary",
+            OutputRole::Multiviewer => "multiviewer",
+        }
+    }
+}
+
+/// The format an output is set to, on the node its role uses. Write it, then
+/// [`output_format_update`].
+pub fn output_format(key: &str, role: OutputRole) -> String {
+    format!("DeviceObject/$output/@items/{key}/format/{}/control/@props/format", role.node())
+}
+
+/// Apply a format change. A trigger.
+pub fn output_format_update(key: &str, role: OutputRole) -> String {
+    format!("DeviceObject/$output/@items/{key}/format/{}/control/@props/xUpdate", role.node())
+}
+
+/// The formats an output accepts in its role.
+pub fn output_format_validity(key: &str, role: OutputRole) -> String {
+    format!("DeviceObject/$output/@items/{key}/format/{}/status/@props/formatValidity", role.node())
+}
+
+/// An output's picture settings: `gamma` (5…40, tenths), `brightness`,
+/// `contrast`, `saturation` (−128…127), `hue` (−90…90), `gainR/G/B`,
+/// `offsetR/G/B`.
+pub fn output_setting(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/settings/@props/{prop}")
+}
+
+/// The test pattern: `type` is one of `NO_PATTERN`, `COLOR`, grey scales,
+/// colour bars, grids, `SMPTE`, bursts, gradients, `CHECKERBOARD`,
+/// `SOFTEDGE`, `PATHOLOGICAL`; `inhibit` true keeps it off the output.
+pub fn output_pattern(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/pattern/control/@props/{prop}")
+}
+
+/// A plug's status on an output: `plugStatus` (`ACTIVE`…) or `type`.
+pub fn output_plug_status(key: &str, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/$plug/@items/{plug}/status/@props/{prop}")
+}
+
 /// A subscription prefix that covers every destination's transition control
 /// and status — both lists, since the pushes are filtered by prefix.
 pub const SUB_TRANSITIONS: &str = "DeviceObject/transition";
+
+/// Subscription prefixes for the multiviewer, the timers, the still library
+/// and the outputs.
+pub const SUB_MULTIVIEWER: &str = "DeviceObject/multiviewer";
+pub const SUB_TIMERS: &str = "DeviceObject/$timer";
+pub const SUB_STILLS: &str = "DeviceObject/stillLibrary";
+pub const SUB_OUTPUTS: &str = "DeviceObject/$output";
 
 /// A subscription prefix covering the quick preset's switch and status.
 pub const SUB_QUICK_PRESET: &str = "DeviceObject/quickPreset";

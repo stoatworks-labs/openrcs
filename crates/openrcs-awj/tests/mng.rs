@@ -7,7 +7,7 @@
 //! the simulators only. The negative controls at the bottom are what the
 //! device said to the LivePremier spellings: `E12`, every one.
 
-use openrcs_awj::mng::{self, Bank, Dest, FrameList, TallyBus};
+use openrcs_awj::mng::{self, Bank, Dest, FrameList, OutputRole, TallyBus};
 use openrcs_awj::{paths, Buffer, Dialect, Preset, Transition};
 
 #[test]
@@ -273,6 +273,69 @@ fn system_health_and_network_are_read_off_system() {
     assert_eq!(mng::ipv4_status("ip"), "DeviceObject/system/network/ipv4/status/@props/ip");
     assert_eq!(mng::reboot(), "DeviceObject/system/shutdown/@props/xReboot");
     assert_eq!(mng::SENSORS.len(), 14);
+}
+
+#[test]
+fn the_multiviewer_is_twenty_widgets_and_twenty_memories_on_mtvw() {
+    assert_eq!(mng::MULTIVIEWER_OUTPUT, "MTVW");
+    assert_eq!(
+        mng::mvw_widget(3, "source"),
+        "DeviceObject/multiviewer/$widget/@items/3/control/@props/source"
+    );
+    assert_eq!(
+        mng::mvw_widget_status(1, "isEnabled"),
+        "DeviceObject/multiviewer/$widget/@items/1/status/@props/isEnabled"
+    );
+    assert_eq!(mng::mvw_source_validity(), "DeviceObject/multiviewer/status/@props/sourceValidity");
+    assert_eq!(
+        mng::mvw_load(7),
+        "DeviceObject/multiviewer/$bank/control/load/$slot/@items/7/@props/xRequest"
+    );
+    assert_eq!(
+        mng::mvw_preset_label(20),
+        "DeviceObject/multiviewer/$bank/@items/20/control/@props/label"
+    );
+    assert_eq!(mng::timer(2, "xStart"), "DeviceObject/$timer/@items/TIMER_2/control/@props/xStart");
+    assert_eq!(mng::timer_state(1), "DeviceObject/$timer/@items/TIMER_1/status/@props/state");
+}
+
+#[test]
+fn the_still_library_has_fifty_slots_and_a_capture_command() {
+    assert_eq!(
+        mng::still_status(50, "fileName"),
+        "DeviceObject/stillLibrary/$bank/@items/50/status/@props/fileName"
+    );
+    assert_eq!(mng::still_delete(1), "DeviceObject/stillLibrary/$bank/@items/1/control/@props/xDelete");
+    assert_eq!(mng::capture_cmd("xRequest"), "DeviceObject/stillLibrary/capture/cmd/@props/xRequest");
+    assert_eq!(mng::capture_status("status"), "DeviceObject/stillLibrary/capture/status/@props/status");
+}
+
+#[test]
+fn outputs_are_six_and_the_multiviewers_and_a_role_picks_the_format_node() {
+    assert_eq!(mng::OUTPUTS.len(), 7);
+    assert_eq!(
+        mng::output_role("MTVW"),
+        "DeviceObject/preconfig/status/$state/@items/CURRENT/$output/@items/MTVW/@props/mode"
+    );
+    assert_eq!(OutputRole::parse("SCREEN_FORMAT"), Some(OutputRole::Screen));
+    assert_eq!(OutputRole::parse("AUX_INPUT_ONLY"), Some(OutputRole::Auxiliary));
+    assert_eq!(OutputRole::parse("MULTIVIEWER"), Some(OutputRole::Multiviewer));
+    assert_eq!(OutputRole::parse("DISABLE"), None);
+    assert_eq!(
+        mng::output_format("1", OutputRole::Screen),
+        "DeviceObject/$output/@items/1/format/screen/control/@props/format"
+    );
+    assert_eq!(
+        mng::output_format_update("MTVW", OutputRole::Multiviewer),
+        "DeviceObject/$output/@items/MTVW/format/multiviewer/control/@props/xUpdate"
+    );
+    assert_eq!(mng::output_status("2", "rate"), "DeviceObject/$output/@items/2/status/@props/rate");
+    assert_eq!(mng::output_setting("1", "gamma"), "DeviceObject/$output/@items/1/settings/@props/gamma");
+    assert_eq!(mng::output_pattern("1", "type"), "DeviceObject/$output/@items/1/pattern/control/@props/type");
+    assert_eq!(
+        mng::output_plug_status("1", 1, "plugStatus"),
+        "DeviceObject/$output/@items/1/$plug/@items/1/status/@props/plugStatus"
+    );
 }
 
 #[test]

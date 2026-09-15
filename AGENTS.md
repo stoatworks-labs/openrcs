@@ -172,6 +172,19 @@ std binary and may use crates. Keep the split.
   screen's `$backgroundSet` list describes; the top layer is one of the
   screen's four `$topFrame` slots and has a position but no size — it is drawn
   at the slot's own `sizeH`/`sizeV`.
+- **Widgets are top-left, layers are centre.** A multiviewer widget's `posH`/
+  `posV` is its top-left corner on the MTVW output; a live layer's is its
+  centre. The object model carries 27 widget slots on an Alta 4K and 20 on a
+  Midra 4K (slot 21 is E12 there); `multiviewer/status/@props/widgetValidity`
+  says which are usable and is the only list to iterate.
+- **An output's format lives on the node its role picks** — `format/screen`,
+  `format/auxiliary` or `format/multiviewer` under `$output/@items/<key>`, the
+  role being the applied preconfig's `mode` for that output (`SCREEN_FORMAT`,
+  `AUX*`, `MULTIVIEWER`, `DISABLE`). Write `format`, then `xUpdate`; the status
+  follows within a second. Outputs are keyed `1`…`6` and `MTVW`.
+- **Unproven on the simulators (written, never acted on):** timer `xStart`
+  (state stays `IDLE`), still `capture/cmd/@props/xRequest` (status stays
+  `NO_REQUEST`), and the tally lists. Keep those three words in the docs.
 - **Tallies have never been seen populated.** `tallies/inputs/@props/*` reads
   as four empty lists on the simulator whatever is on a layer, and the real
   unit had nothing on its layers when dumped. The Inputs view shows them; do

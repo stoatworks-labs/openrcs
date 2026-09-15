@@ -772,8 +772,8 @@
         "text": "three timers in the multiviewer"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the three timers: type, label, countdown duration, start/pause/stop — the transport verbs are written but the simulator never leaves idle"
        }
       }
      }
@@ -1822,8 +1822,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "role, format from the device's allowed list applied through its update trigger, plug state, test pattern on/off, gamma/brightness/contrast/saturation/hue/gains, label, a picture of each output; no HDR, LUT, framelock or pixel encoding"
        }
       }
      }
@@ -2092,8 +2092,8 @@
         "text": "library, background and foreground image slots"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the 50-slot library with names and sizes, erase, a capture of any input/output/multiviewer into it (written, unproven on the simulator), and each screen's frame slots with pictures; no upload from the computer"
        }
       }
      }
@@ -2137,8 +2137,8 @@
         "text": "one multiviewer, audio monitoring, 20 memories"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "drag/resize designer over the usable widgets on the MTVW output, sources from the device's own list, OSD, grid presets, twenty layout memories with recall/save/erase/label; no audio monitoring"
        }
       }
      }
@@ -2582,8 +2582,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": "no Inspector for the AWJ tree here (awj-surface and livepremier-plus's Console cover it)"
+        "state": "F",
+        "text": "the same Inspector: get/set any AWJ path, the wire log"
        }
       },
       "midra4k": {
@@ -2592,8 +2592,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": "no Inspector for the AWJ tree here (livepremier-plus's Console covers it)"
+        "state": "F",
+        "text": "Inspector: every property read so far, get/set any AWJ path as JSON, and the wire log"
        }
       }
      }
