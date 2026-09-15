@@ -171,7 +171,7 @@ fn parse_args() -> Config {
             }
             "-h" | "--help" => {
                 eprintln!("openrcs-server [--device host:port] \
-                           [--platform livecore|midra|livepremier] \
+                           [--platform livecore|midra|livepremier|midra4k|alta4k] \
                            [--listen host:port] [--web dir] [--config file] [--tailnet]");
                 eprintln!();
                 eprintln!("  --device is optional. Without it the server starts unconfigured");
@@ -640,6 +640,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hub::AwjSeries;
 
     const LIVECORE: Family = Family::Mnemonic(Platform::LiveCore);
 
@@ -656,7 +657,7 @@ mod tests {
         );
         // A LivePremier is not on 10500 and never has been.
         assert_eq!(
-            normalise_device("192.0.2.10", Family::Awj).unwrap(),
+            normalise_device("192.0.2.10", Family::Awj(AwjSeries::LivePremier)).unwrap(),
             "192.0.2.10:10606"
         );
     }
@@ -666,18 +667,38 @@ mod tests {
         // Not every target is dotted quad: a bridge on a desk is as likely to
         // be pointed at a name.
         assert_eq!(
-            normalise_device("aquilon.local", Family::Awj).unwrap(),
+            normalise_device("aquilon.local", Family::Awj(AwjSeries::LivePremier)).unwrap(),
             "aquilon.local:10606"
         );
     }
 
     #[test]
     fn a_platform_name_round_trips_through_the_browser_protocol() {
-        for name in ["livecore", "midra", "livepremier"] {
+        for name in ["livecore", "midra", "livepremier", "midra4k", "alta4k"] {
             assert_eq!(Family::parse(name).name(), name);
         }
         // Anything else falls back rather than failing setup.
         assert_eq!(Family::parse("nonsense").name(), "livecore");
+    }
+
+    #[test]
+    fn midra_4k_and_alta_4k_are_one_object_model_on_the_livepremier_port() {
+        // Same port as an Aquilon, same dialect as each other — the pick is
+        // kept only so the surface can name the series it is talking to.
+        for name in ["midra4k", "alta4k"] {
+            let f = Family::parse(name);
+            assert_eq!(f.port(), 10606, "{name}");
+            assert_eq!(f.dialect(), Some(openrcs_awj::Dialect::Mng), "{name}");
+            assert_eq!(
+                normalise_device("192.0.2.10", f).unwrap(),
+                "192.0.2.10:10606"
+            );
+        }
+        assert_eq!(
+            Family::parse("livepremier").dialect(),
+            Some(openrcs_awj::Dialect::LivePremier)
+        );
+        assert_eq!(LIVECORE.dialect(), None);
     }
 
     #[test]

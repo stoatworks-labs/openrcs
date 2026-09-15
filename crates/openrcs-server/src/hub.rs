@@ -25,21 +25,47 @@ pub type Key = (String, Vec<i64>);
 ///
 /// The two are not dialects of one protocol — they share a company name and
 /// nothing else. Midra and LiveCore exchange terse ASCII mnemonics addressed by
-/// index; LivePremier exchanges JSON addressed by path. Everything that differs
-/// between them hangs off this enum rather than off a flag somewhere later.
+/// index; LivePremier, Midra 4K and Alta 4K exchange JSON addressed by path.
+/// Everything that differs between them hangs off this enum rather than off a
+/// flag somewhere later.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
     /// Midra or LiveCore, over TCP 10500.
     Mnemonic(Platform),
-    /// LivePremier (Aquilon), over TCP 10606.
-    Awj,
+    /// LivePremier, Midra 4K or Alta 4K, over TCP 10606.
+    Awj(AwjSeries),
+}
+
+/// The product lines that speak AWJ, as an operator picks them.
+///
+/// Three names for two object models: Midra 4K and Alta 4K share one
+/// ([`awj::Dialect::Mng`]), and the pick is kept rather than collapsed so the
+/// surface can say "Alta 4K" about a Zenith instead of calling it a Midra.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AwjSeries {
+    /// Aquilon C / RS.
+    LivePremier,
+    /// QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K.
+    Midra4k,
+    /// Zenith 100, Zenith 200.
+    Alta4k,
+}
+
+impl AwjSeries {
+    /// The spelling of the object model this series carries.
+    pub fn dialect(self) -> awj::Dialect {
+        match self {
+            AwjSeries::LivePremier => awj::Dialect::LivePremier,
+            AwjSeries::Midra4k | AwjSeries::Alta4k => awj::Dialect::Mng,
+        }
+    }
 }
 
 impl Family {
     pub fn port(self) -> u16 {
         match self {
             Family::Mnemonic(p) => p.port(),
-            Family::Awj => awj::PORT,
+            Family::Awj(_) => awj::PORT,
         }
     }
 
@@ -48,15 +74,27 @@ impl Family {
         match self {
             Family::Mnemonic(Platform::LiveCore) => "livecore",
             Family::Mnemonic(Platform::Midra) => "midra",
-            Family::Awj => "livepremier",
+            Family::Awj(AwjSeries::LivePremier) => "livepremier",
+            Family::Awj(AwjSeries::Midra4k) => "midra4k",
+            Family::Awj(AwjSeries::Alta4k) => "alta4k",
         }
     }
 
     pub fn parse(s: &str) -> Self {
         match s {
             "midra" => Family::Mnemonic(Platform::Midra),
-            "livepremier" => Family::Awj,
+            "livepremier" => Family::Awj(AwjSeries::LivePremier),
+            "midra4k" => Family::Awj(AwjSeries::Midra4k),
+            "alta4k" => Family::Awj(AwjSeries::Alta4k),
             _ => Family::Mnemonic(Platform::LiveCore),
+        }
+    }
+
+    /// The AWJ object model, on a family that has one.
+    pub fn dialect(self) -> Option<awj::Dialect> {
+        match self {
+            Family::Mnemonic(_) => None,
+            Family::Awj(series) => Some(series.dialect()),
         }
     }
 }
@@ -164,7 +202,7 @@ impl Hub {
     pub fn platform(&self) -> Option<Platform> {
         match self.family() {
             Family::Mnemonic(p) => Some(p),
-            Family::Awj => None,
+            Family::Awj(_) => None,
         }
     }
 
@@ -305,7 +343,7 @@ impl Hub {
 
     fn expect_awj(&self) -> Result<(), String> {
         match self.family() {
-            Family::Awj => Ok(()),
+            Family::Awj(_) => Ok(()),
             other => Err(format!("{} speaks no AWJ", other.name())),
         }
     }
@@ -469,12 +507,10 @@ async fn device_loop(hub: Arc<Hub>, mut from_clients: mpsc::UnboundedReceiver<St
                 Ok(stream) => {
                     hub.connected.store(true, Ordering::Relaxed);
                     let _ = hub.events.send(DeviceEvent::Connected(true));
-                    let link = match target.family {
-                        Family::Mnemonic(_) => {
-                            pump(&hub, stream, &mut from_clients, &mut gen).await
-                        }
-                        Family::Awj => {
-                            pump_awj(&hub, stream, &mut from_clients, &mut gen).await
+                    let link = match target.family.dialect() {
+                        None => pump(&hub, stream, &mut from_clients, &mut gen).await,
+                        Some(dialect) => {
+                            pump_awj(&hub, stream, &mut from_clients, &mut gen, dialect).await
                         }
                     };
                     if let Err(e) = link {
@@ -538,11 +574,12 @@ async fn pump(
     }
 }
 
-/// How much of the preset bank the surface reads on connect.
+/// How much of a preset bank the surface reads on connect.
 ///
-/// The bank runs to 1000 slots and each costs two reads, so reading it whole
-/// would put 2000 messages between connecting and showing anything. The first
-/// page covers how a show is actually numbered; the browser asks for the rest.
+/// A LivePremier bank runs to 1000 slots and each costs two reads, so reading
+/// it whole would put 2000 messages between connecting and showing anything.
+/// The first page covers how a show is actually numbered; the browser asks for
+/// the rest. Kept for the 200-slot banks too, for the same reason.
 const AWJ_PRESET_PAGE: u16 = 50;
 
 /// Everything the surface needs before it can draw itself.
@@ -550,7 +587,28 @@ const AWJ_PRESET_PAGE: u16 = 50;
 /// Sent as one burst rather than walked: a container read returns `{}` on this
 /// protocol, so there is no enumerating the model — the only way to learn what
 /// a device has is to ask for named leaves and see which answer.
-fn awj_inventory() -> Vec<String> {
+///
+/// The burst is spelled for the object model the operator picked, plus one
+/// read the other model would answer: its identity. Both models share the
+/// port, so a wrong pick connects fine and then sees nothing but `E12`; the
+/// stray identity is what lets the surface say which processor is really
+/// there instead of showing an empty show.
+fn awj_inventory(dialect: awj::Dialect) -> Vec<String> {
+    match dialect {
+        awj::Dialect::LivePremier => {
+            let mut out = livepremier_inventory();
+            out.push(awj::Dialect::Mng.identity_path());
+            out
+        }
+        awj::Dialect::Mng => {
+            let mut out = mng_inventory();
+            out.push(awj::Dialect::LivePremier.identity_path());
+            out
+        }
+    }
+}
+
+fn livepremier_inventory() -> Vec<String> {
     use awj::paths;
     let mut out = vec![paths::device_model(1)];
     for s in 1..=24u8 {
@@ -572,11 +630,43 @@ fn awj_inventory() -> Vec<String> {
     out
 }
 
+/// Midra 4K / Alta 4K: four screens and four auxiliaries, whether or not any
+/// is set up, so the whole model is asked for and the applied preconfig says
+/// which are in service.
+fn mng_inventory() -> Vec<String> {
+    use awj::mng::{self, Bank, Dest};
+    use awj::Buffer;
+    let mut out = vec![
+        mng::device_model(),
+        mng::platform_label(),
+        mng::device_version(),
+    ];
+    for d in Dest::ALL {
+        out.push(match d {
+            Dest::Screen(n) => mng::screen_enabled(n),
+            Dest::Aux(n) => mng::aux_mode(n),
+        });
+        out.push(mng::label(d));
+        out.push(mng::transition(d));
+        out.push(mng::take_time(d));
+        // Which memory each buffer holds. On this model it is on the
+        // destination, and the buffers have fixed names, so two reads cover it.
+        out.push(mng::buffer_memory_id(d, Buffer::Up));
+        out.push(mng::buffer_memory_id(d, Buffer::Down));
+    }
+    for slot in 1..=AWJ_PRESET_PAGE {
+        out.push(mng::preset_is_valid(Bank::Screen, slot));
+        out.push(mng::preset_label(Bank::Screen, slot));
+    }
+    out
+}
+
 async fn pump_awj(
     hub: &Arc<Hub>,
     stream: TcpStream,
     from_clients: &mut mpsc::UnboundedReceiver<String>,
     gen: &mut watch::Receiver<u64>,
+    dialect: awj::Dialect,
 ) -> std::io::Result<()> {
     let (mut rd, mut wr) = stream.into_split();
     let mut dec = awj::Decoder::new();
@@ -585,7 +675,7 @@ async fn pump_awj(
     // Nothing arrives unbidden on this protocol — no greeting, and no state
     // changes until a subscription list is written — so the link stays silent
     // until we ask it something.
-    for path in awj_inventory() {
+    for path in awj_inventory(dialect) {
         wr.write_all(awj::encode_get(&path).as_bytes()).await?;
     }
 

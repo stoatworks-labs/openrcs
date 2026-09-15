@@ -4,7 +4,7 @@
 
 Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.
 
-This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
+This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
 
 - **Midra** (Pulse², Eikos², Saphyr, SmartMatriX², QuickMatriX, QuickVu) — RCS²: Pulse² user manual, RCS² chapters 6–7
 - **LiveCore** (Ascender, NeXtage, SmartMatriX Ultra) — Web RCS: LiveCore user manual, Web RCS chapter 7
@@ -20,7 +20,7 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 1 | 5 | 1 | 48 | 3 |
-| Midra 4K | Web RCS | 0 | 0 | 0 | 54 | 4 |
+| Midra 4K | Web RCS | 1 | 7 | 1 | 45 | 4 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -297,7 +297,7 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 | Feature | Web RCS | openrcs |
 |---|---|---|
 | Every device variable, raw protocol | No | **Missing** — no Inspector for the AWJ tree here (awj-surface and livepremier-plus's Console cover it) |
-| Verified writes | No | **Partial** — preset recalls read the screen back rather than assuming |
+| Verified writes | No | **Partial** — preset recalls read the screen back rather than assuming; a wrong platform pick is named by the processor's own identity |
 | Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
 
 ## Midra 4K — against the Web RCS
@@ -308,25 +308,25 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Control path | Yes — Web RCS served by the unit | **Missing** — no Midra 4K mode — a different AWJ dialect; livepremier-plus and mynah speak it |
-| Works without a discontinued runtime | Yes — HTML5, nothing to install | **Missing** |
-| Login, HTTPS, session lock | Yes — password protection, HTTPS | **Missing** |
-| Offline planning / simulator | Yes — Midra 4K Simulator | **Missing** |
+| Control path | Yes — Web RCS served by the unit | **Partial** — AWJ on TCP 10606 in the Midra 4K / Alta 4K object model, every path read off a Pulse 4K on 3.3.10; openrcs's own surface driven only against the vendor simulators |
+| Works without a discontinued runtime | Yes — HTML5, nothing to install | **Full** — parity — nothing to replace |
+| Login, HTTPS, session lock | Yes — password protection, HTTPS | **Missing** — none |
+| Offline planning / simulator | Yes — Midra 4K Simulator | **Missing** — Plan is not offered on this family |
 | Touch / front-of-house surface | Yes — mobile Web RCS; RC400T console | **Missing** |
-| Appliance use (no keyboard, no shell) | No | **Missing** |
+| Appliance use (no keyboard, no shell) | No | **Beyond stock** — Connection + Tailnet views are family-independent |
 
 ### Live operation
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Take and Cut, per screen and all | Yes — Take, Take Cut, T-bar, Step Back, TAKE ALL | **Missing** |
+| Take and Cut, per screen and all | Yes — Take, Take Cut, T-bar, Step Back, TAKE ALL | **Partial** — Take and Cut per screen and per auxiliary, with the take time shown; no take-all |
 | T-bar | Yes | **Missing** |
-| Step back | Yes | **Missing** |
+| Step back | Yes | **Missing** — in the crate (mng::step_back), not on the surface |
 | Preset toggle, auto-take, dynamic fit | Yes | **Missing** |
 | Fade to black / master fade | Yes — Quick Preset → Fade to Black | **Missing** |
 | Freeze | Yes — layer, screen and input freeze | **Missing** |
 | Screen groups / destinations | Yes — TAKE ALL / selection | **Missing** |
-| Sequencer / cue list | No — none | **Missing** |
+| Sequencer / cue list | No — none | **Missing** — Cues are not offered on this family |
 | User keys / macros / quick presets | Yes — Quick Preset on the front panel: fade to black, a library image or a master memory | **Missing** |
 | Timers (clock, countdown, stopwatch) | Yes — three timers in the multiviewer | **Missing** |
 | Input backup / failover | No | **Missing** |
@@ -336,7 +336,7 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Graphical layer editor | Yes | **Missing** |
+| Graphical layer editor | Yes | **Missing** — a table, no layer editing |
 | All screens editable at once | Yes | **Missing** |
 | Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Missing** |
 | Layout presets | Yes — live-layer layouts | **Missing** |
@@ -352,14 +352,14 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Screen memories | Yes — 200 screen + 200 aux | **Missing** |
-| Master memories | Yes — 50, self-contained or from screen memories | **Missing** |
+| Screen memories | Yes — 200 screen + 200 aux | **Partial** — recall only, from the 200-slot screen bank and the 200-slot aux bank, paged 50 at a time with validity and label, and a red/green mark on the slot each buffer holds; no save, label or erase |
+| Master memories | Yes — 50, self-contained or from screen memories | **Partial** — recall only, from the 50-slot master bank |
 | Layer memories | No | **Missing** |
 | Recall filters (categories) | Yes | **Missing** |
-| Labels, colours, inspect | Yes | **Missing** |
+| Labels, colours, inspect | Yes | **Partial** — labels are read, nothing is written |
 | Autoscale on recall | Yes | **Missing** |
 | Confidence screens and memories | — | — |
-| Aux screens and aux memories | Yes — aux screens, 200 aux memories | **Missing** |
+| Aux screens and aux memories | Yes — aux screens, 200 aux memories | **Partial** — auxiliaries in service are destinations — take, cut, memory bookkeeping and the aux bank; no aux source editing |
 
 ### Setup
 
@@ -377,7 +377,7 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 | Soft edge blending | Yes — Eikos 4K blend mode | **Missing** |
 | Audio | Yes — routing, Dante, VU meters, custom sources | **Missing** |
 | GPIO and tally | Yes — TSL tally protocol; no GPIO | **Missing** |
-| System, network, health, front panel | Yes | **Missing** |
+| System, network, health, front panel | Yes | **Missing** — model, series and firmware only |
 | Firmware update | Yes | **Missing** |
 | Backup / restore | Yes — configuration slots, export / import, USB | **Missing** |
 | Multi-unit link | — | — |
@@ -388,9 +388,9 @@ This page describes **openrcs v0.5.2** (`ed35339`) as of 2026-09-15, read from t
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Every device variable, raw protocol | No | **Missing** |
-| Verified writes | No | **Missing** |
-| Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** |
+| Every device variable, raw protocol | No | **Missing** — no Inspector for the AWJ tree here (livepremier-plus's Console covers it) |
+| Verified writes | No | **Partial** — recalls read the destination back — twice, because the memory bookkeeping lands a few tens of ms after the request |
+| Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
 
 ---
 

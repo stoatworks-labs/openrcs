@@ -1,8 +1,8 @@
 {
  "$comment": "Source of truth for docs/COMPARISON.md (run scripts/gen-comparison.py) and for the site's copy. Stock states: Y the vendor tool has it, N it does not, X the platform has no such thing. openrcs states: F full, P partial, M missing, B beyond stock, X not applicable.",
  "subject": "openrcs",
- "version": "v0.5.2",
- "commit": "ed35339",
+ "version": "main (after v0.5.2)",
+ "commit": "",
  "date": "2026-09-15",
  "intro": "Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.",
  "platforms": [
@@ -92,8 +92,8 @@
         "text": "Web RCS served by the unit"
        },
        "openrcs": {
-        "state": "M",
-        "text": "no Midra 4K mode — a different AWJ dialect; livepremier-plus and mynah speak it"
+        "state": "P",
+        "text": "AWJ on TCP 10606 in the Midra 4K / Alta 4K object model, every path read off a Pulse 4K on 3.3.10; openrcs's own surface driven only against the vendor simulators"
        }
       }
      }
@@ -137,8 +137,8 @@
         "text": "HTML5, nothing to install"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "parity — nothing to replace"
        }
       }
      }
@@ -183,7 +183,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "none"
        }
       }
      }
@@ -228,7 +228,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "Plan is not offered on this family"
        }
       }
      }
@@ -317,8 +317,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "B",
+        "text": "Connection + Tailnet views are family-independent"
        }
       }
      }
@@ -367,8 +367,8 @@
         "text": "Take, Take Cut, T-bar, Step Back, TAKE ALL"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "Take and Cut per screen and per auxiliary, with the take time shown; no take-all"
        }
       }
      }
@@ -458,7 +458,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "in the crate (mng::step_back), not on the surface"
        }
       }
      }
@@ -683,7 +683,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "Cues are not offered on this family"
        }
       }
      }
@@ -913,7 +913,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "a table, no layer editing"
        }
       }
      }
@@ -1412,8 +1412,8 @@
         "text": "200 screen + 200 aux"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "recall only, from the 200-slot screen bank and the 200-slot aux bank, paged 50 at a time with validity and label, and a red/green mark on the slot each buffer holds; no save, label or erase"
        }
       }
      }
@@ -1457,8 +1457,8 @@
         "text": "50, self-contained or from screen memories"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "recall only, from the 50-slot master bank"
        }
       }
      }
@@ -1592,8 +1592,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "labels are read, nothing is written"
        }
       }
      }
@@ -1727,8 +1727,8 @@
         "text": "aux screens, 200 aux memories"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "auxiliaries in service are destinations — take, cut, memory bookkeeping and the aux bank; no aux source editing"
        }
       }
      }
@@ -2318,7 +2318,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "model, series and firmware only"
        }
       }
      }
@@ -2593,7 +2593,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "no Inspector for the AWJ tree here (livepremier-plus's Console covers it)"
        }
       }
      }
@@ -2628,7 +2628,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "preset recalls read the screen back rather than assuming"
+        "text": "preset recalls read the screen back rather than assuming; a wrong platform pick is named by the processor's own identity"
        }
       },
       "midra4k": {
@@ -2637,8 +2637,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "recalls read the destination back — twice, because the memory bookkeeping lands a few tens of ms after the request"
        }
       }
      }
@@ -2683,7 +2683,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "not in the openrcs module"
        }
       }
      }

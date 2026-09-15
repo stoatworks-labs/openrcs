@@ -7,13 +7,24 @@ Onboarding for LLM agents working in this repo.
 A Rust library for controlling Analog Way Midra series (Pulse2, Eikos2, Saphyr,
 SmartMatriX2, QuickMatriX, QuickVu) and LiveCore series (Ascender 16/32/48,
 NeXtage 8/16, SmartMatriX Ultra) video processors over their TCP control
-protocol, and LivePremier series (Aquilon) processors over theirs.
+protocol, and LivePremier (Aquilon), Midra 4K (QuickVu 4K, Pulse 4K, Eikos 4K,
+QuickMatrix 4K) and Alta 4K (Zenith 100/200) processors over theirs.
 
 **Two families, not two dialects.** Midra/LiveCore exchange terse ASCII
-mnemonics addressed by index on TCP 10500; LivePremier exchanges JSON addressed
-by path on TCP 10606. They share a company name and nothing else. Everything
-that differs hangs off `hub::Family`, and the two surfaces share the shell —
-header, nav, Connection — but no views.
+mnemonics addressed by index on TCP 10500; LivePremier, Midra 4K and Alta 4K
+exchange JSON addressed by path on TCP 10606. They share a company name and
+nothing else. Everything that differs hangs off `hub::Family`, and the two
+surfaces share the shell — header, nav, Connection — but no views.
+
+**Inside the AWJ family, two object models.** LivePremier and Midra 4K / Alta
+4K share the wire — port, framing, verbs, silent writes, subscriptions, the six
+transition states — and no path: each answers `E12` to the other's spelling.
+`openrcs_awj::Dialect` names the two, `paths.rs` spells LivePremier and
+`mng.rs` spells the other (Midra 4K and Alta 4K are one model; the fleet calls
+it `mng`). The surface asks `AWJ_DIALECTS[awjDialect()]` for every path and
+names a destination `S1`/`A1` on both, so nothing above the dialect object
+knows which processor it is on. "Midra" alone means the 10500 series; the 4K
+boxes are always written out.
 
 Not affiliated with Analog Way. Device and product names appear only to state
 compatibility.
@@ -24,9 +35,10 @@ compatibility.
 crates/openrcs-proto/   Midra/LiveCore engine: codec, tables, validation (no_std)
   src/codec.rs          encode/decode; the only place the wire format lives
   src/tables.rs         GENERATED from protocol/*.json — never hand-edit
-crates/openrcs-awj/     LivePremier engine (no_std, serde_json on alloc)
+crates/openrcs-awj/     LivePremier / Midra 4K / Alta 4K engine (no_std, serde_json on alloc)
   src/codec.rs          0x04-framed JSON messages
-  src/paths.rs          path builders for the documented command set
+  src/paths.rs          LivePremier path builders, from the Programmer's Guide
+  src/mng.rs            Midra 4K / Alta 4K path builders, read off a Pulse 4K
 crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   src/hub.rs            one TCP link to the device + state cache + broadcast
   src/main.rs           HTTP/WS, the browser JSON protocol
@@ -51,10 +63,12 @@ std binary and may use crates. Keep the split.
   not overstate this.
 - **The two platforms differ.** Midra terminates commands with `\r\n`, LiveCore
   with `\n`. This is not cosmetic and is easy to regress.
-- **The LivePremier paths exist twice** — `crates/openrcs-awj/src/paths.rs` and
-  the `LP` table in `web/app.js` — because the browser builds the paths it
-  writes. Change one, change the other: a stale path fails as an `E12` at
-  runtime, not as a build error.
+- **The AWJ paths exist twice** — `crates/openrcs-awj/src/paths.rs` and the
+  `LP` table in `web/app.js` for LivePremier, `crates/openrcs-awj/src/mng.rs`
+  and the `MNG` table for Midra 4K / Alta 4K — because the browser builds the
+  paths it writes. Change one, change the other: a stale path fails as an `E12`
+  at runtime, not as a build error. `tests/mng.rs` pins the spellings a Pulse 4K
+  answered; a change there needs a device to answer the new one.
 - **LivePremier reads are hardware-verified; writes are simulator-only.** The
   inventory, screen state and preset bank have been read from an Aquilon C on
   6.2.73. Take, cut, preset recall and the subscription list have been exercised
@@ -62,8 +76,15 @@ std binary and may use crates. Keep the split.
   write half as hardware-verified.
 - **The simulator does not reproduce every device behaviour.** A preset recall
   on real hardware overwrites the screen's `takeUpTime` with the duration stored
-  in the preset; on the simulator it does not. Order-of-operations for anything
-  that sequences presets cannot be settled there.
+  in the preset; on the LivePremier simulator it does not. Order-of-operations
+  for anything that sequences presets cannot be settled there. (The Midra 4K
+  and Alta 4K simulators *do* overwrite `takeTime` on a recall.)
+- **Midra 4K / Alta 4K paths are hardware-verified; openrcs's surface for them
+  is simulator-only.** Every path in `mng.rs` was answered by a Pulse 4K on
+  3.3.10, and take, cut, recall and subscription were fired at it by a separate
+  harness. The surface itself — the same two views, plus auxiliaries and the
+  aux and master banks — has only been driven against the vendor's Midra 4K
+  (3.2.29) and Alta 4K (1.3.7) simulators. Do not describe it as more.
 - **An `x`-prefixed property is a trigger, not a flag** — `xTake` stays `true`
   after firing, and writing `true` again fires again. Never diff-then-skip a
   write on one.
@@ -89,6 +110,32 @@ std binary and may use crates. Keep the split.
   T-bar is at or came from, so the rule is the DOWN/UP suffix — testing only for
   `AT_UP` gets the four in-flight states backwards, invisibly, for exactly the
   length of a transition.
+
+## Midra 4K / Alta 4K facts worth not regressing
+
+- **Screen 1 and auxiliary 1 are both keyed `1`**, in `$screen` and
+  `$auxiliaryScreen`. There is no `S1` on the wire; `mng::Dest` carries the
+  kind. A screen recalls from `preset/bank`, an auxiliary from
+  `preset/auxBank`, and the cross combinations do not exist.
+- **"In service" is not on the destination.** It is `enable` (screen) or a
+  `mode` other than `DISABLE` (auxiliary) under
+  `preconfig/status/$state/@items/CURRENT` — the *applied* configuration. Every
+  destination answers every path whether or not it is set up; a disabled screen
+  reports a 0×0 canvas.
+- **The buffers are `UP` and `DOWN`**, and which is program is the transition
+  suffix (`…UP` → program is `UP`). `Buffer::program` is that rule; nothing has
+  to be read to learn the names. One `takeTime`, not an up/down pair.
+- **There is no `status/take`.** A fade in progress shows only as one of the
+  four in-flight transition states.
+- **Which memory a buffer holds is on the destination**
+  (`$preset/@items/UP/status/@props/memoryId`, `0` when none), not in the bank,
+  and a recall lands it some tens of milliseconds after `xRequest` — a read-back
+  sent immediately can see the old value, which is why the surface reads twice.
+  Slot metadata is under `$slot`, not `$bank`.
+- **Each model's identity path answers only on that model** —
+  `system/$device/@items/1/@props/dev` on a LivePremier,
+  `system/@props/dev` on the others — so the hub reads both on connect and the
+  surface can say which processor is really there when the pick was wrong.
 
 ## Protocol facts worth not regressing
 

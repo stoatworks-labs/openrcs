@@ -1,9 +1,11 @@
 # openrcs — user guide
 
 openrcs is a modern control surface for Analog Way **Midra** and **LiveCore**
-series video processors. A small bridge server holds one connection to the
-processor and serves a web UI to any number of browsers, so you can drive the
-device from a laptop, a tablet, or a touch panel — no vendor runtime required.
+series video processors, with an early mode for the current range —
+**LivePremier**, **Midra 4K** and **Alta 4K** (see [that section](#livepremier-midra-4k-and-alta-4k)).
+A small bridge server holds one connection to the processor and serves a web UI
+to any number of browsers, so you can drive the device from a laptop, a tablet,
+or a touch panel — no vendor runtime required.
 
 ## Running it
 
@@ -15,9 +17,11 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 # then open http://127.0.0.1:8730/
 ```
 
-Use `--platform midra` for the Midra family. The header shows the device model,
-platform and a connection indicator; every view updates live as the device — or
-another operator — changes state.
+Use `--platform midra` for the Midra family, and `--platform livepremier`,
+`--platform midra4k` or `--platform alta4k` for the current range, which listens
+on TCP 10606 instead (the port is filled in from the platform when you leave it
+off). The header shows the device model, platform and a connection indicator;
+every view updates live as the device — or another operator — changes state.
 
 `--device` is optional. Started without one, the server comes up unconfigured
 and shows only the **Connection** view: enter the processor's address on the
@@ -349,6 +353,44 @@ lock and brightness.
 Each view has its own URL (`…/#layers`, `…/#memories`, and so on), so you can
 bookmark or link straight to the panel you want.
 
+## LivePremier, Midra 4K and Alta 4K
+
+The current range — **LivePremier** (Aquilon C / RS), **Midra 4K** (QuickVu 4K,
+Pulse 4K, Eikos 4K, QuickMatrix 4K) and **Alta 4K** (Zenith 100 / 200) — speaks a
+different protocol from the two families above, the vendor's published AWJ, and
+openrcs drives it through a smaller surface of its own: two views, and the
+Connection view they share with everything else. None of the Midra/LiveCore views
+apply to these processors, so the nav does not offer them.
+
+- **Screens** — every screen (and, on a Midra 4K or Alta 4K, every auxiliary)
+  the processor has in service, with the transition state it is holding, which
+  preset buffer is on program and which is preview, its take time — one on Midra
+  4K / Alta 4K, an up/down pair on LivePremier — and **Take** and **Cut** per
+  destination. On Midra 4K and Alta 4K a **Memory** column shows which bank slot
+  each buffer was loaded from, program / preview, so you can see at a glance what
+  is on air and what is staged.
+- **Presets** — the processor's preset banks: one 1000-slot screen bank on
+  LivePremier; on Midra 4K and Alta 4K the **Screen** (200), **Aux** (200) and
+  **Master** (50) banks as chips. Pick preview or program, pick the destination
+  (or every one in service), and tap a slot to recall it; a slot the device
+  reports as empty cannot be recalled. With a single destination selected, the
+  slot on its program is outlined red and the one on its preview green. Banks
+  are read fifty slots at a time — each slot costs two reads — and **Read
+  slots…** fetches the next page.
+- **Live updates** on the Screens view asks the processor to push changes; it
+  tells a client nothing until asked. Until it is on, what you see is what was
+  last read, and a Take or a recall reads its destination back rather than
+  assuming it landed.
+
+A wrong pick is caught rather than shown as an empty show: LivePremier and the
+4K boxes share a port but not an object model, so if the surface was pointed at
+one while set to the other, a banner names the processor it actually found and
+says which platform to pick in Connection.
+
+On Midra 4K and Alta 4K, recalling a preset also overwrites the destination's
+take time with the one stored in the memory — that is the processor's own
+behaviour, and the Screens view shows the new time straight after the recall.
+
 ## Notes
 
 Both families have been driven against real hardware — a NeXtage 16 (LiveCore)
@@ -359,3 +401,11 @@ are the device's declarations — the hardware is always the final authority. Th
 full protocol is documented in the
 [openrcs-protocol](https://github.com/stoatworks-labs/openrcs-protocol)
 reference.
+
+The AWJ side is newer. Its LivePremier paths come from the vendor's published
+guide and have been read from two Aquilon C frames; its Midra 4K / Alta 4K paths
+were read off a Pulse 4K. The operations underneath — take, cut, recall, the
+subscription behind Live updates — are confirmed on both kinds of hardware, but
+by a separate test harness: openrcs's own surface for these processors has been
+driven end to end only against the vendor's simulators. Treat the wire as
+settled and the surface as in field testing.

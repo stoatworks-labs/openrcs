@@ -34,19 +34,22 @@ const MODELS = {
 const MIDRA_MODELS = {
   259: 'Pulse2',
 };
-// Model names the LivePremier reports for itself. NLC is the family prefix on
-// every one of them, so the map is by the part that differs.
+// Model names an AWJ processor reports for itself. NLC is the family prefix
+// on every LivePremier, so that half of the map is by the part that differs;
+// a Midra 4K or Alta 4K names itself by model alone.
 const AWJ_MODELS = {
   NLC_C: 'Aquilon C', NLC_CPLUS: 'Aquilon C+', NLC_CMAX: 'Aquilon Cmax',
   NLC_CMINI: 'Aquilon Cmini',
   NLC_RS1: 'Aquilon RS1', NLC_RS2: 'Aquilon RS2', NLC_RS3: 'Aquilon RS3',
   NLC_RS4: 'Aquilon RS4', NLC_RS5: 'Aquilon RS5', NLC_RS6: 'Aquilon RS6',
   NLC_RSALPHA: 'Aquilon RS alpha',
+  QVU: 'QuickVu 4K', PULSE: 'Pulse 4K', EIKOS: 'Eikos 4K', QMX: 'QuickMatrix 4K',
+  ZEN100: 'Zenith 100', ZEN200: 'Zenith 200',
 };
 
 function deviceModel() {
   if (isAwj()) {
-    const dev = store.pval(LP.model());
+    const dev = awj().model();
     if (typeof dev !== 'string') return '—';
     return AWJ_MODELS[dev] || dev;
   }
@@ -477,6 +480,10 @@ function onReady() {
   VIEWS[effectiveView()].enter?.();
 }
 
+// How a platform name is shown: the series for an AWJ pick, the family
+// otherwise.
+const platformName = (plat) => AWJ_PLATFORMS[plat] || String(plat || '').toUpperCase();
+
 function header() {
   // Before a processor is chosen there is no model and no platform. Showing the
   // default table's platform there would be a confident lie on a panel whose
@@ -492,7 +499,10 @@ function header() {
     el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
     el('div', { class: 'dev-id' },
       el('div', { class: 'model', text: model }),
-      el('div', { class: 'sub', text: plat ? `${plat.toUpperCase()} · :${store.meta?.port ?? ''}` : 'not configured' })),
+      // The port actually configured, not the family's default (meta.port):
+      // a simulator or a second unit on a non-default port would otherwise be
+      // described as something it is not.
+      el('div', { class: 'sub', text: plat ? `${platformName(plat)} · :${store.meta?.device?.split(':').pop() || store.meta?.port || ''}` : 'not configured' })),
     el('div', { class: 'spacer' }),
     store.plan
       ? el('button', { class: 'chip plan', title: 'Plan mode — edits are staged, not sent. Open Plan to push.',
@@ -506,7 +516,7 @@ function header() {
 }
 
 const NAV = [
-  { section: 'LivePremier' },
+  { section: () => awjSeriesName() },
   ['lpscreens', 'Screens'], ['lppresets', 'Presets'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
@@ -574,7 +584,7 @@ function nav() {
     if (item.section) { section = item.section; sectionShown = false; continue; }
     const [id, label] = item;
     if (!viewSupported(id)) continue;
-    if (section && !sectionShown) { n.append(el('div', { class: 'nav-sec', text: section })); sectionShown = true; }
+    if (section && !sectionShown) { n.append(el('div', { class: 'nav-sec', text: typeof section === 'function' ? section() : section })); sectionShown = true; }
     n.append(el('button', {
       class: id === effectiveView() ? 'active' : '',
       onclick: () => switchView(id),
@@ -2901,21 +2911,34 @@ VIEWS.wall = (() => {
 })();
 
 
-// ================= LivePremier (AWJ) =================
+// ================= AWJ: LivePremier, Midra 4K, Alta 4K =================
 //
 // A different processor generation with a different protocol, so these views
 // share no state with the mnemonic ones above: they read store.paths, not
 // store.state, and they are the only views shown when the bridge is pointed at
-// a LivePremier.
+// an AWJ processor.
 //
-// THE PATHS BELOW MUST MATCH crates/openrcs-awj/src/paths.rs. Two builders for
-// one protocol is a duplication with a real failure mode — a path that is right
-// in one and stale in the other fails as an E12 at runtime, not at build time.
+// One wire protocol, two object models. A LivePremier and a Midra 4K / Alta 4K
+// answer on the same port and share framing, verbs and the six transition
+// states — and no path at all: each answers E12 to the other's spelling. So
+// the views below never spell a path. They ask AWJ_DIALECTS[awjDialect()],
+// which knows a destination as `S1`/`A1` on both models and turns that into a
+// path only at the last step. Above that line the two are the same processor.
+//
+// THE PATHS BELOW MUST MATCH crates/openrcs-awj/src/paths.rs (LP) AND
+// crates/openrcs-awj/src/mng.rs (MNG). Two builders for one protocol is a
+// duplication with a real failure mode — a path that is right in one and
+// stale in the other fails as an E12 at runtime, not at build time.
 
-const isAwj = () => store.meta?.platform === 'livepremier';
+const AWJ_PLATFORMS = { livepremier: 'LivePremier', midra4k: 'Midra 4K', alta4k: 'Alta 4K' };
+const isAwj = () => Object.hasOwn(AWJ_PLATFORMS, store.meta?.platform);
+// Which object model the operator's pick implies. Midra 4K and Alta 4K are one
+// model; the pick is kept apart only so the header can name the series.
+const awjDialect = () => (store.meta?.platform === 'livepremier' ? 'nlc' : 'mng');
+const awjSeriesName = () => AWJ_PLATFORMS[store.meta?.platform] || 'AWJ';
 
 const LP_SCREENS = 24;
-const LP_PRESET_PAGE = 50;      // matches the server's connect-time inventory
+const AWJ_PRESET_PAGE = 50;      // matches the server's connect-time inventory
 
 const LP = {
   model: () => 'DeviceObject/system/$device/@items/1/@props/dev',
@@ -2938,27 +2961,171 @@ const LP = {
   SUB_SCREENS: 'DeviceObject/$screenAuxGroup',
 };
 
+// Midra 4K / Alta 4K. Screen 1 and auxiliary 1 are both keyed `1`, in two
+// lists, so every builder takes the `{kind, n}` a destination id parses to.
+const MNG_LIST = { screen: '$screen', aux: '$auxiliaryScreen' };
+const MNG_CURRENT = 'DeviceObject/preconfig/status/$state/@items/CURRENT';
+const MNG = {
+  model: () => 'DeviceObject/system/@props/dev',
+  platformLabel: () => 'DeviceObject/system/@props/platformLabel',
+  version: () => 'DeviceObject/system/version/@props/updater',
+  label: (d) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/label`,
+  // "In service" is in the APPLIED preconfig, not on the destination: `enable`
+  // on a screen, a mode other than DISABLE on an auxiliary.
+  screenEnabled: (n) => `${MNG_CURRENT}/$screen/@items/${n}/@props/enable`,
+  auxMode: (n) => `${MNG_CURRENT}/$auxiliaryScreen/@items/${n}/@props/mode`,
+  transition: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/status/@props/transition`,
+  takeTime: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/takeTime`,
+  take: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/xTake`,
+  cut: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/xCut`,
+  memoryId: (d, buffer) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${buffer}/status/@props/memoryId`,
+  // The status node a buffer's memory bookkeeping lives under, as a
+  // subscription prefix: memoryId and isModified, and nothing noisier.
+  bufferStatus: (d, buffer) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${buffer}/status`,
+  // `$slot`, not `$bank`; the roots are preset/bank, preset/auxBank, preset/masterBank.
+  presetValid: (root, n) => `DeviceObject/${root}/$slot/@items/${n}/status/@props/isValid`,
+  presetLabel: (root, n) => `DeviceObject/${root}/$slot/@items/${n}/control/@props/label`,
+  load: (root, slot, d, target) =>
+    `DeviceObject/${root}/control/load/$slot/@items/${slot}/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${target}/@props/xRequest`,
+  loadMaster: (slot, target) =>
+    `DeviceObject/preset/masterBank/control/load/$slot/@items/${slot}/$preset/@items/${target}/@props/xRequest`,
+  // Both lists' control and status, one prefix.
+  SUB_TRANSITIONS: 'DeviceObject/transition',
+};
+
 // Every transition state names the end the T-bar is at or came from, so the
 // rule is the DOWN/UP suffix. Testing only for AT_UP gets the four in-flight
 // states backwards, invisibly, for exactly the length of a transition.
-const lpProgramIsDown = (t) => typeof t === 'string' && t.endsWith('DOWN');
+const awjProgramIsDown = (t) => typeof t === 'string' && t.endsWith('DOWN');
+const awjResting = (t) => t === 'AT_UP' || t === 'AT_DOWN';
 
-// The letter addressing a side of a screen. A device reports its own, and does
-// not always use A and B, so these are read rather than assumed.
-function lpLetter(s, which /* 'program' | 'preview' */) {
-  const t = store.pval(LP.transition(s));
-  const down = store.pval(LP.letter(s, 'Down'), 'A');
-  const up = store.pval(LP.letter(s, 'Up'), 'B');
-  const wantDown = which === 'program' ? lpProgramIsDown(t) : !lpProgramIsDown(t);
-  return wantDown ? down : up;
+/** `S1` -> {id, kind:'screen', n:1}; `A2` -> {id, kind:'aux', n:2}. */
+function awjDest(id) {
+  const m = /^([SA])(\d+)$/.exec(String(id || ''));
+  return m ? { id, kind: m[1] === 'A' ? 'aux' : 'screen', n: Number(m[2]) } : null;
 }
 
-const lpUsedScreens = () =>
-  Array.from({ length: LP_SCREENS }, (_, i) => i + 1).filter(s => store.pval(LP.isUsed(s)) === true);
+const awjSeconds = (tenths) => (tenths == null ? '·' : (tenths / 10).toFixed(1));
 
-const lpSeconds = (tenths) => (tenths == null ? '·' : (tenths / 10).toFixed(1));
+// The two spellings behind one interface. A view calls these with a
+// destination id and a bank kind and never sees a path.
+const AWJ_DIALECTS = {
+  // LivePremier: screens only in this surface, lettered buffers whose names
+  // the device reports, a take-up/take-down pair, one 1000-slot screen bank.
+  nlc: {
+    model: () => store.pval(LP.model()),
+    otherModel: () => store.pval(MNG.model()),
+    destinations: () =>
+      Array.from({ length: LP_SCREENS }, (_, i) => i + 1)
+        .filter(s => store.pval(LP.isUsed(s)) === true)
+        .map(s => awjDest(`S${s}`)),
+    label: (d) => store.pval(LP.label(d.n)),
+    transition: (d) => store.pval(LP.transition(d.n)),
+    // `status/take` is OFF, TO_UP or TO_DOWN; anything but OFF is a fade in
+    // progress. The in-flight transition states say the same thing.
+    inFlight(d) {
+      const taking = store.pval(LP.takeStatus(d.n));
+      return typeof taking === 'string' && taking !== 'OFF' ? String(taking).toLowerCase() : null;
+    },
+    // The letter addressing a side of a screen. A device reports its own, and
+    // does not always use A and B, so these are read rather than assumed.
+    buffers(d) {
+      const t = store.pval(LP.transition(d.n));
+      const down = store.pval(LP.letter(d.n, 'Down'), 'A');
+      const up = store.pval(LP.letter(d.n, 'Up'), 'B');
+      return awjProgramIsDown(t) ? { program: down, preview: up } : { program: up, preview: down };
+    },
+    takeTimes: (d) => [store.pval(LP.takeTime(d.n, true)), store.pval(LP.takeTime(d.n, false))],
+    takeTimesHead: 'Take up / down',
+    take: (d) => store.pset(LP.take(d.n), true),
+    cut: (d) => store.pset(LP.cut(d.n), true),
+    refresh(d) { store.pget(LP.transition(d.n)); store.pget(LP.takeStatus(d.n)); },
+    subscriptions: () => [LP.SUB_SCREENS],
+    // Which memory a buffer holds is published in the bank on this model,
+    // keyed by letter, and this surface does not read it yet.
+    showsMemory: false,
+    memoryOn: () => null,
+    banks: [{ kind: 'screen', label: 'Screen', slots: 1000, targets: 'screen' }],
+    presetValid: (bank, n) => store.pval(LP.presetValid(n)),
+    presetLabel: (bank, n) => store.pval(LP.presetLabel(n)),
+    fetchSlot(bank, n) { store.pget(LP.presetValid(n)); store.pget(LP.presetLabel(n)); },
+    recall(bank, slot, d, target) { store.pset(LP.loadScreen(slot, d.n, target), true); },
+  },
 
-// ---------- LivePremier: Screens ----------
+  // Midra 4K / Alta 4K: four screens and four auxiliaries whether or not any
+  // is set up, buffers literally named UP and DOWN, one take time, and three
+  // banks — the auxiliaries have one of their own.
+  mng: {
+    model: () => store.pval(MNG.model()),
+    otherModel: () => store.pval(LP.model()),
+    destinations: () => [
+      ...[1, 2, 3, 4].filter(n => store.pval(MNG.screenEnabled(n)) === true).map(n => awjDest(`S${n}`)),
+      ...[1, 2, 3, 4].filter(n => { const m = store.pval(MNG.auxMode(n)); return m !== undefined && m !== 'DISABLE'; }).map(n => awjDest(`A${n}`)),
+    ],
+    label: (d) => store.pval(MNG.label(d)),
+    transition: (d) => store.pval(MNG.transition(d)),
+    // No `status/take` on this model; the four in-flight states are the only
+    // sign of a fade in progress, and the honest one.
+    inFlight(d) {
+      const t = store.pval(MNG.transition(d));
+      return typeof t === 'string' && !awjResting(t) ? t.toLowerCase().replace(/_/g, ' ') : null;
+    },
+    // The vendor's own rule: UP is program for the three `…UP` states.
+    buffers(d) {
+      const t = store.pval(MNG.transition(d));
+      return awjProgramIsDown(t) ? { program: 'DOWN', preview: 'UP' } : { program: 'UP', preview: 'DOWN' };
+    },
+    takeTimes: (d) => [store.pval(MNG.takeTime(d))],
+    takeTimesHead: 'Take time',
+    take: (d) => store.pset(MNG.take(d), true),
+    cut: (d) => store.pset(MNG.cut(d), true),
+    refresh(d) {
+      store.pget(MNG.transition(d));
+      store.pget(MNG.memoryId(d, 'UP'));
+      store.pget(MNG.memoryId(d, 'DOWN'));
+    },
+    // Transitions for every destination, plus the memory bookkeeping of each
+    // one in service — a recall made anywhere then shows up here too.
+    subscriptions() {
+      return [MNG.SUB_TRANSITIONS,
+        ...this.destinations().flatMap(d => ['UP', 'DOWN'].map(b => MNG.bufferStatus(d, b)))];
+    },
+    // Which memory a buffer holds is on the destination here: 0 when it was
+    // not loaded from one.
+    showsMemory: true,
+    memoryOn(d, which) {
+      const id = store.pval(MNG.memoryId(d, this.buffers(d)[which]));
+      return typeof id === 'number' && id > 0 ? id : null;
+    },
+    banks: [
+      { kind: 'screen', label: 'Screen', slots: 200, targets: 'screen', root: 'preset/bank' },
+      { kind: 'aux', label: 'Aux', slots: 200, targets: 'aux', root: 'preset/auxBank' },
+      { kind: 'master', label: 'Master', slots: 50, targets: 'none', root: 'preset/masterBank' },
+    ],
+    presetValid: (bank, n) => store.pval(MNG.presetValid(bank.root, n)),
+    presetLabel: (bank, n) => store.pval(MNG.presetLabel(bank.root, n)),
+    fetchSlot(bank, n) { store.pget(MNG.presetValid(bank.root, n)); store.pget(MNG.presetLabel(bank.root, n)); },
+    recall(bank, slot, d, target) {
+      if (bank.kind === 'master') store.pset(MNG.loadMaster(slot, target), true);
+      else store.pset(MNG.load(bank.root, slot, d, target), true);
+    },
+  },
+};
+
+const awj = () => AWJ_DIALECTS[awjDialect()];
+
+// The other object model's identity is read on connect too. Both models share
+// the port, so a wrong pick connects fine and shows an empty show; this is the
+// one thing that can say why.
+function awjMismatch() {
+  const other = awj().otherModel();
+  if (typeof other !== 'string') return null;
+  const name = AWJ_MODELS[other] || other;
+  const pick = awjDialect() === 'nlc' ? 'Midra 4K or Alta 4K' : 'LivePremier';
+  return `This processor reports itself as ${name}, which is not a ${awjSeriesName()}. Pick ${pick} in Connection.`;
+}
+
+// ---------- AWJ: Screens ----------
 VIEWS.lpscreens = (() => {
   let live = false;      // whether we have written a subscription list
 
@@ -2966,46 +3133,54 @@ VIEWS.lpscreens = (() => {
     live = on;
     // An empty list turns pushes off again — the device filters by prefix, and
     // nothing matches nothing.
-    store.psub(on ? [LP.SUB_SCREENS] : []);
+    store.psub(on ? awj().subscriptions() : []);
     store.notify();
   }
 
   function enter() {
     // The server inventories on connect; this covers a view opened later, or
     // after a device has been away.
-    for (const s of lpUsedScreens()) {
-      store.pget(LP.transition(s));
-      store.pget(LP.takeStatus(s));
-    }
+    for (const d of awj().destinations()) awj().refresh(d);
   }
 
-  function row(s) {
-    const t = store.pval(LP.transition(s));
-    const taking = store.pval(LP.takeStatus(s));
-    const moving = typeof taking === 'string' && taking !== 'OFF';
-    const up = store.pval(LP.takeTime(s, true));
-    const down = store.pval(LP.takeTime(s, false));
+  function row(d) {
+    const D = awj();
+    const t = D.transition(d);
+    const moving = D.inFlight(d);
+    const { program, preview } = D.buffers(d);
+    const times = D.takeTimes(d).map(awjSeconds).join(' / ');
+    const mem = ['program', 'preview'].map(w => D.memoryOn(d, w));
     return el('tr', {},
-      el('td', { text: `S${s}` }),
-      el('td', { text: store.pval(LP.label(s)) || '—' }),
+      el('td', { text: d.id }),
+      el('td', { text: D.label(d) || '—' }),
       el('td', { class: 'val', text: t == null ? '·' : String(t) }),
-      el('td', { class: 'val', text: `${lpLetter(s, 'program')} / ${lpLetter(s, 'preview')}` }),
-      el('td', { class: 'val', text: `${lpSeconds(up)} / ${lpSeconds(down)} s` }),
+      el('td', { class: 'val', text: `${program} / ${preview}` }),
+      D.showsMemory
+        ? el('td', { class: 'val', text: mem.map(m => (m == null ? '—' : `M${m}`)).join(' / ') })
+        : null,
+      el('td', { class: 'val', text: `${times} s` }),
       el('td', {},
         moving
-          ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), String(taking).toLowerCase())
+          ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), moving)
           : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'idle')),
       el('td', {},
-        el('button', { class: 'btn pgm', onclick: () => store.pset(LP.take(s), true) }, 'Take'),
-        el('button', { class: 'btn ghost', onclick: () => store.pset(LP.cut(s), true) }, 'Cut')));
+        el('button', { class: 'btn pgm', onclick: () => D.take(d) }, 'Take'),
+        el('button', { class: 'btn ghost', onclick: () => D.cut(d) }, 'Cut')));
   }
 
   function render() {
-    const used = lpUsedScreens();
+    const D = awj();
+    const used = D.destinations();
+    const mismatch = awjMismatch();
+    const heads = ['Screen', 'Label', 'Transition', 'PGM / PRW',
+      ...(D.showsMemory ? ['Memory'] : []), D.takeTimesHead, 'State', ''];
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Screens' }),
-        el('span', { class: 'hint', text: 'Screens in use, and the transition each is holding' })),
+        el('span', { class: 'hint', text: awjDialect() === 'mng'
+          ? 'Screens and auxiliaries in service, and the transition each is holding'
+          : 'Screens in use, and the transition each is holding' })),
+      mismatch ? el('div', { class: 'panel' }, el('div', { class: 'hint bad pad', text: mismatch })) : null,
       el('div', { class: 'panel' },
         el('div', { class: 'row' },
           el('button', {
@@ -3015,52 +3190,83 @@ VIEWS.lpscreens = (() => {
           el('span', {
             class: 'hint',
             text: live
-              ? 'The device is pushing screen changes to this bridge.'
+              ? 'The device is pushing transition changes to this bridge.'
               : 'This processor tells a client nothing until asked to. Until this is on, what you see is what was last read.',
           })),
         used.length
           ? el('table', { class: 'grid' },
-              el('thead', {}, el('tr', {}, ...['Screen', 'Label', 'Transition', 'PGM / PRW', 'Take up / down', 'State', ''].map(h => el('th', { text: h })))),
+              el('thead', {}, el('tr', {}, ...heads.map(h => el('th', { text: h })))),
               el('tbody', {}, ...used.map(row)))
-          : el('div', { class: 'hint pad', text: store.connected ? 'No screen on this device is in use.' : 'Waiting for the processor.' })));
+          : el('div', { class: 'hint pad', text: store.connected
+              ? (mismatch ? 'Nothing this surface can drive answered.' : 'No screen on this device is in use.')
+              : 'Waiting for the processor.' })));
   }
 
   return { enter, render };
 })();
 
-// ---------- LivePremier: Presets ----------
+// ---------- AWJ: Presets ----------
 VIEWS.lppresets = (() => {
-  let pages = 1;                 // how much of the bank has been asked for
+  let pages = {};                // bank kind -> how much of it has been asked for
+  let bankKind = 'screen';
   let target = 'PREVIEW';
-  let screen = null;             // null = every screen in use
+  let dest = null;               // destination id; null = every one in service of the bank's kind
 
-  function fetchPage(page) {
-    const from = page * LP_PRESET_PAGE + 1;
-    for (let n = from; n < from + LP_PRESET_PAGE; n++) {
-      store.pget(LP.presetValid(n));
-      store.pget(LP.presetLabel(n));
-    }
+  const bank = () => awj().banks.find(b => b.kind === bankKind) || awj().banks[0];
+  const pagesOf = (b) => pages[b.kind] ?? (b.kind === 'screen' ? 1 : 0);
+  const candidates = (b) => awj().destinations().filter(d => d.kind === b.targets);
+
+  function fetchPage(b, page) {
+    const from = page * AWJ_PRESET_PAGE + 1;
+    for (let n = from; n < from + AWJ_PRESET_PAGE && n <= b.slots; n++) awj().fetchSlot(b, n);
+  }
+
+  function pickBank(kind) {
+    bankKind = kind;
+    dest = null;
+    const b = bank();
+    // The screen bank's first page comes with the connect-time inventory;
+    // the others are read when first shown.
+    if (pagesOf(b) === 0) { fetchPage(b, 0); pages[b.kind] = 1; }
+    store.notify();
   }
 
   function enter() {
-    if (screen === null) screen = lpUsedScreens()[0] ?? 1;
+    if (!awj().banks.some(b => b.kind === bankKind)) bankKind = awj().banks[0].kind;
   }
 
   function recall(slot) {
-    const screens = screen === 'all' ? lpUsedScreens() : [screen];
-    // Recalls are silent — the device answers a write with nothing — so the
-    // surface reads the affected screen back rather than assuming it landed.
-    for (const s of screens) {
-      store.pset(LP.loadScreen(slot, s, target), true);
-      store.pget(LP.transition(s));
+    const b = bank();
+    const D = awj();
+    if (b.targets === 'none') {
+      D.recall(b, slot, null, target);
+      const all = D.destinations();
+      for (const d of all) D.refresh(d);
+      setTimeout(() => { for (const d of all) D.refresh(d); }, 300);
+      return;
     }
+    const dests = dest === null ? candidates(b) : [awjDest(dest)];
+    // Recalls are silent — the device answers a write with nothing — so the
+    // surface reads the affected destination back rather than assuming it
+    // landed. Twice: the load takes a few tens of milliseconds, and a read
+    // that arrives inside that window sees the buffer's old memory.
+    for (const d of dests) {
+      D.recall(b, slot, d, target);
+      D.refresh(d);
+    }
+    setTimeout(() => { for (const d of dests) D.refresh(d); }, 300);
   }
 
-  function slotTile(n) {
-    const valid = store.pval(LP.presetValid(n)) === true;
-    const label = store.pval(LP.presetLabel(n));
+  function slotTile(b, n) {
+    const D = awj();
+    const valid = D.presetValid(b, n) === true;
+    const label = D.presetLabel(b, n);
+    // Which buffers of the chosen destination hold this memory, where the
+    // model says so.
+    const d = dest !== null ? awjDest(dest) : null;
+    const on = d ? ['program', 'preview'].filter(w => D.memoryOn(d, w) === n) : [];
     return el('button', {
-      class: 'slot' + (valid ? ' valid' : ''),
+      class: 'slot' + (valid ? ' valid' : '') + (on.includes('program') ? ' pgm' : on.includes('preview') ? ' pvw' : ''),
       disabled: !valid,
       title: valid ? `Recall ${n} to ${target.toLowerCase()}` : `Slot ${n} is empty`,
       onclick: () => valid && recall(n),
@@ -3070,32 +3276,45 @@ VIEWS.lppresets = (() => {
   }
 
   function render() {
+    const D = awj();
+    const b = bank();
+    const shown = Math.min(b.slots, Math.max(1, pagesOf(b)) * AWJ_PRESET_PAGE);
     const slots = [];
-    for (let n = 1; n <= pages * LP_PRESET_PAGE; n++) slots.push(slotTile(n));
-    const used = lpUsedScreens();
+    for (let n = 1; n <= shown; n++) slots.push(slotTile(b, n));
+    const cands = candidates(b);
+    const kindWord = b.targets === 'aux' ? 'auxiliary' : 'screen';
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Presets' }),
-        el('span', { class: 'hint', text: 'Screen preset bank — a slot the device reports as empty cannot be recalled' })),
+        el('span', { class: 'hint', text: 'Preset banks — a slot the device reports as empty cannot be recalled' })),
       el('div', { class: 'panel' },
+        D.banks.length > 1
+          ? el('div', { class: 'row' },
+              el('div', { class: 'seg' },
+                ...D.banks.map(k => el('button', { class: k.kind === b.kind ? 'on recall' : '', onclick: () => pickBank(k.kind) }, `${k.label} · ${k.slots}`))))
+          : null,
         el('div', { class: 'row' },
           el('label', { text: 'To ' }),
           el('select', {
             onchange: (e) => { target = e.target.value; store.notify(); },
           }, ...['PREVIEW', 'PROGRAM'].map(v => el('option', { value: v, selected: v === target, text: v.toLowerCase() }))),
-          el('label', { text: ' on ' }),
-          el('select', {
-            onchange: (e) => { screen = e.target.value === 'all' ? 'all' : Number(e.target.value); store.notify(); },
+          b.targets === 'none'
+            ? el('span', { class: 'hint', text: 'A master preset recalls every screen and auxiliary it recorded.' })
+            : el('label', { text: ' on ' }),
+          b.targets === 'none' ? null : el('select', {
+            onchange: (e) => { dest = e.target.value === 'all' ? null : e.target.value; store.notify(); },
           },
-            ...used.map(s => el('option', { value: String(s), selected: s === screen, text: `S${s} ${store.pval(LP.label(s)) || ''}`.trim() })),
-            el('option', { value: 'all', selected: screen === 'all', text: 'every screen in use' }))),
+            el('option', { value: 'all', selected: dest === null, text: `every ${kindWord} in service` }),
+            ...cands.map(d => el('option', { value: d.id, selected: d.id === dest, text: `${d.id} ${D.label(d) || ''}`.trim() })))),
         el('div', { class: 'mem-grid' }, ...slots),
-        el('div', { class: 'row' },
-          el('button', {
-            class: 'btn',
-            onclick: () => { fetchPage(pages); pages += 1; store.notify(); },
-          }, `Read slots ${pages * LP_PRESET_PAGE + 1}–${(pages + 1) * LP_PRESET_PAGE}`),
-          el('span', { class: 'hint', text: 'The bank holds 1000 slots and each costs two reads, so it is paged rather than read whole.' }))));
+        shown < b.slots
+          ? el('div', { class: 'row' },
+              el('button', {
+                class: 'btn',
+                onclick: () => { const p = pagesOf(b); fetchPage(b, p); pages[b.kind] = p + 1; store.notify(); },
+              }, `Read slots ${shown + 1}–${Math.min(b.slots, shown + AWJ_PRESET_PAGE)}`),
+              el('span', { class: 'hint', text: `The bank holds ${b.slots} slots and each costs two reads, so it is paged rather than read whole.` }))
+          : null));
   }
 
   return { enter, render };
@@ -5625,7 +5844,7 @@ VIEWS.tailnet = (() => {
 // restarting the bridge with different arguments.
 VIEWS.connection = (() => {
   let entry = null;             // keypad buffer; null until seeded from meta
-  let plat = null;              // 'livecore' | 'midra' | 'livepremier'
+  let plat = null;              // 'livecore' | 'midra' | 'livepremier' | 'midra4k' | 'alta4k'
   let seeded = false;
 
   const isDemo = () => !!globalThis.OPENRCS_DEMO_DEVICE;
@@ -5651,10 +5870,12 @@ VIEWS.connection = (() => {
 
   function platformPicker() {
     const pick = (p) => { plat = p; store.notify(); };
+    // "Midra" is the earlier series on TCP 10500 — Pulse2, Eikos2, Saphyr,
+    // SmartMatriX2, QuickMatriX, QuickVu. The 4K boxes speak the LivePremier
+    // protocol on 10606 and sit with it.
     return el('div', { class: 'seg big' },
-      el('button', { class: plat === 'livecore' ? 'on recall' : '', onclick: () => pick('livecore') }, 'LiveCore'),
-      el('button', { class: plat === 'midra' ? 'on recall' : '', onclick: () => pick('midra') }, 'Midra'),
-      el('button', { class: plat === 'livepremier' ? 'on recall' : '', onclick: () => pick('livepremier') }, 'LivePremier'));
+      ...[['livecore', 'LiveCore'], ['midra', 'Midra'], ['livepremier', 'LivePremier'], ['midra4k', 'Midra 4K'], ['alta4k', 'Alta 4K']]
+        .map(([id, name]) => el('button', { class: plat === id ? 'on recall' : '', onclick: () => pick(id) }, name)));
   }
 
   function foundList() {
@@ -5689,7 +5910,7 @@ VIEWS.connection = (() => {
         el('span', { class: 'k', text: 'Platform' }),
         // The bridge serves a default variable table before it is configured;
         // reporting that table's platform as the device's would be wrong.
-        el('span', { class: 'v val', text: store.configured ? (store.meta?.platform || '').toUpperCase() || '·' : '·' })),
+        el('span', { class: 'v val', text: store.configured ? platformName(store.meta?.platform) || '·' : '·' })),
       el('div', { class: 'kv' },
         el('span', { class: 'k', text: 'Link' }),
         el('div', { class: 'chip ' + (store.connected ? 'on' : 'off') },
@@ -5736,7 +5957,7 @@ VIEWS.connection = (() => {
           el('div', { class: 'hint pad', text: 'The control port is added automatically. A hostname needs the bridge’s --device option.' })),
         el('div', { class: 'panel' }, el('h2', 'Platform'),
           platformPicker(),
-          el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu.' }),
+          el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu. LivePremier: Aquilon. Midra 4K: QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K. Alta 4K: Zenith 100, Zenith 200.' }),
           store.setupError
             ? el('div', { class: 'hint pad bad', text: `Rejected: ${store.setupError}` })
             : null,

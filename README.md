@@ -3,20 +3,23 @@
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The protocol was
 > reverse-engineered rather than taken from a published specification (the
-> LivePremier side is the exception — it follows the vendor's published
-> protocol guide). Both the LiveCore and Midra sides have since been validated
-> against real hardware, but
-> device behaviour varies with model, firmware and signal state — check against
-> your own processor before a show. See [Status](#status).
+> LivePremier, Midra 4K and Alta 4K side is the exception — it follows the
+> vendor's published protocol guide and what the devices themselves report).
+> Both the LiveCore and Midra sides have since been validated against real
+> hardware, but device behaviour varies with model, firmware and signal state —
+> check against your own processor before a show. See [Status](#status).
 
-A Rust library for controlling **Analog Way Midra and LiveCore series** video
-processors over their native TCP control protocol.
+A Rust library for controlling **Analog Way Midra, LiveCore, LivePremier,
+Midra 4K and Alta 4K** video processors over their native TCP control
+protocols.
 
 It targets the Midra family (Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX,
 QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra) — a modern, dependency-light control surface for hardware whose original
-software is long out of date — and has an early **LivePremier** (Aquilon) mode
-built on that family's own published protocol.
+software is long out of date — and has an early mode for the current range,
+**LivePremier** (Aquilon), **Midra 4K** (QuickVu 4K, Pulse 4K, Eikos 4K,
+QuickMatrix 4K) and **Alta 4K** (Zenith 100/200), built on those families' own
+published protocol.
 
 ![The openrcs Workspace — the source palette, every screen editable side by side in program and preview, and memories, on one page](docs/screenshots/workspace.png)
 
@@ -125,6 +128,25 @@ stays `true` after firing, so reading one back is never confirmation; and a
 preset recall overwrites the screen's `takeUpTime`, so any fade must be written
 *after* the load, not before.
 
+**Midra 4K and Alta 4K are the same protocol over a different object model**,
+and `openrcs-awj` spells that model too (`openrcs_awj::mng`): four screens and
+four auxiliaries keyed by number in two lists, one `takeTime`, preset buffers
+literally named `UP` and `DOWN`, three banks (screen, auxiliary and master —
+the auxiliaries have one of their own), and "in service" read from the applied
+configuration rather than the destination. Every path was read off a **Pulse 4K
+on firmware 3.3.10** on 2026-09-12 — and the LivePremier spellings were read
+off the same box as a control: every one answers `E12` there, which is why the
+two are separate modules and why the surface tells you when it has been pointed
+at the wrong one. The take, cut, recall and subscription operations underneath
+were fired at that Pulse 4K by a separate test harness and behaved as the
+LivePremier ones do (a subscribed second socket saw a write within 40 ms).
+`openrcs`'s own surface for these — the same two views as LivePremier, with the
+auxiliaries and the extra banks — has been driven end to end against the
+vendor's **Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only. One
+difference from the LivePremier simulator is worth knowing: these two *do*
+reproduce the recall-overwrites-the-take-time behaviour, so what you see on
+them is what the hardware does.
+
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
 ESP32) between the processor and its clients. The protocol engine is
@@ -154,12 +176,15 @@ file), or run it from source:
 
 ```bash
 cargo run -p openrcs-server -- --device <processor-ip> --platform livecore
-# ...or --platform midra, or --platform livepremier for an Aquilon
+# ...or --platform midra, --platform livepremier for an Aquilon,
+# --platform midra4k for a QuickVu/Pulse/Eikos/QuickMatrix 4K,
+# --platform alta4k for a Zenith 100/200
 # then open http://127.0.0.1:8730/
 ```
 
 The port is optional — each family has its own (10500 for LiveCore and Midra,
-10606 for LivePremier) and it is filled in from `--platform`.
+10606 for LivePremier, Midra 4K and Alta 4K) and it is filled in from
+`--platform`.
 
 `--device` is optional: without it the server starts unconfigured and the
 **Connection** view sets the processor from the UI — keypad or network scan —

@@ -703,7 +703,8 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 
 .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
 .btn.primary:disabled { opacity: .4; }
-.seg.big button { padding: 12px 22px; font-size: 14px; min-height: 46px; }
+.seg.big button { padding: 12px 18px; font-size: 14px; min-height: 46px; white-space: nowrap; }
+.seg.big { flex-wrap: wrap; }
 
 .found { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .found-row {

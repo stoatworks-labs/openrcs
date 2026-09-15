@@ -605,6 +605,55 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K as AWJ targets, built 2026-09-13, landed 2026-09-15
+
+The current range's other two families join LivePremier: **Midra 4K** (QuickVu /
+Pulse / Eikos / QuickMatrix 4K) and **Alta 4K** (Zenith 100 / 200). Same wire
+(port, framing, verbs, silent writes, prefix subscriptions, the six transition
+states), **different object model** — `openrcs_awj::Dialect { LivePremier, Mng }`,
+spelled by `paths.rs` and the new `mng.rs`. `hub::Family::Awj(AwjSeries)` keeps
+the operator's pick (three names, two models) so a Zenith is called an Alta 4K.
+
+**Provenance:** every `mng` path was answered by a real Pulse 4K on 3.3.10 on
+2026-09-12 (the fleet's field-test suite, see the livepremier-plus notes), and the
+LivePremier spellings were read on the same box as a control — all E12. Take,
+cut, recall and subscription were fired at that box by the harness, not by this
+code. `tests/mng.rs` pins the spellings.
+
+**The model, in one paragraph:** screen 1 and auxiliary 1 are both keyed `1` in
+`$screen` / `$auxiliaryScreen` (no `S1` on the wire; `mng::Dest` carries the
+kind); takes live under a top-level `transition` node with ONE `takeTime`; the
+buffers are literally `UP` and `DOWN` and program is the transition suffix
+(`crate::Buffer::program` is the vendor's own rule); "in service" is `enable` /
+`mode != DISABLE` under `preconfig/status/$state/@items/CURRENT` — the APPLIED
+config, never `preconfig/control`; which memory a buffer holds is
+`$preset/@items/UP/status/@props/memoryId` on the destination (0 = none); banks
+are `preset/bank`, `preset/auxBank`, `preset/masterBank` with slot metadata
+under `$slot`, not `$bank`; no layer bank; there is no `status/take`.
+
+**Surface:** the same two AWJ views, now dialect-driven (`AWJ_DIALECTS[awjDialect()]`
+in `app.js`; nothing above it spells a path). Midra 4K / Alta 4K get a Memory
+column (program / preview slot per destination), auxiliaries as destinations,
+and three bank chips. The hub's connect-time inventory reads the OTHER model's
+identity too, so a wrong pick shows a banner naming the real processor instead
+of an empty show. The header now shows the configured device port rather than the
+family default (`meta.port`), which lied for anything on a non-default port.
+
+**Verified end to end on the vendor simulators 2026-09-13 and again 2026-09-15**
+(Midra 4K 3.2.29 as a Pulse on :10610, Alta 4K 1.3.7 as a Zenith 200 on :13021):
+take with the push arriving (`AT_UP → EFFECT_FROM_UP → AT_DOWN`, buffers and
+memory column flipping), screen-bank recall to preview with the slot marks
+following, master recall, an auxiliary take and an aux-bank recall onto program;
+LivePremier regression clean on its simulator. **Two things the simulators
+taught:** a recall lands `memoryId` some tens of ms after `xRequest`, so the
+surface reads back twice (immediately and at 300 ms); and unlike the LivePremier
+simulator these two DO overwrite `takeTime` on a recall (3.3 s → 1.0 s seen),
+which matches hardware.
+
+**Status wording that must not drift:** paths hardware-verified; openrcs's OWN
+surface for these families simulator-only. README, AGENTS.md and the user guide
+say exactly that.
+
 ## LivePremier (AWJ) added as a SECOND FAMILY, 2026-08-21 — PR #6, CI green
 
 openrcs is no longer LiveCore/Midra-only. `feature/livepremier-awj` adds

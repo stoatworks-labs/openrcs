@@ -50,7 +50,8 @@ def render(doc: dict) -> str:
     o.append("# How openrcs compares with the stock control software\n")
     o.append("<!-- Generated from docs/comparison.json by scripts/gen-comparison.py. Edit the JSON, not this file. -->\n")
     o.append(f"{doc['intro']}\n")
-    o.append(f"This page describes **{doc['subject']} {doc['version']}** (`{doc['commit']}`) as of {doc['date']}, "
+    at = f" (`{doc['commit']}`)" if doc.get("commit") else ""
+    o.append(f"This page describes **{doc['subject']} {doc['version']}**{at} as of {doc['date']}, "
              f"read from the views the app actually shows for each family and the device variables each one drives. "
              f"The vendor columns are read from the current manuals, not from a running unit:\n")
     for p in doc["platforms"]:

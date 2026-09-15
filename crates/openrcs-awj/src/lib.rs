@@ -1,9 +1,16 @@
-//! Wire protocol for Analog Way LivePremier series video processors (AWJ).
+//! Wire protocol for Analog Way LivePremier, Midra 4K and Alta 4K video
+//! processors (AWJ).
 //!
 //! A different generation from the Midra/LiveCore mnemonics in `openrcs-proto`
 //! and it shares nothing with them but a company name. AWJ is JSON over TCP
 //! **10606**: the device is one large JSON state object, and writing a property
 //! *is* the command.
+//!
+//! One wire protocol, **two object models** — see [`Dialect`]. LivePremier
+//! (Aquilon) is spelled by [`paths`]; Midra 4K (QuickVu, Pulse, Eikos,
+//! QuickMatrix) and Alta 4K (Zenith 100/200) by [`mng`]. Everything below the
+//! path — framing, `get`/`replace`, the silent write, the subscription list,
+//! the error codes, the six transition states — is common.
 //!
 //! ```text
 //! get:      {"op":"get","path":"<path>"}\x04
@@ -24,10 +31,10 @@
 //! The device accepts at most **5 concurrent TCP clients**, and the port can be
 //! disabled in the device's own security settings.
 //!
-//! Paths here follow the firmware v4.0-and-later layout, in which screens and
-//! auxiliaries are separate collections. Path layouts have moved between
-//! firmware generations before, so treat every path as firmware-tagged: see
-//! [`paths`].
+//! LivePremier paths here follow the firmware v4.0-and-later layout, in which
+//! screens and auxiliaries are separate collections. Path layouts have moved
+//! between firmware generations before, so treat every path as
+//! firmware-tagged: see [`paths`] and [`mng`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -35,6 +42,7 @@
 extern crate alloc;
 
 mod codec;
+pub mod mng;
 pub mod paths;
 
 pub use codec::{encode_get, encode_replace, Decoder, Frame};
@@ -50,6 +58,37 @@ pub const EOT: char = '\u{4}';
 
 /// Maximum concurrent TCP clients the device accepts.
 pub const MAX_CLIENTS: u8 = 5;
+
+/// Which of the two AWJ object models a device carries.
+///
+/// The same port, framing and verbs address two trees that share no path: a
+/// LivePremier takes on `$screenAuxGroup/@items/S1`, a Midra 4K or Alta 4K on
+/// `transition/$screen/@items/1`, and each answers `E12` to the other's
+/// spelling. A client therefore has to know which it is talking to before it
+/// builds a path — and can find out cheaply, because each model's identity
+/// property exists only on that model: [`paths::device_model`] answers on a
+/// LivePremier and [`mng::device_model`] on the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialect {
+    /// LivePremier (Aquilon C / RS), spelled by [`paths`].
+    LivePremier,
+    /// Midra 4K and Alta 4K, spelled by [`mng`] — one object model across
+    /// QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K, Zenith 100 and
+    /// Zenith 200.
+    Mng,
+}
+
+impl Dialect {
+    /// The property that exists only on this model, and what it reports:
+    /// `NLC_C` and friends on a LivePremier, `PULSE`, `ZEN200` and friends on
+    /// the others.
+    pub fn identity_path(self) -> String {
+        match self {
+            Dialect::LivePremier => paths::device_model(1),
+            Dialect::Mng => mng::device_model(),
+        }
+    }
+}
 
 /// A device error reply.
 ///
@@ -184,6 +223,57 @@ impl Letters {
             self.down
         } else {
             self.up
+        }
+    }
+}
+
+/// The two preset buffers of a Midra 4K or Alta 4K destination.
+///
+/// Where a LivePremier screen holds three lettered memories and reports which
+/// letter is at each end of its T-bar, these hold two, named for the ends:
+/// `UP` and `DOWN`. Nothing has to be read to learn the names — the
+/// transition status names the buffer that is on air directly, by the same
+/// suffix rule [`Transition::program_is_down`] applies to letters. That rule
+/// is the vendor's own: its surface returns `UP` for program when the status
+/// is `AT_UP`, `EFFECT_FROM_UP` or `COPY_FROM_UP`, and `DOWN` otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Buffer {
+    Up,
+    Down,
+}
+
+impl Buffer {
+    /// The item key in a `$preset` collection.
+    pub fn key(self) -> &'static str {
+        match self {
+            Buffer::Up => "UP",
+            Buffer::Down => "DOWN",
+        }
+    }
+
+    /// The buffer on air, given where the T-bar is.
+    pub fn program(transition: Transition) -> Buffer {
+        if transition.program_is_down() {
+            Buffer::Down
+        } else {
+            Buffer::Up
+        }
+    }
+
+    /// The buffer being edited.
+    pub fn preview(transition: Transition) -> Buffer {
+        match Buffer::program(transition) {
+            Buffer::Up => Buffer::Down,
+            Buffer::Down => Buffer::Up,
+        }
+    }
+
+    /// The buffer addressing `preset`, given where the T-bar is — the
+    /// counterpart of [`Letters::letter`].
+    pub fn for_preset(transition: Transition, preset: Preset) -> Buffer {
+        match preset {
+            Preset::Program => Buffer::program(transition),
+            Preset::Preview => Buffer::preview(transition),
         }
     }
 }
