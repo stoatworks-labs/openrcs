@@ -372,24 +372,33 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   (which bank slot each buffer was loaded from, program / preview), a take time
   you can type, a **T-bar**, **Freeze** for the destination, **PGM → PRW** (copy
   program to preview), **Step back** and a **swap** flag, and the panel has
-  **Take all**. Two of those are not what the same words mean on a LiveCore:
+  **Take all** and the **Quick preset** — the device's emergency key: one
+  switch puts fade to black, a library image or a master memory (pick which)
+  on every covered program output, and takes it off again; the destination
+  buttons beside it say which are covered and which are showing it now. Two of
+  those are not what the same words mean on a LiveCore:
   **Step back** here is the device's own — it reverts the last change to layer
   settings, an edit undo, and does not return to the previous look; and **swap**
   is the preset toggle: on, a take swaps the two buffers; off, it copies preview
   to program and leaves preview as it was. Take all fires one take per
   destination in service, which is exactly what the vendor's Web RCS does.
 - **Layers** (Midra 4K / Alta 4K) — one screen at a time, program or preview,
-  its fitted live layers drawn on a canvas at the applied configuration's size.
-  **Drag** a layer to move it and its **corners** to resize; **Fill / 2-up /
-  3-up / Quad / PiP** lay the fitted layers out in one tap. The panel on the
-  right edits the selected layer: its **source** (an input by number and label,
-  or colour), centre and size in pixels, **Freeze** and a **Fader** with **Fade
-  in / Fade out** — both live on the screen rather than the buffer, so they hold
-  through a take — and, folded away below, opacity, crop, mask, effects, border,
-  shadow and transitions with the ranges the device declares. An auxiliary has
-  no layers on this platform; picking one shows its single background source
-  instead. Every write is read back; with **Live updates** on, the device pushes
-  the whole destination as it changes.
+  its fitted live layers drawn on a canvas at the applied configuration's size,
+  each showing the unit's own picture of its input. **Drag** a layer to move it
+  and its **corners** to resize; **Fill / 2-up / 3-up / Quad / PiP** lay the
+  fitted layers out in one tap. The panel on the right edits the selected
+  layer: its **source** (an input by number and label, or colour), centre and
+  size in pixels, **Freeze** and a **Fader** with **Fade in / Fade out** — both
+  live on the screen rather than the buffer, so they hold through a take — and,
+  folded away below, opacity, crop, mask, effects, border, shadow and
+  transitions with the ranges the device declares. **BG** and **Top** beside the
+  layer buttons are the preset's two fixed layers: the background (one of the
+  eight sets Preconfig built, or a plain colour, with its opacity) drawn as the
+  canvas ground, and the top frame (one of the screen's four top-frame slots)
+  drawn over everything at the slot's own size, draggable like a layer. An
+  auxiliary has no layers on this platform; picking one shows its single
+  background source instead. Every write is read back; with **Live updates**
+  on, the device pushes the whole destination as it changes.
 - **Presets** — the processor's preset banks: one 1000-slot screen bank on
   LivePremier; on Midra 4K and Alta 4K the **Screen** (200), **Aux** (200) and
   **Master** (50) banks as chips. Pick preview or program, pick the destination
@@ -407,10 +416,17 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   buffer already holds**, which writes no bank slot at all. Banks are read fifty
   slots at a time — each slot costs two reads — and **Read slots…** fetches the
   next page.
-- **Inputs** (Midra 4K / Alta 4K) — every input the unit has, its active plug,
-  connector and the signal on it, **Freeze** and **Black**, and where the device
-  says it is on air (program / preview) — from the processor's own tally lists,
-  so nothing is inferred.
+- **Inputs** (Midra 4K / Alta 4K) — every input the unit has, with its
+  picture, its active plug, connector and the signal on it, **Freeze** and
+  **Black**, and where the device says it is on air (program / preview) — from
+  the processor's own tally lists, so nothing is inferred.
+- **System** (Midra 4K / Alta 4K) — model, series, firmware and serial, the
+  network address, the temperature sensors and case fans with their alarms,
+  the front-panel lock and brightness, and a reboot behind a second tap.
+
+The pictures come from the processor's own HTTP server — port 80 on a unit.
+A simulator serves them wherever it was started, so **Connection** has a
+*Thumbnails from* field for that case alone; leave it empty for a real unit.
 - **Live updates** asks the processor to push changes; it tells a client nothing
   until asked. One switch for all these views: until it is on, what you see is
   what was last read, and every write reads its target back rather than assuming

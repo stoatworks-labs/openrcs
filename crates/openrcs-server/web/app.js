@@ -455,7 +455,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -517,7 +517,7 @@ function header() {
 
 const NAV = [
   { section: () => awjSeriesName() },
-  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpinputs', 'Inputs'],
+  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpinputs', 'Inputs'], ['lpsystem', 'System'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -548,6 +548,7 @@ const VIEW_REQUIRES = {
   // the LivePremier dialect has neither yet.
   lplayers: () => awjDialect() === 'mng',
   lpinputs: () => awjDialect() === 'mng',
+  lpsystem: () => awjDialect() === 'mng',
 };
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
@@ -3035,10 +3036,38 @@ const MNG = {
   plugFormat: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/signal/@props/formatName`,
   // The device's own on-air lists: usedOnScreenPgm / usedOnScreenPrw / usedOnAuxPgm / usedOnAuxPrw.
   tally: (bus) => `DeviceObject/tallies/inputs/@props/${bus}`,
+  inputSnapshotEnable: (i) => `DeviceObject/$input/@items/INPUT_${i}/snapshot/@props/enable`,
+  // The two layers beside the live ones: a background (one of eight sets, or a
+  // colour) and a top frame (one of the screen's four top-frame slots).
+  bgProp: (n, buffer, tail) => `DeviceObject/$screen/@items/${n}/$preset/@items/${buffer}/background/${tail}`,
+  topProp: (n, buffer, tail) => `DeviceObject/$screen/@items/${n}/$preset/@items/${buffer}/top/${tail}`,
+  bgSetContent: (n, set) => `DeviceObject/$screen/@items/${n}/$backgroundSet/@items/${set}/control/@props/singleContent`,
+  frame: (n, list, k, tail) => `DeviceObject/$screen/@items/${n}/${list === 'top' ? '$topFrame' : '$backFrame'}/@items/${k}/${tail}`,
+  // The quick preset: one switch, a mode, a filter of destinations, a status.
+  qpEnable: () => 'DeviceObject/quickPreset/control/@props/enable',
+  qpMode: () => 'DeviceObject/quickPreset/control/@props/mode',
+  qpIsEnabled: () => 'DeviceObject/quickPreset/status/@props/isEnabled',
+  qpFilter: (d) => `DeviceObject/quickPreset/control/filter/${MNG_LIST[d.kind]}/@items/${d.n}/@props/enable`,
+  qpOn: (d) => `DeviceObject/quickPreset/status/${MNG_LIST[d.kind]}/@items/${d.n}/@props/isEnabled`,
+  qpMasterSlot: () => 'DeviceObject/quickPreset/control/mode/master/@props/bankSlot',
+  // System.
+  deviceLabel: () => 'DeviceObject/system/@props/label',
+  serial: () => 'DeviceObject/system/serial/@props/serialNumber',
+  temperatureAlarm: () => 'DeviceObject/system/temperature/device/@props/alarm',
+  sensor: (name, prop) => `DeviceObject/system/temperature/$sensor/@items/${name}/@props/${prop}`,
+  caseFan: (n, prop) => `DeviceObject/system/fan/$case/@items/${n}/@props/${prop}`,
+  frontPanel: (prop) => `DeviceObject/system/frontPanel/@props/${prop}`,
+  hostname: () => 'DeviceObject/system/network/adapter/@props/hostname',
+  ipv4: (prop) => `DeviceObject/system/network/ipv4/status/@props/${prop}`,
+  ipv4Dhcp: () => 'DeviceObject/system/network/ipv4/control/@props/enableDhcp',
+  reboot: () => 'DeviceObject/system/shutdown/@props/xReboot',
+  standbyIsOn: () => 'DeviceObject/system/shutdown/standby/status/@props/isStandbyOn',
   // Both lists' control and status, one prefix.
   SUB_TRANSITIONS: 'DeviceObject/transition',
   SUB_TALLIES: 'DeviceObject/tallies',
   SUB_INPUTS: 'DeviceObject/$input',
+  SUB_QUICK_PRESET: 'DeviceObject/quickPreset',
+  SUB_SYSTEM: 'DeviceObject/system',
 };
 const MNG_INPUTS = 16;
 const MNG_TALLY_BUSES = ['usedOnScreenPgm', 'usedOnScreenPrw', 'usedOnAuxPgm', 'usedOnAuxPrw'];
@@ -3137,8 +3166,30 @@ const AWJ_DIALECTS = {
     // Transitions for every destination, plus the memory bookkeeping of each
     // one in service — a recall made anywhere then shows up here too.
     subscriptions() {
-      return [MNG.SUB_TRANSITIONS, MNG.SUB_TALLIES,
+      return [MNG.SUB_TRANSITIONS, MNG.SUB_TALLIES, MNG.SUB_QUICK_PRESET,
         ...this.destinations().flatMap(d => ['UP', 'DOWN'].map(b => MNG.bufferStatus(d, b)))];
+    },
+    // The device's emergency key. Its switch is a flag, not a trigger: true
+    // puts the mode's content on every destination the filter includes,
+    // false takes it off again.
+    quickPreset: {
+      isOn: () => store.pval(MNG.qpIsEnabled()) === true,
+      wanted: () => store.pval(MNG.qpEnable()) === true,
+      mode: () => store.pval(MNG.qpMode()),
+      masterSlot: () => store.pval(MNG.qpMasterSlot()),
+      covers: (d) => store.pval(MNG.qpFilter(d)) === true,
+      onDest: (d) => store.pval(MNG.qpOn(d)) === true,
+      // The switch answers at once; each destination reports itself on or
+      // off only once its fade has run, so that is read again after one.
+      set(on) {
+        store.pset(MNG.qpEnable(), on);
+        if (awjLive) return;
+        const re = () => { store.pget(MNG.qpEnable()); store.pget(MNG.qpIsEnabled()); for (const d of awj().destinations()) store.pget(MNG.qpOn(d)); };
+        setTimeout(re, 150); setTimeout(re, 1500);
+      },
+      setMode(m) { store.pset(MNG.qpMode(), m); if (!awjLive) setTimeout(() => store.pget(MNG.qpMode()), 150); },
+      setCovers(d, on) { store.pset(MNG.qpFilter(d), on); if (!awjLive) setTimeout(() => store.pget(MNG.qpFilter(d)), 150); },
+      refresh(dests) { for (const p of [MNG.qpEnable(), MNG.qpMode(), MNG.qpIsEnabled(), MNG.qpMasterSlot()]) store.pget(p); for (const d of dests) { store.pget(MNG.qpFilter(d)); store.pget(MNG.qpOn(d)); } },
     },
     // The rest of the take node. Every one is feature-detected by the views,
     // so the LivePremier dialect simply lacks them.
@@ -3384,6 +3435,139 @@ const mngSourceColor = (v) => {
   return v === 'COLOR' ? '#777' : 'transparent';
 };
 
+// ---------- Midra 4K / Alta 4K: snapshots ----------
+// The unit serves a small PNG per input, output and multiviewer, and one per
+// screen frame slot, from its own HTTP server — port 80 on a unit; a
+// simulator puts it wherever it was started, so the origin can be overridden
+// in Connection. Each input keeps its snapshot only while its `snapshot/
+// enable` is on, which the views turn on for the inputs the unit has.
+let MNG_SNAP_TICK = 0;
+const mngSnapshotOrigin = () => {
+  let o = '';
+  try { o = localStorage.getItem('orcs.snapshotOrigin') || ''; } catch { /* private mode */ }
+  return o || store.meta?.host || '';
+};
+const mngSnapshotsWork = () => awjDialect() === 'mng' && !!mngSnapshotOrigin();
+function mngSnapshotUrl(kind, id) {
+  if (!mngSnapshotsWork()) return null;
+  // the tick is the whole cache-busting story, as on LiveCore: a stable URL
+  // between ticks means a re-render reuses the cached image
+  return `http://${mngSnapshotOrigin()}/api/device/snapshots/${kind}/${id}?t=${MNG_SNAP_TICK}`;
+}
+function startMngSnapshots() {
+  if (startMngSnapshots.timer) return;
+  startMngSnapshots.timer = setInterval(() => {
+    if (!mngSnapshotsWork() || document.hidden) return;
+    if (currentView !== 'lplayers' && currentView !== 'lpinputs') return;
+    MNG_SNAP_TICK++;
+    store.notify();
+  }, 4000);
+}
+/** Ask the unit to keep a snapshot of every input it has. Written only where off. */
+function mngEnableSnapshots() {
+  for (const i of mngInputs.available()) {
+    const p = MNG.inputSnapshotEnable(i.n);
+    if (store.pval(p) === false) store.pset(p, true);
+  }
+}
+
+// ---------- AWJ: System (Midra 4K / Alta 4K) ----------
+VIEWS.lpsystem = (() => {
+  let read = false;
+  let armReboot = false;
+  const SENSORS = ['CM_INTAKE', 'CM_OUTTAKE', 'CF_MEZZA_RJ45_IN', 'CF_MEZZA_RJ45_OUT', 'CF_MEZZA_AUDIO',
+    'CF_OPT_VIDEO_OPTION_1', 'CF_OPT_VIDEO_OPTION_2', 'FPGA_BALERION', 'FPGA_MERAXES',
+    'FPGA_VIDEO_OPT_1_SCALER', 'FPGA_VIDEO_OPT_1_IO', 'FPGA_VIDEO_OPT_2_SCALER', 'FPGA_VIDEO_OPT_2_IO', 'VEGA'];
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    for (const p of [MNG.serial(), MNG.deviceLabel(), MNG.temperatureAlarm(), MNG.frontPanel('lock'),
+      MNG.frontPanel('lcdBrightness'), MNG.frontPanel('keyBrightness'), MNG.hostname(), MNG.ipv4('ip'),
+      MNG.ipv4('netmask'), MNG.ipv4('gateway'), MNG.ipv4('dns'), MNG.ipv4Dhcp(), MNG.standbyIsOn()]) store.pget(p);
+    for (const s of SENSORS) for (const k of ['isAvailable', 'temperature', 'alarm']) store.pget(MNG.sensor(s, k));
+    for (let n = 1; n <= 4; n++) for (const k of ['isAvailable', 'speed', 'alarm']) store.pget(MNG.caseFan(n, k));
+    awjViewSubs = () => [MNG.SUB_SYSTEM];
+    awjApplySubs();
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armReboot = false; settle(); }
+
+  const ip = (v) => Array.isArray(v) ? v.join('.') : '·';
+  const prettyName = (s) => s.replace(/^(CM|CF_MEZZA|CF_OPT|FPGA)_/, (m) => ({ CM_: 'case ', CF_MEZZA_: 'mezzanine ', CF_OPT_: 'option ', FPGA_: 'FPGA ' })[m] || '').toLowerCase().replace(/_/g, ' ');
+
+  function fact(label, value, mono = true) {
+    return el('div', { class: 'fact' }, el('span', { class: 'k', text: label }), el('span', { class: mono ? 'v mono' : 'v', text: value ?? '·' }));
+  }
+  function render() {
+    settle();
+    const lock = store.pval(MNG.frontPanel('lock'));
+    const write = (p, v) => { store.pset(p, v); if (!awjLive) setTimeout(() => store.pget(p), 150); };
+    const sensors = SENSORS.filter(s => store.pval(MNG.sensor(s, 'isAvailable')) === true);
+    const fans = [1, 2, 3, 4].filter(n => store.pval(MNG.caseFan(n, 'isAvailable')) === true);
+    const alarm = store.pval(MNG.temperatureAlarm());
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'System' }), el('span', { class: 'hint', text: 'Identity, network, health and the front panel' })),
+      el('div', { class: 'panel' }, awjLiveRow('system changes')),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Identity'),
+          fact('Model', store.pval(MNG.model())),
+          fact('Series', store.pval(MNG.platformLabel()), false),
+          fact('Firmware', store.pval(MNG.version())),
+          fact('Serial', store.pval(MNG.serial())),
+          fact('Label', store.pval(MNG.deviceLabel()) || '—', false),
+          el('h2', 'Network'),
+          fact('Hostname', store.pval(MNG.hostname()) || '—'),
+          fact('Address', `${ip(store.pval(MNG.ipv4('ip')))} /${store.pval(MNG.ipv4('netmask')) ?? '·'}`),
+          fact('Gateway', ip(store.pval(MNG.ipv4('gateway')))),
+          fact('DNS', ip(store.pval(MNG.ipv4('dns')))),
+          fact('DHCP', store.pval(MNG.ipv4Dhcp()) === true ? 'on' : store.pval(MNG.ipv4Dhcp()) === false ? 'off' : '·', false),
+          el('h2', 'Front panel'),
+          el('label', { class: 'field' }, 'Lock',
+            el('select', { onchange: (e) => write(MNG.frontPanel('lock'), e.target.value) },
+              ...['NONE', 'MENU', 'ALL'].map(v => el('option', { value: v, selected: v === lock, text: { NONE: 'unlocked', MENU: 'menu locked', ALL: 'everything locked' }[v] })))),
+          el('div', { class: 'nrow' },
+            el('label', { class: 'field' }, 'LCD brightness',
+              el('input', { type: 'number', min: 1, max: 7, step: 1, value: store.pval(MNG.frontPanel('lcdBrightness')) ?? '',
+                onchange: (e) => write(MNG.frontPanel('lcdBrightness'), Math.round(+e.target.value)) })),
+            el('label', { class: 'field' }, 'Key brightness',
+              el('input', { type: 'number', min: 0, max: 100, step: 1, value: store.pval(MNG.frontPanel('keyBrightness')) ?? '',
+                onchange: (e) => write(MNG.frontPanel('keyBrightness'), Math.round(+e.target.value)) }))),
+          el('h2', 'Power'),
+          el('div', { class: 'row' },
+            el('span', { class: 'chip ' + (store.pval(MNG.standbyIsOn()) === true ? 'bad' : 'on') }, el('span', { class: 'dot' }), store.pval(MNG.standbyIsOn()) === true ? 'standby' : 'running'),
+            el('button', { class: 'btn ' + (armReboot ? 'pgm' : 'ghost'), onclick: () => {
+              if (!armReboot) { armReboot = true; store.notify(); setTimeout(() => { armReboot = false; store.notify(); }, 4000); return; }
+              store.pset(MNG.reboot(), true); armReboot = false; store.notify();
+            } }, armReboot ? 'Tap again to reboot' : 'Reboot'))),
+        el('div', { class: 'panel' }, el('h2', {}, 'Health ', alarmChipMng(alarm)),
+          el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Sensor', '°C', 'Alarm'].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...sensors.map(s => {
+              const t = store.pval(MNG.sensor(s, 'temperature')), a = store.pval(MNG.sensor(s, 'alarm'));
+              return el('tr', {}, el('td', { text: prettyName(s) }),
+                el('td', { class: 'val', text: typeof t === 'number' ? (t / 100).toFixed(1) : '·' }),
+                el('td', {}, alarmChipMng(a)));
+            }))),
+          sensors.length ? null : el('div', { class: 'hint pad', text: 'No sensor has answered yet.' }),
+          fans.length ? el('table', { class: 'grid' },
+            el('thead', {}, el('tr', {}, ...['Case fan', 'Speed', 'Alarm'].map(h => el('th', { text: h })))),
+            el('tbody', {}, ...fans.map(n => {
+              const sp = store.pval(MNG.caseFan(n, 'speed'));
+              return el('tr', {}, el('td', { text: `Fan ${n}` }),
+                el('td', { class: 'val', text: sp == null ? '·' : sp === 65535 ? 'not reported' : String(sp) }),
+                el('td', {}, alarmChipMng(store.pval(MNG.caseFan(n, 'alarm')) === true ? 'ALARM' : 'NONE')));
+            }))) : null,
+          el('div', { class: 'hint pad', text: 'Readings are the device’s own; a fan speed of 65535 is its way of saying it has none to report.' }))));
+  }
+  return { enter, render };
+})();
+
+/** A chip for the device's own alarm words: NONE is fine, anything else is not. */
+function alarmChipMng(a) {
+  if (a == null) return el('span', { class: 'chip off' }, el('span', { class: 'dot' }), '·');
+  const bad = a !== 'NONE' && a !== false;
+  return el('span', { class: 'chip ' + (bad ? 'bad' : 'on') }, el('span', { class: 'dot' }), bad ? String(a).toLowerCase() : 'ok');
+}
+
 // ---------- AWJ: Layers (Midra 4K / Alta 4K) ----------
 // One screen at a time, program or preview, its fitted live layers on a canvas
 // drawn to the applied configuration's size. Drag to move, corners to resize;
@@ -3393,8 +3577,12 @@ const mngSourceColor = (v) => {
 VIEWS.lplayers = (() => {
   let dest = null;         // destination id
   let which = 'preview';   // 'program' | 'preview'
-  let sel = 1;             // selected layer
+  let sel = 1;             // selected layer: 1..8, or 'bg' / 'top' for the two fixed layers
   const seen = new Set();  // destination+buffer whose layers were read
+  const BG_SETS = ['NONE', '1', '2', '3', '4', '5', '6', '7', '8'];
+  const TOP_FRAMES = ['NONE', '1', '2', '3', '4'];
+  const BG = (tail) => MNG.bgProp(cur().n, buffer(), tail);
+  const TOP = (tail) => MNG.topProp(cur().n, buffer(), tail);
 
   const D = () => awj();
   const cur = () => (dest ? awjDest(dest) : null);
@@ -3426,10 +3614,15 @@ VIEWS.lplayers = (() => {
       store.pget(MNG.layerFreeze(d.n, l));
       store.pget(MNG.layerFader(d.n, l));
     }
+    // The two fixed layers, and what their choices point at.
+    for (const tail of ['source/@props/set', 'opacity/@props/opacity', 'color/@props/red', 'color/@props/green', 'color/@props/blue', 'status/@props/state']) store.pget(MNG.bgProp(d.n, buf, tail));
+    for (const tail of ['source/@props/frame', 'opacity/@props/opacity', 'position/@props/posH', 'position/@props/posV', 'status/@props/state']) store.pget(MNG.topProp(d.n, buf, tail));
+    for (let s = 1; s <= 8; s++) store.pget(MNG.bgSetContent(d.n, s));
+    for (let f = 1; f <= 4; f++) for (const tail of ['status/@props/isValid', 'control/@props/label', 'control/@props/librarySlot', 'control/@props/sizeH', 'control/@props/sizeV']) store.pget(MNG.frame(d.n, 'top', f, tail));
   }
   function fetchSelected() {
     const d = cur();
-    if (!d || d.kind !== 'screen') return;
+    if (!d || d.kind !== 'screen' || typeof sel !== 'number') return;
     for (const g of MNG_LAYER_PROPS) for (const it of g.items) store.pget(P(sel, it.tail));
   }
   function refetch() {
@@ -3450,17 +3643,18 @@ VIEWS.lplayers = (() => {
     if (dest && used.some(d => d.id === dest)) return false;
     dest = used[0].id;
     const d = cur();
-    if (d && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
+    if (d && typeof sel === 'number' && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
     awjViewSubs = () => (cur() ? [MNG.subDestination(cur())] : []);
     awjApplySubs();
     mngInputs.refresh();
     refetch();
+    startMngSnapshots();
     return true;
   }
   function pick(id) {
     dest = id;
     const d = cur();
-    if (d && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
+    if (d && typeof sel === 'number' && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
     awjViewSubs = () => (cur() ? [MNG.subDestination(cur())] : []);
     awjApplySubs();
     refetch();
@@ -3471,6 +3665,7 @@ VIEWS.lplayers = (() => {
     if (awjDialect() !== 'mng') return;
     dest = null;
     if (!settle()) awjViewSubs = () => [];
+    setTimeout(mngEnableSnapshots, 600);
   }
 
   // ---- geometry: the device keeps a layer's CENTRE; the canvas works in edges.
@@ -3545,27 +3740,130 @@ VIEWS.lplayers = (() => {
     });
   }
 
+  // The background layer: a set (whose content the screen names) or, with no
+  // set, the colour. Drawn as the canvas ground.
+  function bgStyle() {
+    const set = store.pval(BG('source/@props/set'));
+    const rgb = ['red', 'green', 'blue'].map(c => store.pval(BG(`color/@props/${c}`)) ?? 0);
+    if (!set || set === 'NONE') return `background: rgb(${rgb.join(',')})`;
+    return `background: repeating-linear-gradient(45deg, #1b2230 0 12px, #141a24 12px 24px)`;
+  }
+  function bgLabel() {
+    const set = store.pval(BG('source/@props/set'));
+    if (!set || set === 'NONE') return 'colour';
+    const c = store.pval(MNG.bgSetContent(cur().n, +set));
+    return `set ${set}${c && c !== 'NONE' ? ' · ' + String(c).toLowerCase().replace(/_/g, ' ') : ''}`;
+  }
+  function topRect() {
+    const f = store.pval(TOP('source/@props/frame'));
+    if (!f || f === 'NONE') return null;
+    const w = store.pval(MNG.frame(cur().n, 'top', +f, 'control/@props/sizeH')) ?? 0;
+    const h = store.pval(MNG.frame(cur().n, 'top', +f, 'control/@props/sizeV')) ?? 0;
+    const cx = store.pval(TOP('position/@props/posH')) ?? 0, cy = store.pval(TOP('position/@props/posV')) ?? 0;
+    return { left: cx - w / 2, top: cy - h / 2, w, h, frame: f };
+  }
+  function dragTop(e, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = 'top';
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = topRect();
+    if (!r0) return;
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      box.style.left = (r0.left + dx) * scale + 'px'; box.style.top = (r0.top + dy) * scale + 'px';
+      pthrottledSet(TOP('position/@props/posH'), Math.round(r0.left + dx + r0.w / 2));
+      pthrottledSet(TOP('position/@props/posV'), Math.round(r0.top + dy + r0.h / 2));
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); if (!awjLive) setTimeout(() => { store.pget(TOP('position/@props/posH')); store.pget(TOP('position/@props/posV')); }, 120); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+
   function canvas(d) {
     const c = canvasPx(d);
     const CW = Math.min(720, Math.max(360, (window.innerWidth || 1200) - 620));
     const scale = CW / c.w, CH = c.h * scale;
-    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px`,
-      onpointerdown: () => { /* click on bare canvas keeps the selection */ } });
+    const cv = el('div', { class: 'screen-canvas' + (sel === 'bg' ? ' bg-sel' : ''), style: `width:${CW}px;height:${Math.round(CH)}px;${bgStyle()}`,
+      onpointerdown: () => { sel = 'bg'; store.notify(); } });
+    cv.append(el('span', { class: 'lrect-tag bg-tag', text: `background · ${bgLabel()}` }));
     for (const l of fitted(d)) {
       const src = gv(l, 'source');
       const on = src && src !== 'NONE';
       const st = gv(l, 'state');
       const r = rectPx(l);
+      const shot = on ? mngSnapshotUrl('inputs', +String(src).replace('INPUT_', '')) : null;
       const box = el('div', {
-        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off'),
-        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};background:${on ? `color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''}`,
+        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};` +
+          (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
         onpointerdown: (e) => dragMove(e, l, scale),
       },
         el('span', { class: 'lrect-tag', text: `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` }),
         ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, l, scale, k) })));
       cv.append(box);
     }
+    const tr = topRect();
+    if (tr) {
+      const shot = mngSnapshotUrl(`screens/${d.n}/top`, +tr.frame);
+      cv.append(el('div', {
+        class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
+        style: `left:${tr.left * scale}px;top:${tr.top * scale}px;width:${tr.w * scale}px;height:${tr.h * scale}px;z-index:99;` + (shot ? `background-image:url(${shot})` : ''),
+        onpointerdown: (e) => dragTop(e, scale),
+      }, el('span', { class: 'lrect-tag', text: `top · frame ${tr.frame}` })));
+    }
     return el('div', { class: 'canvas-wrap' }, cv);
+  }
+
+  // A range/number/select bound to an arbitrary path, for the two fixed layers.
+  function pathRange(label, path, min, max, fmt) {
+    const v = store.pval(path);
+    return el('label', { class: 'field slider' },
+      el('span', {}, label, el('b', { class: 'sv', text: v == null ? '·' : fmt(v) })),
+      el('input', { type: 'range', min, max, step: 1, value: v ?? min,
+        onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+        oninput: (e) => { pthrottledSet(path, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = fmt(+e.target.value); } }));
+  }
+  function pathNumber(label, path, min, max) {
+    return el('label', { class: 'field' }, label,
+      el('input', { type: 'number', min, max, step: 1, value: store.pval(path) ?? '',
+        onchange: (e) => { store.pset(path, Math.round(+e.target.value || 0)); if (!awjLive) setTimeout(() => store.pget(path), 120); } }));
+  }
+  function pathSelect(label, path, options) {
+    const v = store.pval(path);
+    const s = el('select', { onchange: (e) => { store.pset(path, e.target.value); if (!awjLive) setTimeout(() => store.pget(path), 150); } });
+    for (const o of options) s.append(el('option', { value: o.v, selected: o.v === v, text: o.text }));
+    if (v != null && !options.some(o => o.v === v)) s.append(el('option', { value: v, selected: true, text: String(v) }));
+    return el('label', { class: 'field' }, label, s);
+  }
+  function bgPanel(d) {
+    const st = store.pval(BG('status/@props/state'));
+    const rgb = ['red', 'green', 'blue'].map(c => (store.pval(BG(`color/@props/${c}`)) ?? 0) & 255);
+    const hex = '#' + rgb.map(x => x.toString(16).padStart(2, '0')).join('');
+    return el('div', { class: 'editor' },
+      el('h2', {}, 'Background ', el('span', { class: 'chip ' + (st && st !== 'OFF' ? 'on' : 'off') }, el('span', { class: 'dot' }), String(st ?? '·').toLowerCase())),
+      pathSelect('Source', BG('source/@props/set'), BG_SETS.map(s => ({ v: s, text: s === 'NONE' ? 'colour' : `set ${s}${(() => { const c = store.pval(MNG.bgSetContent(d.n, +s)); return c && c !== 'NONE' ? ' · ' + String(c).toLowerCase().replace(/_/g, ' ') : ''; })()}` }))),
+      el('label', { class: 'field' }, 'Colour',
+        el('input', { type: 'color', class: 'swatch', value: hex, oninput: (e) => {
+          const h = e.target.value;
+          [['red', 1], ['green', 3], ['blue', 5]].forEach(([c, i]) => pthrottledSet(BG(`color/@props/${c}`), parseInt(h.slice(i, i + 2), 16)));
+        } })),
+      pathRange('Opacity', BG('opacity/@props/opacity'), 0, 256, pct256),
+      el('div', { class: 'hint', text: 'A set is what Preconfig \u203a Background built: an input, a frame or nothing, shown unscaled under every live layer. With no set, the colour shows.' }));
+  }
+  function topPanel(d) {
+    const st = store.pval(TOP('status/@props/state'));
+    const frames = TOP_FRAMES.map(f => {
+      if (f === 'NONE') return { v: f, text: '— none —' };
+      const valid = store.pval(MNG.frame(d.n, 'top', +f, 'status/@props/isValid'));
+      const lbl = store.pval(MNG.frame(d.n, 'top', +f, 'control/@props/label'));
+      const lib = store.pval(MNG.frame(d.n, 'top', +f, 'control/@props/librarySlot'));
+      return { v: f, text: `frame ${f}${lbl ? ' · ' + lbl : ''}${lib ? ' · library ' + lib : ''}${valid === false ? ' (empty)' : ''}` };
+    });
+    return el('div', { class: 'editor' },
+      el('h2', {}, 'Top frame ', el('span', { class: 'chip ' + (st && st !== 'OFF' ? 'on' : 'off') }, el('span', { class: 'dot' }), String(st ?? '·').toLowerCase())),
+      pathSelect('Frame', TOP('source/@props/frame'), frames),
+      el('div', { class: 'nrow' }, pathNumber('Centre X', TOP('position/@props/posH'), -67268, 67268), pathNumber('Centre Y', TOP('position/@props/posV'), -67268, 67268)),
+      pathRange('Opacity', TOP('opacity/@props/opacity'), 0, 256, pct256),
+      el('div', { class: 'hint', text: 'One of the screen\u2019s four top-frame slots (Preconfig \u203a Screens), drawn over every live layer at the slot\u2019s own size.' }));
   }
 
   // ---- the properties panel, driven by the table above
@@ -3678,9 +3976,15 @@ VIEWS.lplayers = (() => {
                 el('div', { class: 'row' },
                   el('span', { class: 'hint', text: (() => { const c = canvasPx(d); return `${c.w}×${c.h}${c.reported ? '' : ' (assumed)'} · ${fitted(d).length} layer${fitted(d).length === 1 ? '' : 's'} fitted · editing ${which} (${buffer()})`; })() }),
                   el('div', { class: 'grow' }),
-                  el('div', { class: 'seg' }, ...fitted(d).map(l => el('button', { class: l === sel ? 'on recall' : '', onclick: () => { sel = l; fetchSelected(); store.notify(); } }, `L${l}`)))),
+                  el('div', { class: 'seg' },
+                    el('button', { class: sel === 'bg' ? 'on recall' : '', onclick: () => { sel = 'bg'; store.notify(); } }, 'BG'),
+                    ...fitted(d).map(l => el('button', { class: l === sel ? 'on recall' : '', onclick: () => { sel = l; fetchSelected(); store.notify(); } }, `L${l}`)),
+                    el('button', { class: sel === 'top' ? 'on recall' : '', onclick: () => { sel = 'top'; store.notify(); } }, 'Top'))),
                 canvas(d)),
-              el('div', { class: 'panel' }, fitted(d).length ? panel(d) : el('div', { class: 'hint pad', text: 'The applied configuration gives this screen no live layers.' }))));
+              el('div', { class: 'panel' },
+                sel === 'bg' ? bgPanel(d)
+                  : sel === 'top' ? topPanel(d)
+                  : fitted(d).length ? panel(d) : el('div', { class: 'hint pad', text: 'The applied configuration gives this screen no live layers.' }))));
   }
 
   return { enter, render };
@@ -3695,6 +3999,8 @@ VIEWS.lpinputs = (() => {
     mngInputs.refresh();
     awjViewSubs = () => [MNG.SUB_INPUTS, MNG.SUB_TALLIES];
     awjApplySubs();
+    startMngSnapshots();
+    setTimeout(mngEnableSnapshots, 600);
   }
   function enter() {
     if (awjDialect() !== 'mng') return;
@@ -3705,7 +4011,9 @@ VIEWS.lpinputs = (() => {
     const t = mngInputs.tally(i.key);
     const flag = (path, on, label) => el('button', { class: 'btn small ' + (on ? 'pgm' : 'ghost'),
       onclick: () => { store.pset(path, !on); if (!awjLive) setTimeout(() => store.pget(path), 120); } }, label);
+    const shot = i.available !== false ? mngSnapshotUrl('inputs', i.n) : null;
     return el('tr', { class: i.available === false ? 'dim' : '' },
+      el('td', {}, shot ? el('img', { class: 'thumb', src: shot, alt: '', width: 96, height: 54 }) : null),
       el('td', { text: `IN ${i.n}` }),
       el('td', { text: i.label || '—' }),
       el('td', { class: 'val', text: i.plug ?? '·' }),
@@ -3730,7 +4038,7 @@ VIEWS.lpinputs = (() => {
       el('div', { class: 'panel' },
         awjLiveRow('input and tally changes'),
         el('table', { class: 'grid' },
-          el('thead', {}, el('tr', {}, ...['Input', 'Label', 'Plug', 'Type', 'Signal', 'On air', ''].map(h => el('th', { text: h })))),
+          el('thead', {}, el('tr', {}, ...['', 'Input', 'Label', 'Plug', 'Type', 'Signal', 'On air', ''].map(h => el('th', { text: h })))),
           el('tbody', {}, ...fitted.map(row))),
         rows.length > fitted.length ? el('div', { class: 'hint pad', text: `${rows.length - fitted.length} of the model’s ${MNG_INPUTS} inputs are not fitted on this unit.` }) : null));
   }
@@ -3744,8 +4052,27 @@ VIEWS.lpscreens = (() => {
     // after a device has been away.
     const D = awj();
     for (const d of D.destinations()) { D.refresh(d); D.refreshExtras?.(d); }
+    D.quickPreset?.refresh(D.destinations());
     awjViewSubs = () => [];
     awjApplySubs();
+  }
+
+  // The device's emergency key: fade to black, a library image or a master
+  // memory, on the destinations its filter covers, on and off from one switch.
+  function quickPresetRow(D, used) {
+    const Q = D.quickPreset;
+    const on = Q.isOn(), mode = Q.mode();
+    const what = { NULL: 'fade to black', FRAME: 'library image', MASTER: `master memory ${Q.masterSlot() ?? ''}`.trim() }[mode] || String(mode ?? '·');
+    return el('div', { class: 'row wrap' },
+      el('button', { class: 'btn ' + (on ? 'pgm' : 'ghost'), onclick: () => Q.set(!Q.wanted()) },
+        on ? `Quick preset ON \u2014 ${what}` : `Quick preset: ${what}`),
+      el('select', { onchange: (e) => Q.setMode(e.target.value) },
+        ...[['NULL', 'fade to black'], ['FRAME', 'library image'], ['MASTER', 'master memory']].map(([v, tx]) => el('option', { value: v, selected: v === mode, text: tx }))),
+      el('span', { class: 'hint', text: 'on:' }),
+      ...used.map(d => el('button', { class: 'btn small ' + (Q.covers(d) ? (Q.onDest(d) ? 'pgm' : 'primary') : 'ghost'),
+        title: Q.covers(d) ? 'Covered by the quick preset (tap to exclude)' : 'Not covered (tap to include)',
+        onclick: () => Q.setCovers(d, !Q.covers(d)) }, d.id)),
+      el('span', { class: 'hint', text: 'The emergency key: what the mode says goes on every covered program output, and off again with the same switch.' }));
   }
 
   // What is not in the transition status: a take time typed in seconds, a
@@ -3814,6 +4141,7 @@ VIEWS.lpscreens = (() => {
         D.takeMany && used.length ? el('div', { class: 'row' },
           el('button', { class: 'btn pgm', onclick: () => D.takeMany(used) }, `Take all (${used.length})`),
           el('span', { class: 'hint', text: 'Every destination in service, each with its own take time.' })) : null,
+        D.quickPreset && used.length ? quickPresetRow(D, used) : null,
         used.length
           ? el('table', { class: 'grid' },
               el('thead', {}, el('tr', {}, ...heads.map(h => el('th', { text: h })))),
@@ -6550,11 +6878,18 @@ VIEWS.connection = (() => {
 
   const isDemo = () => !!globalThis.OPENRCS_DEMO_DEVICE;
 
+  // Seeded from what the bridge reports — and, since a view opened from a
+  // bookmark runs enter() before the bridge has said anything, seeded again
+  // on the first render that has it, unless the operator has typed since.
   function enter() {
     if (seeded) return;
+    seed();
+  }
+  function seed() {
+    if (!store.meta) { entry = entry ?? ''; plat = plat ?? 'livecore'; return; }
     seeded = true;
-    entry = store.meta?.device || '';
-    plat = store.meta?.platform || 'livecore';
+    entry = store.meta.device || '';
+    plat = store.meta.platform || 'livecore';
   }
 
   const tap = (ch) => { if (entry.length < 64) entry += ch; store.notify(); };
@@ -6625,6 +6960,7 @@ VIEWS.connection = (() => {
   }
 
   function render() {
+    if (!seeded) seed();
     if (entry === null) enter();
     const canConnect = entry.trim().length > 0 && !isDemo();
     return el('div', {},
@@ -6658,6 +6994,10 @@ VIEWS.connection = (() => {
           el('div', { class: 'hint pad', text: 'The control port is added automatically. A hostname needs the bridge’s --device option.' })),
         el('div', { class: 'panel' }, el('h2', 'Platform'),
           platformPicker(),
+          plat === 'midra4k' || plat === 'alta4k' || (isAwj() && awjDialect() === 'mng') ? el('label', { class: 'field' }, 'Thumbnails from (host:port)',
+            el('input', { type: 'text', placeholder: 'the processor, port 80', value: (() => { try { return localStorage.getItem('orcs.snapshotOrigin') || ''; } catch { return ''; } })(),
+              onchange: (e) => { try { const v = e.target.value.trim(); if (v) localStorage.setItem('orcs.snapshotOrigin', v); else localStorage.removeItem('orcs.snapshotOrigin'); } catch { /* private mode */ } MNG_SNAP_TICK++; store.notify(); } }),
+            el('span', { class: 'hint', text: 'A unit serves its snapshots on port 80. Only a simulator, which serves them wherever it was started, needs this.' })) : null,
           el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu. LivePremier: Aquilon. Midra 4K: QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K. Alta 4K: Zenith 100, Zenith 200.' }),
           store.setupError
             ? el('div', { class: 'hint pad bad', text: `Rejected: ${store.setupError}` })

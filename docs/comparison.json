@@ -547,8 +547,8 @@
         "text": "Quick Preset → Fade to Black"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "the device's own quick preset from the Screens view: fade to black, a library image or a master memory on every covered destination, on and off from one switch"
        }
       }
      }
@@ -1003,7 +1003,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, plus freeze and a fader with fade in/out; not the timing bars, flying curve points, speed points or a COLOR layer's colour"
+        "text": "source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, freeze, fader with fade in/out, plus the background set/colour and the top frame; not the timing bars, flying curve points, speed points or a COLOR layer's colour"
        }
       }
      }
@@ -1137,8 +1137,8 @@
         "text": "background sets"
        },
        "openrcs": {
-        "state": "M",
-        "text": "the preset's background set is not exposed"
+        "state": "F",
+        "text": "the preset's background set (or colour) and opacity, and its top frame with position, on the Layers canvas"
        }
       }
      }
@@ -1362,8 +1362,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the unit's own pictures of inputs on the Layers canvas and the Inputs page, and of frame slots; no program or preview render exists to fetch"
        }
       }
      }
@@ -2317,8 +2317,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": "model, series and firmware only"
+        "state": "F",
+        "text": "identity, network, temperature sensors and fans with alarms, front-panel lock and brightness, reboot; no erase or factory reset"
        }
       }
      }

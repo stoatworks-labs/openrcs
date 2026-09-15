@@ -605,6 +605,40 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K: pictures, background/top layers, quick preset, System — 2026-09-15, round two
+
+Still simulator-only. Grounded the same way as the morning's round (sweep, store
+dump, catalogue, vendor bundle); new facts:
+
+- **Snapshots.** The device's own route is `/api/device/snapshots/<type>/<id>`
+  — the vendor bundle's route table names `inputs`, `outputs`, `multiviewer`
+  and `screens/:screenId/:imageType/:imageId` with `back` / `top`. The sim
+  serves 256×144 PNGs (placeholders reading `IN5`, `OUT1`); `screens`/`images`/
+  `auxes` as a type are "Invalid parameter type". No program/preview render, as
+  on LiveCore. lpp's proxy preserves the path, which is how the fleet already
+  fetched them. The unit's HTTP is port 80; the sims put it on 3010/3020, so
+  the surface has a per-browser override (Connection → *Thumbnails from*).
+- **Quick preset** (`quickPreset/`): `control/@props/enable` is the switch,
+  `mode` NULL/FRAME/MASTER (NULL = fade to black — the manual's own words),
+  `control/filter/$screen/@items/N/@props/enable` covers destinations,
+  `status/@props/isEnabled` immediate, `status/$screen/@items/N/@props/isEnabled`
+  true only after the fade (~1 s on the sim). Verified on/off on the Midra sim.
+- **Background / top layers** on a preset: `background/source/@props/set`
+  (`NONE` or `"1"`…`"8"`), colour, opacity; `top/source/@props/frame` (`NONE`,
+  `"1"`…`"4"`), position, opacity; frame slots at `$screen/@items/N/$topFrame|
+  $backFrame/@items/K` (`status/isValid`, `control/label|librarySlot|sizeH|
+  sizeV`), background sets at `$backgroundSet/@items/K/control/@props/
+  singleContent`. All verified read+write on the sim (colour rgb 170/34/51,
+  set 2, top frame 1 dragged to 1248/756).
+- **System**: `system/temperature/$sensor/@items/<NAME>/@props/temperature` is
+  hundredths of °C; `system/fan/$case/@items/N/@props/speed` = 65535 means "not
+  reported" (every fan on the real dump); `frontPanel/@props/lock` NONE/MENU/
+  ALL, `lcdBrightness` 1..7, `keyBrightness` 0..100; `network/ipv4/status`
+  arrays; `shutdown/@props/xReboot`. Lock write verified both ways on the sim.
+- The Connection view seeded its picker in `enter()` only, so a reload straight
+  onto `#connection` showed LiveCore selected on a Midra 4K bridge; it seeds on
+  first render now.
+
 ## Midra 4K / Alta 4K: Layers, Inputs, bank writes and the rest of the take node, 2026-09-15
 
 Same day as the landing below, simulator-only (no hardware access). The mng

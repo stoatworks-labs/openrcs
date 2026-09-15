@@ -687,6 +687,16 @@ fn mng_inventory() -> Vec<String> {
         out.push(mng::input_led(n));
         out.push(mng::input_plug(n));
     }
+    // The quick preset: its switch, mode, status, and which destinations it
+    // covers — the Screens view shows all of it.
+    out.push(mng::quick_preset_enable());
+    out.push(mng::quick_preset_mode());
+    out.push(mng::quick_preset_is_enabled());
+    out.push(mng::quick_preset_master_slot());
+    for d in Dest::ALL {
+        out.push(mng::quick_preset_filter(d));
+        out.push(mng::quick_preset_on(d));
+    }
     out
 }
 

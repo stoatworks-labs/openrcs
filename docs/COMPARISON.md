@@ -20,7 +20,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 1 | 5 | 1 | 48 | 3 |
-| Midra 4K | Web RCS | 7 | 10 | 1 | 36 | 4 |
+| Midra 4K | Web RCS | 10 | 11 | 1 | 32 | 4 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -323,7 +323,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | T-bar | Yes | **Full** — per destination, on the take node's own control; the device reports the ends |
 | Step back | Yes | **Partial** — the device's own xStepBack — an edit undo (the last change to layer settings), which is what the vendor manual means by it here; not a return to the previous look |
 | Preset toggle, auto-take, dynamic fit | Yes | **Partial** — the preset toggle (swap) per destination; no auto-take or dynamic fit |
-| Fade to black / master fade | Yes — Quick Preset → Fade to Black | **Missing** |
+| Fade to black / master fade | Yes — Quick Preset → Fade to Black | **Full** — the device's own quick preset from the Screens view: fade to black, a library image or a master memory on every covered destination, on and off from one switch |
 | Freeze | Yes — layer, screen and input freeze | **Full** — destination freeze, per-layer freeze (holds through a take), input freeze |
 | Screen groups / destinations | Yes — TAKE ALL / selection | **Missing** |
 | Sequencer / cue list | No — none | **Missing** — Cues are not offered on this family |
@@ -338,15 +338,15 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 |---|---|---|
 | Graphical layer editor | Yes | **Partial** — one screen at a time on a canvas at the applied size: drag to move, corners to resize, layouts; an auxiliary is one background source |
 | All screens editable at once | Yes | **Missing** — one destination at a time |
-| Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Partial** — source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, plus freeze and a fader with fade in/out; not the timing bars, flying curve points, speed points or a COLOR layer's colour |
+| Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Partial** — source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, freeze, fader with fade in/out, plus the background set/colour and the top frame; not the timing bars, flying curve points, speed points or a COLOR layer's colour |
 | Layout presets | Yes — live-layer layouts | **Partial** — Fill / 2-up / 3-up / Quad / PiP over the fitted layers, in slot order |
 | Snap, align, multi-select | Yes | **Missing** |
-| Native background / background sets | Yes — background sets | **Missing** — the preset's background set is not exposed |
+| Native background / background sets | Yes — background sets | **Full** — the preset's background set (or colour) and opacity, and its top frame with position, on the Layers canvas |
 | Input keying | Yes — chroma, luma | **Missing** |
 | Cut & Fill | Yes — on odd inputs | **Missing** |
 | Perspective / 3D layers | — | — |
 | Working-area constraint | No — the output AOI serves the need instead | **Missing** |
-| Live thumbnails | Yes | **Missing** |
+| Live thumbnails | Yes | **Partial** — the unit's own pictures of inputs on the Layers canvas and the Inputs page, and of frame slots; no program or preview render exists to fetch |
 
 ### Memories
 
@@ -377,7 +377,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Soft edge blending | Yes — Eikos 4K blend mode | **Missing** |
 | Audio | Yes — routing, Dante, VU meters, custom sources | **Missing** |
 | GPIO and tally | Yes — TSL tally protocol; no GPIO | **Partial** — the device's own on-air lists per input are read and shown; never seen populated on the simulator, so unverified |
-| System, network, health, front panel | Yes | **Missing** — model, series and firmware only |
+| System, network, health, front panel | Yes | **Full** — identity, network, temperature sensors and fans with alarms, front-panel lock and brightness, reboot; no erase or factory reset |
 | Firmware update | Yes | **Missing** |
 | Backup / restore | Yes — configuration slots, export / import, USB | **Missing** |
 | Multi-unit link | — | — |

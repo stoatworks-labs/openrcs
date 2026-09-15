@@ -7,7 +7,7 @@
 //! the simulators only. The negative controls at the bottom are what the
 //! device said to the LivePremier spellings: `E12`, every one.
 
-use openrcs_awj::mng::{self, Bank, Dest, TallyBus};
+use openrcs_awj::mng::{self, Bank, Dest, FrameList, TallyBus};
 use openrcs_awj::{paths, Buffer, Dialect, Preset, Transition};
 
 #[test]
@@ -207,6 +207,72 @@ fn the_device_keeps_four_input_tallies() {
     assert_eq!(mng::SUB_TALLIES, "DeviceObject/tallies");
     assert_eq!(mng::sub_destination(Dest::Aux(1)), "DeviceObject/$auxiliaryScreen/@items/1");
     assert_eq!(mng::sub_input(2), "DeviceObject/$input/@items/INPUT_2");
+}
+
+#[test]
+fn a_preset_has_a_background_and_a_top_frame_beside_its_live_layers() {
+    assert_eq!(
+        mng::background_prop(1, Buffer::Up, "source/@props/set"),
+        "DeviceObject/$screen/@items/1/$preset/@items/UP/background/source/@props/set"
+    );
+    assert_eq!(
+        mng::top_prop(2, Buffer::Down, "source/@props/frame"),
+        "DeviceObject/$screen/@items/2/$preset/@items/DOWN/top/source/@props/frame"
+    );
+    assert_eq!(
+        mng::background_set_content(1, 3),
+        "DeviceObject/$screen/@items/1/$backgroundSet/@items/3/control/@props/singleContent"
+    );
+    assert_eq!(
+        mng::frame_is_valid(1, FrameList::Top, 2),
+        "DeviceObject/$screen/@items/1/$topFrame/@items/2/status/@props/isValid"
+    );
+    assert_eq!(
+        mng::frame_library_slot(1, FrameList::Back, 1),
+        "DeviceObject/$screen/@items/1/$backFrame/@items/1/control/@props/librarySlot"
+    );
+    assert_eq!(FrameList::Back.snapshot_kind(), "back");
+}
+
+#[test]
+fn snapshots_are_served_by_the_unit_itself() {
+    assert_eq!(
+        mng::input_snapshot_enable(3),
+        "DeviceObject/$input/@items/INPUT_3/snapshot/@props/enable"
+    );
+    assert_eq!(mng::snapshot_http_path("inputs", 3), "/api/device/snapshots/inputs/3");
+    assert_eq!(mng::snapshot_http_path("screens/1/top", 2), "/api/device/snapshots/screens/1/top/2");
+}
+
+#[test]
+fn the_quick_preset_is_one_switch_with_a_mode_and_a_filter() {
+    assert_eq!(mng::quick_preset_enable(), "DeviceObject/quickPreset/control/@props/enable");
+    assert_eq!(mng::quick_preset_mode(), "DeviceObject/quickPreset/control/@props/mode");
+    assert_eq!(mng::quick_preset_is_enabled(), "DeviceObject/quickPreset/status/@props/isEnabled");
+    assert_eq!(
+        mng::quick_preset_filter(Dest::Aux(2)),
+        "DeviceObject/quickPreset/control/filter/$auxiliaryScreen/@items/2/@props/enable"
+    );
+    assert_eq!(
+        mng::quick_preset_on(Dest::Screen(1)),
+        "DeviceObject/quickPreset/status/$screen/@items/1/@props/isEnabled"
+    );
+    assert_eq!(mng::SUB_QUICK_PRESET, "DeviceObject/quickPreset");
+}
+
+#[test]
+fn system_health_and_network_are_read_off_system() {
+    assert_eq!(mng::serial_number(), "DeviceObject/system/serial/@props/serialNumber");
+    assert_eq!(
+        mng::sensor("CM_INTAKE", "temperature"),
+        "DeviceObject/system/temperature/$sensor/@items/CM_INTAKE/@props/temperature"
+    );
+    assert_eq!(mng::case_fan(1, "speed"), "DeviceObject/system/fan/$case/@items/1/@props/speed");
+    assert_eq!(mng::front_panel_lock(), "DeviceObject/system/frontPanel/@props/lock");
+    assert_eq!(mng::front_panel("lcdBrightness"), "DeviceObject/system/frontPanel/@props/lcdBrightness");
+    assert_eq!(mng::ipv4_status("ip"), "DeviceObject/system/network/ipv4/status/@props/ip");
+    assert_eq!(mng::reboot(), "DeviceObject/system/shutdown/@props/xReboot");
+    assert_eq!(mng::SENSORS.len(), 14);
 }
 
 #[test]

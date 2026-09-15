@@ -155,6 +155,23 @@ std binary and may use crates. Keep the split.
   `xxxList/items/K` → `$xxx/@items/K`, `pp` → `@props` rule as everything else)
   and answer on both simulators; the hardware sweep never asked for them. Keep
   the "simulator-only" wording until a unit answers a `get`.
+- **Snapshots come from the unit's own HTTP server**, `/api/device/snapshots/
+  <kind>/<id>` with `inputs`, `outputs`, `multiviewer` and `screens/<n>/back|top`
+  (the frame slots) — read off the vendor bundle's route table and answered by
+  the simulator. Nothing serves a picture of a screen's program or preview.
+  Port 80 on a unit; `orcs.snapshotOrigin` in localStorage overrides it for a
+  simulator. Each input keeps a snapshot only while its `snapshot/enable` is
+  on; the views turn it on where it is off.
+- **The quick preset is a flag, not a trigger.** `quickPreset/control/@props/
+  enable` true puts the mode's content (`NULL` = fade to black, `FRAME`,
+  `MASTER`) on every destination its filter covers and false takes it off;
+  `status/@props/isEnabled` answers at once, the per-destination `status/…/
+  isEnabled` only after the fade has run.
+- **A preset's background is a set, not a source.** `background/source/@props/
+  set` is `NONE` (then the colour shows) or `"1"`…`"8"`, a background set the
+  screen's `$backgroundSet` list describes; the top layer is one of the
+  screen's four `$topFrame` slots and has a position but no size — it is drawn
+  at the slot's own `sizeH`/`sizeV`.
 - **Tallies have never been seen populated.** `tallies/inputs/@props/*` reads
   as four empty lists on the simulator whatever is on a layer, and the real
   unit had nothing on its layers when dumped. The Inputs view shows them; do
