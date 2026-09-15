@@ -215,6 +215,7 @@ class Store {
     // See pushPlan / clearPlan.
     this.plan = false;
     this.planState = new Map();       // "MNEM|i,i" -> staged value
+    this.planPaths = new Map();       // AWJ path -> staged value
     // Connection setup (the appliance case: no keyboard, no shell, so the
     // processor is chosen from the UI). Empty on a bridge started with --device.
     this.found = new Map();           // discovered "host:port" -> platform | null
@@ -268,10 +269,11 @@ class Store {
       const p = JSON.parse(localStorage.getItem('openrcs.plan') || '{}');
       this.plan = !!p.on;
       for (const [k, v] of (p.entries || [])) this.planState.set(k, v);
+      for (const [k, v] of (p.paths || [])) this.planPaths.set(k, v);
     } catch { /* first run / private mode */ }
   }
   _persistPlan() {
-    try { localStorage.setItem('openrcs.plan', JSON.stringify({ on: this.plan, entries: [...this.planState] })); } catch { /* quota/private */ }
+    try { localStorage.setItem('openrcs.plan', JSON.stringify({ on: this.plan, entries: [...this.planState], paths: [...this.planPaths] })); } catch { /* quota/private */ }
   }
   connect() {
     // The hosted demo has no bridge server to reach — a browser cannot open a
@@ -379,14 +381,27 @@ class Store {
 
   // ---- LivePremier (AWJ). Addressed by path; values are JSON.
   pval(path, fallback = undefined) {
+    if (this.plan && this.planPaths.has(path)) return this.planPaths.get(path);
     const v = this.paths.get(path);
     return v === undefined ? fallback : v;
   }
   pget(path) { this.send({ t: 'pget', p: path }); }
+  // A trigger — an `x…` property: a take, a recall, an update — is an action,
+  // not state, so plan mode never stages one; it goes to the processor.
+  static isTrigger(path) { return /\/x[A-Z][A-Za-z]*$/.test(path); }
   pset(path, v) {
+    if (this.plan && !Store.isTrigger(path)) {
+      this.planPaths.set(path, v);
+      this._persistPlan();
+      this.pushLog('pl', `${path} = ${JSON.stringify(v)}`);
+      this.notify();
+      return;
+    }
     this.send({ t: 'pset', p: path, v });
     this.pushLog('tx', `${path} = ${JSON.stringify(v)}`);
   }
+  planPathList() { return [...this.planPaths].map(([path, v]) => ({ path, v })); }
+  unplanPath(path) { this.planPaths.delete(path); this._persistPlan(); this.notify(); }
   // Nothing about state changes reaches us until this is written: the device's
   // subscription list starts empty. Prefix matched, so one path per subtree.
   psub(paths) { this.send({ t: 'psub', paths }); }
@@ -403,24 +418,36 @@ class Store {
     }
     return out;
   }
-  clearPlan() { this.planState.clear(); this._persistPlan(); this.notify(); }
+  clearPlan() { this.planState.clear(); this.planPaths.clear(); this._persistPlan(); this.notify(); }
   // Send every staged value to the device for real, then clear the plan.
   async pushPlan(onProgress) {
     const wasPlan = this.plan;
     this.plan = false;               // sends go to the device now
     const entries = this.planList();
+    const paths = this.planPathList();
+    const total = entries.length + paths.length;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
       this.send({ t: 'set', m: e.m, i: e.idx, v: e.v });
       this.pushLog('tx', `${e.m} ${[...e.idx, e.v].join(',')}`);
-      if (onProgress) onProgress((i + 1) / entries.length);
+      if (onProgress) onProgress((i + 1) / total);
       if ((i & 15) === 15) await sleep(30);
     }
+    // AWJ writes are silent, so each is read back once the batch is through.
+    for (let i = 0; i < paths.length; i++) {
+      const e = paths[i];
+      this.send({ t: 'pset', p: e.path, v: e.v });
+      this.pushLog('tx', `${e.path} = ${JSON.stringify(e.v)}`);
+      if (onProgress) onProgress((entries.length + i + 1) / total);
+      if ((i & 15) === 15) await sleep(30);
+    }
+    if (paths.length) setTimeout(() => { for (const e of paths) this.pget(e.path); }, 300);
     this.planState.clear();
+    this.planPaths.clear();
     this.plan = wasPlan;
     this._persistPlan();
     this.notify();
-    return entries.length;
+    return total;
   }
   // Stage the current look (from cache) as a starting point for a plan.
   seedPlanFromLook() {
@@ -455,7 +482,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'lpshow', 'lpcues', 'lpplan', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -506,8 +533,8 @@ function header() {
     el('div', { class: 'spacer' }),
     store.plan
       ? el('button', { class: 'chip plan', title: 'Plan mode — edits are staged, not sent. Open Plan to push.',
-          onclick: () => switchView('plan') },
-          el('span', { class: 'dot' }), `PLAN · ${store.planState.size}`)
+          onclick: () => switchView(isAwj() ? 'lpplan' : 'plan') },
+          el('span', { class: 'dot' }), `PLAN · ${store.planState.size + store.planPaths.size}`)
       : el('div', { class: 'legend' },
           el('span', { class: 'pgm' }, el('b'), 'program'),
           el('span', { class: 'pvw' }, el('b'), 'preview')),
@@ -517,8 +544,8 @@ function header() {
 
 const NAV = [
   { section: () => awjSeriesName() },
-  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpmultiview', 'Multiviewer'], ['lpaudio', 'Audio'],
-  ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsetup', 'Setup'], ['lpsystem', 'System'], ['lpinspector', 'Inspector'],
+  ['lpshow', 'Show'], ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpcues', 'Cues'], ['lpmultiview', 'Multiviewer'], ['lpaudio', 'Audio'],
+  ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsetup', 'Setup'], ['lpsystem', 'System'], ['lpplan', 'Plan'], ['lpinspector', 'Inspector'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -555,6 +582,7 @@ const VIEW_REQUIRES = {
   lpstills: () => awjDialect() === 'mng',
   lpaudio: () => awjDialect() === 'mng',
   lpsetup: () => awjDialect() === 'mng',
+  lpshow: () => awjDialect() === 'mng',
 };
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
@@ -3228,6 +3256,26 @@ const MNG = {
   mvwAudioVuValidity: () => 'DeviceObject/multiviewer/audio/status/vuMeters/@props/widgetValidity',
   qpAudioMode: () => 'DeviceObject/quickPreset/control/audio/@props/mode',
   qpAudioForce: () => 'DeviceObject/quickPreset/control/audio/forceSource/@props/source',
+  // LUTs: two libraries of slots the device loads .cube files into (from a
+  // path on the unit — the Web RCS uploads them), four LUT resources each
+  // allocated to an input, and per plug / output a conversion LUT (colour
+  // space and HDR) and a correction LUT, picked from the validity lists.
+  lutBank: (kind, n, prop) => `DeviceObject/lutLibraries/${kind}/$bank/@items/${n}/control/@props/${prop}`,
+  lutBankStatus: (kind, n, prop) => `DeviceObject/lutLibraries/${kind}/$bank/@items/${n}/status/@props/${prop}`,
+  lutResource: (n) => `DeviceObject/$inputLutResource/@items/${n}/control/@props/useOnInput`,
+  plugConversionLut: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/control/conversionLut/@props/${prop}`,
+  plugConversionLutStatus: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/conversionLut/@props/${prop}`,
+  plugCorrectionLut: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/settings/correctionLut/control/@props/${prop}`,
+  plugCorrectionLutStatus: (i, p, prop) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/settings/correctionLut/status/@props/${prop}`,
+  outputConversionLut: (k, prop) => `DeviceObject/$output/@items/${k}/conversionLut/control/@props/${prop}`,
+  outputConversionLutStatus: (k, prop) => `DeviceObject/$output/@items/${k}/conversionLut/status/@props/${prop}`,
+  outputCorrectionLut: (k, prop) => `DeviceObject/$output/@items/${k}/settings/correctionLut/control/@props/${prop}`,
+  outputCorrectionLutStatus: (k, prop) => `DeviceObject/$output/@items/${k}/settings/correctionLut/status/@props/${prop}`,
+  // Soft edge on a grid gap (models that blend): the curve and the black level, applied with xSoftedgeUpdate.
+  screenGridSoftedge: (n, dim, i, tail) => `DeviceObject/$screen/@items/${n}/canvas/grid/$${dim}Spacing/@items/${i}/softedge/${tail}`,
+  // Autoscale on load: per screen for the preset banks, one flag for the multiviewer's.
+  presetAutoScale: (n) => `DeviceObject/preset/bank/control/$screen/@items/${n}/@props/autoScale`,
+  mvwLoadAutoScale: () => 'DeviceObject/multiviewer/$bank/control/load/@props/autoScale',
   // What a bank save records, set on the destination (or the master bank) before the save.
   saveFilter: (root, d, prop) => `DeviceObject/${root}/control/save/${MNG_LIST[d.kind]}/@items/${d.n}/@props/${prop}`,
   masterSaveFilter: (prop) => `DeviceObject/preset/masterBank/control/save/@props/${prop}`,
@@ -3640,7 +3688,7 @@ function startMngSnapshots() {
   if (startMngSnapshots.timer) return;
   startMngSnapshots.timer = setInterval(() => {
     if (!mngSnapshotsWork() || document.hidden) return;
-    if (!['lplayers', 'lpinputs', 'lpmultiview', 'lpoutputs', 'lpstills'].includes(currentView)) return;
+    if (!['lplayers', 'lpinputs', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpshow'].includes(currentView)) return;
     MNG_SNAP_TICK++;
     store.notify();
   }, 4000);
@@ -3787,6 +3835,7 @@ VIEWS.lpmultiview = (() => {
       store.pget(MNG.mvwWidgetStatus(n, 'isEnabled'));
     }
     for (let s = 1; s <= 20; s++) { store.pget(MNG.mvwPresetValid(s)); store.pget(MNG.mvwPresetLabel(s)); }
+    store.pget(MNG.mvwLoadAutoScale());
     for (let t = 1; t <= MNG_TIMERS; t++) { for (const p of ['type', 'label', 'countdownDuration']) store.pget(MNG.timer(t, p)); store.pget(MNG.timerState(t)); }
     mngInputs.refresh();
     awjViewSubs = () => [MNG.SUB_MULTIVIEWER, MNG.SUB_TIMERS];
@@ -3937,7 +3986,8 @@ VIEWS.lpmultiview = (() => {
       el('div', { class: 'row' },
         el('div', { class: 'seg' }, ...[['recall', 'Recall', 'recall'], ['save', 'Save', 'save'], ['erase', 'Erase', 'take'], ['label', 'Label', 'recall']].map(([m, t, cls]) =>
           el('button', { class: mode === m ? 'on ' + cls : '', onclick: () => { mode = m; armed = null; store.notify(); } }, t))),
-        el('span', { class: 'hint', text: { recall: 'Tap a memory to recall its layout.', save: 'Tap a slot to store the current layout in it.', erase: 'Tap a memory, then tap it again to erase it.', label: 'Tap a memory to name it.' }[mode] })),
+        el('span', { class: 'hint', text: { recall: 'Tap a memory to recall its layout.', save: 'Tap a slot to store the current layout in it.', erase: 'Tap a memory, then tap it again to erase it.', label: 'Tap a memory to name it.' }[mode] }),
+        mode === 'recall' ? awjToggle(MNG.mvwLoadAutoScale(), (on) => on ? 'Autoscale on load' : 'Load as saved', { small: true, cls: 'primary', title: 'Rescale a memory’s widgets to the multiviewer’s resolution on load' }) : null),
       el('div', { class: 'mem-grid' }, ...tiles),
       mode === 'label' && armed !== null ? el('div', { class: 'row' },
         el('label', { text: `Slot ${armed} ` }),
@@ -4186,6 +4236,7 @@ VIEWS.lpoutputs = (() => {
         })),
       mngOutputExtras.canvas(k),
       mngOutputExtras.signal(k),
+      mngOutputExtras.luts(k),
       mngOutputExtras.display(k));
   }
 
@@ -4546,6 +4597,51 @@ VIEWS.lpaudio = (() => {
   return { enter, render };
 })();
 
+// ---------- Midra 4K / Alta 4K: LUT libraries, shared ----------
+const mngLuts = (() => {
+  let read = false;
+  function fetch() {
+    if (read) return;
+    read = true;
+    const slot = (n) => { for (const kind of ['conversion', 'correction']) { store.pget(MNG.lutBank(kind, n, 'label')); for (const prop of ['isValid', 'fileName', 'isUsed', ...(kind === 'conversion' ? ['fromColorSpace', 'fromHdrType', 'toColorSpace', 'toHdrType'] : ['colorSpace'])]) store.pget(MNG.lutBankStatus(kind, n, prop)); } };
+    for (let n = 1; n <= 5; n++) slot(n);
+    setTimeout(() => { if (store.pval(MNG.lutBankStatus('conversion', 5, 'isValid')) !== undefined) for (let n = 6; n <= MNG_LUT_SLOTS; n++) slot(n); }, 600);
+    for (let n = 1; n <= MNG_LUT_RESOURCES; n++) store.pget(MNG.lutResource(n));
+  }
+  function reset() { read = false; }
+  const slots = (kind) => { const out = []; for (let n = 1; n <= MNG_LUT_SLOTS; n++) if (store.pval(MNG.lutBankStatus(kind, n, 'isValid')) !== undefined) out.push(n); return out; };
+  /** The option list for a LUT select: what the device allows here, named from the library. */
+  function options(kind, validity) {
+    return (validity || ['NONE']).map(v => ({ v: String(v), text: v === 'NONE' ? '— none —' : `${v} · ${store.pval(MNG.lutBank(kind, +v, 'label')) || store.pval(MNG.lutBankStatus(kind, +v, 'fileName')) || 'unnamed'}` }));
+  }
+  function panel() {
+    fetch();
+    return el('div', { class: 'panel' },
+      el('h2', 'LUT libraries'),
+      ...['conversion', 'correction'].map(kind => el('div', {},
+        el('h2', { text: kind === 'conversion' ? 'Conversion LUTs (colour space and HDR)' : 'Correction LUTs' }),
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Slot', 'Label', 'File', kind === 'conversion' ? 'From → to' : 'Colour space', 'In use', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...slots(kind).map(n => {
+            const valid = store.pval(MNG.lutBankStatus(kind, n, 'isValid')) === true;
+            const S = (prop) => store.pval(MNG.lutBankStatus(kind, n, prop));
+            return el('tr', { class: valid ? '' : 'dim' },
+              el('td', { text: String(n) }),
+              el('td', {}, valid ? awjText(null, MNG.lutBank(kind, n, 'label'), 32) : el('span', { class: 'hint', text: 'empty' })),
+              el('td', { class: 'val', text: valid ? (S('fileName') || '') : '' }),
+              el('td', { class: 'val', text: valid ? (kind === 'conversion' ? `${awjWords(S('fromColorSpace'))} ${awjWords(S('fromHdrType'))} → ${awjWords(S('toColorSpace'))} ${awjWords(S('toHdrType'))}` : awjWords(S('colorSpace'))) : '' }),
+              el('td', {}, valid ? awjChip(S('isUsed') === true ? 'on' : 'off', S('isUsed') === true ? 'in use' : 'free') : null),
+              el('td', { class: 'acts' }, valid ? awjTrigger(MNG.lutBank(kind, n, 'xDelete'), 'Erase', { reads: ['isValid', 'fileName', 'isUsed'].map(prop => MNG.lutBankStatus(kind, n, prop)), after: 600 }) : null));
+          }))))),
+      el('div', { class: 'hint pad', text: 'A .cube file reaches a slot through the Web RCS’s upload (or a path on the unit); this page names, erases and allocates what is there.' }),
+      el('h2', 'LUT resources'),
+      el('div', { class: 'row wrap' }, ...Array.from({ length: MNG_LUT_RESOURCES }, (_, i) => i + 1).map(n =>
+        el('label', { class: 'field' }, `Resource ${n} on`, awjSelect(null, MNG.lutResource(n), mngInputs.available().map(i => ({ v: i.key, text: `IN ${i.n}${i.label ? ' · ' + i.label : ''}` })))))),
+      el('div', { class: 'hint', text: 'Four LUT processors; each serves one input, and only an input with one can run a conversion or correction LUT on its plug.' }));
+  }
+  return { fetch, reset, options, panel };
+})();
+
 // ---------- AWJ: Setup (Midra 4K / Alta 4K) ----------
 // The preconfig — which outputs feed which screens, which layers each screen
 // gets — is a working copy the device computes and then applies as a whole;
@@ -4555,7 +4651,7 @@ VIEWS.lpaudio = (() => {
 VIEWS.lpsetup = (() => {
   let read = false;
   let armApply = false;
-  let tab = 'config';   // 'config' | 'canvas'
+  let tab = 'config';   // 'config' | 'canvas' | 'luts'
   const D = () => awj();
   const OUT_MODES = { DISABLE: 'off', SCREEN_FORMAT: 'screen', AUX: 'auxiliary', AUX_INPUT_AND_PROGRAM: 'aux: inputs and program', AUX_INPUT_ONLY: 'aux: inputs only', MULTIVIEWER: 'multiviewer' };
   const RES_MODES = { DISABLE: 'off', SEAMLESS: 'seamless (one layer)', SPLIT: 'split (two layers)' };
@@ -4588,7 +4684,10 @@ VIEWS.lpsetup = (() => {
       for (const p of ['columnQty', 'rowQty', 'emptyCellWidth', 'emptyCellHeight']) store.pget(MNG.screenGrid(n, p));
       for (const p of ['columnQty', 'rowQty']) store.pget(MNG.screenGridStatus(n, p));
       for (const k of MNG_OUTPUTS) { for (const p of ['column', 'row']) store.pget(MNG.screenGridOutput(n, k, p)); for (const p of ['left', 'top']) store.pget(MNG.screenFreeOutput(n, k, p)); }
-      for (let i = 1; i <= 5; i++) { store.pget(MNG.screenGridSpacing(n, 'column', i)); store.pget(MNG.screenGridSpacing(n, 'row', i)); }
+      for (let i = 1; i <= 5; i++) for (const dim of ['column', 'row']) {
+        store.pget(MNG.screenGridSpacing(n, dim, i));
+        for (const tail of ['curve/@props/enable', 'curve/@props/type', 'curve/@props/gamma', 'blackLevel/@props/offset', 'blackLevel/@props/red', 'blackLevel/@props/green', 'blackLevel/@props/blue']) store.pget(MNG.screenGridSoftedge(n, dim, i, tail));
+      }
       for (const p of ['mode', 'sizeH', 'sizeV']) store.pget(MNG.screenFreeSize(n, p));
       for (const p of ['type', 'inhibit']) store.pget(MNG.screenPattern(n, p));
     }
@@ -4600,7 +4699,7 @@ VIEWS.lpsetup = (() => {
     awjViewSubs = () => [MNG.SUB_PRECONFIG, MNG.SUB_SCREENS];
     awjApplySubs();
   }
-  function enter() { if (awjDialect() !== 'mng') return; read = false; armApply = false; settle(); }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; armApply = false; mngLuts.reset(); settle(); }
   const reReadStates = () => { setTimeout(() => { read = false; settle(); }, 800); };
 
   const validity = (path, fallback) => { const v = store.pval(path); return Array.isArray(v) && v.length ? v : fallback; };
@@ -4712,7 +4811,8 @@ VIEWS.lpsetup = (() => {
             el('td', {}, awjSelect(null, MNG.screenGridOutput(n, k, 'row'), idx(rows))))))) : el('div', { class: 'hint', text: 'No output is applied to this screen.' }),
         el('div', { class: 'row' },
           awjTrigger(MNG.screenGrid(n, 'xUpdate'), 'Apply grid', { cls: 'primary', reads: gridReads, after: 800 }),
-          el('span', { class: 'hint', text: 'The grid is staged here and applied with the device’s update trigger; the canvas size follows from the outputs’ formats and the gaps.' })))
+          el('span', { class: 'hint', text: 'The grid is staged here and applied with the device’s update trigger; the canvas size follows from the outputs’ formats and the gaps.' })),
+        softedgePanel(n, cols, rows))
       : mode === 'FREE' ? el('div', {},
         el('div', { class: 'row wrap' },
           awjSelect('Canvas size', MNG.screenFreeSize(n, 'mode'), [{ v: 'AUTO', text: 'fit the outputs' }, { v: 'CUSTOM', text: 'custom' }]),
@@ -4730,6 +4830,26 @@ VIEWS.lpsetup = (() => {
       : el('div', { class: 'hint pad', text: mode === 'SINGLE_OUT' ? 'One output: the canvas is that output’s format.' : 'The screen has not reported a layout mode.' }));
   }
 
+  // Soft edge on each gap of a grid, for the models that blend (Eikos 4K):
+  // a curve (gamma or Bézier) and a black level, applied with the grid's own
+  // soft-edge trigger. A negative gap is the overlap the blend runs across.
+  function softedgePanel(n, cols, rows) {
+    const gaps = [...Array.from({ length: Math.max(0, cols - 1) }, (_, i) => ['column', i + 1]), ...Array.from({ length: Math.max(0, rows - 1) }, (_, i) => ['row', i + 1])];
+    if (!gaps.length) return null;
+    const SE = (dim, i, tail) => MNG.screenGridSoftedge(n, dim, i, tail);
+    return el('details', { class: 'group' }, el('summary', { text: 'Soft edge (models that blend)' }),
+      ...gaps.map(([dim, i]) => el('div', { class: 'row wrap' },
+        el('b', { text: `${dim} gap ${i}` }),
+        awjToggle(SE(dim, i, 'curve/@props/enable'), (on) => on ? 'Blend on' : 'Blend off', { small: true }),
+        awjSelect('Curve', SE(dim, i, 'curve/@props/type'), [{ v: 'GAMMA', text: 'gamma' }, { v: 'BEZIER', text: 'Bézier' }]),
+        awjNumber('Gamma ×10', SE(dim, i, 'curve/@props/gamma'), 1, 100, { cls: 'num' }),
+        awjNumber('Black offset', SE(dim, i, 'blackLevel/@props/offset'), 0, 255, { cls: 'num' }),
+        ...['red', 'green', 'blue'].map(ch => awjNumber(ch[0].toUpperCase(), SE(dim, i, `blackLevel/@props/${ch}`), 0, 255, { cls: 'num' })))),
+      el('div', { class: 'row' },
+        awjTrigger(MNG.screenGrid(n, 'xSoftedgeUpdate'), 'Apply soft edge', { cls: 'primary', after: 800 }),
+        el('span', { class: 'hint', text: 'Set the gap negative for the overlap, enable the blend on it and apply. Only an Eikos 4K blends; the others carry the settings and do nothing with them.' })));
+  }
+
   function render() {
     settle();
     const screens = [1, 2, 3, 4].filter(n => store.pval(MNG.screenEnabled(n)) === true);
@@ -4738,8 +4858,10 @@ VIEWS.lpsetup = (() => {
       el('div', { class: 'panel' }, awjLiveRow('configuration changes'),
         el('div', { class: 'row' }, el('div', { class: 'seg' },
           el('button', { class: tab === 'config' ? 'on recall' : '', onclick: () => { tab = 'config'; store.notify(); } }, 'Configuration'),
-          el('button', { class: tab === 'canvas' ? 'on recall' : '', onclick: () => { tab = 'canvas'; store.notify(); } }, 'Canvases and patterns')))),
+          el('button', { class: tab === 'canvas' ? 'on recall' : '', onclick: () => { tab = 'canvas'; store.notify(); } }, 'Canvases and patterns'),
+          el('button', { class: tab === 'luts' ? 'on recall' : '', onclick: () => { tab = 'luts'; store.notify(); } }, 'LUTs')))),
       tab === 'config' ? configPanel()
+        : tab === 'luts' ? mngLuts.panel()
         : screens.length ? el('div', {}, ...screens.map(canvasPanel)) : el('div', { class: 'panel' }, el('div', { class: 'hint pad', text: 'No screen is in service in the applied configuration.' })));
   }
   return { enter, render };
@@ -4750,6 +4872,8 @@ VIEWS.lpsetup = (() => {
 // and the pitch are staged and applied with their own update triggers; the
 // plug carries HDCP, pixel encoding and the display's EDID.
 const MNG_CUSTOM_FORMATS = 16;
+const MNG_LUT_SLOTS = 20;   // the enum's bound; a Pulse 4K on 3.3.10 carries four, so slots past five are read only if five answers
+const MNG_LUT_RESOURCES = 4;
 const mngOutputExtras = (() => {
   const read = new Set();
   let cfRead = false;
@@ -4770,6 +4894,9 @@ const mngOutputExtras = (() => {
     for (const p of ['enableHdcp', 'pixelEncoding', 'sdiTransport', 'forceDviMode']) store.pget(MNG.outputPlugControl(k, 1, p));
     for (const p of ['pixelEncodingFormatValidity', 'hdcpValidity', 'sdiValidity', 'isHdcp', 'hasHdcpWarning', 'isMonitorDetected', 'monitorName', 'colorSpace', 'colorDepth']) store.pget(MNG.outputPlugStatus(k, 1, p));
     store.pget(MNG.outputPlugAudioMode(k, 1)); store.pget(MNG.outputPlugAudioValidity(k, 1));
+    for (const prop of ['mode', 'source']) { store.pget(MNG.outputConversionLut(k, prop)); store.pget(MNG.outputCorrectionLut(k, prop)); }
+    for (const prop of ['isEnabled', 'state', 'sourceValidity']) { store.pget(MNG.outputConversionLutStatus(k, prop)); store.pget(MNG.outputCorrectionLutStatus(k, prop)); }
+    mngLuts.fetch();
     store.pget(MNG.outputPlugEdid(k, 1, 'isAvailable')); store.pget(MNG.outputPlugEdid(k, 1, 'data'));
   }
   function fetchCustomFormats() {
@@ -4823,6 +4950,19 @@ const mngOutputExtras = (() => {
         awjSelect('Embedded audio', MNG.outputPlugAudioMode(k, 1), audioModes.map(v => ({ v, text: v === 'DISABLE' ? 'off' : v === 'AUTO' ? 'auto' : v.replace('_CHANNELS', ' channels') })), { disabled: !audioModes.length }),
         sdiOk.length ? awjSelect('SDI', MNG.outputPlugControl(k, 1, 'sdiTransport'), sdiOk.map(v => ({ v, text: awjWords(v) }))) : null,
         awjToggle(MNG.outputPlugControl(k, 1, 'forceDviMode'), 'Force DVI', { small: true })));
+  }
+  function luts(k) {
+    fetch(k);
+    return el('details', { class: 'group' }, el('summary', { text: 'LUTs' }),
+      el('div', { class: 'row wrap' },
+        awjSelect('Conversion', MNG.outputConversionLut(k, 'mode'), [{ v: 'AUTO', text: 'auto' }, { v: 'CUSTOM', text: 'custom' }]),
+        awjSelect('Conversion LUT', MNG.outputConversionLut(k, 'source'), mngLuts.options('conversion', store.pval(MNG.outputConversionLutStatus(k, 'sourceValidity')))),
+        awjChip(store.pval(MNG.outputConversionLutStatus(k, 'isEnabled')) === true ? 'on' : 'off', awjWords(store.pval(MNG.outputConversionLutStatus(k, 'state'))))),
+      el('div', { class: 'row wrap' },
+        awjSelect('Correction', MNG.outputCorrectionLut(k, 'mode'), [{ v: 'MANUAL', text: 'manual' }, { v: 'AUTO', text: 'auto' }]),
+        awjSelect('Correction LUT', MNG.outputCorrectionLut(k, 'source'), mngLuts.options('correction', store.pval(MNG.outputCorrectionLutStatus(k, 'sourceValidity')))),
+        awjChip(store.pval(MNG.outputCorrectionLutStatus(k, 'isEnabled')) === true ? 'on' : 'off', awjWords(store.pval(MNG.outputCorrectionLutStatus(k, 'state'))))),
+      el('div', { class: 'hint', text: 'A conversion LUT changes colour space or HDR on the way out; a correction LUT is applied after it. The lists offer what the libraries hold.' }));
   }
   function display(k) {
     fetch(k);
@@ -4885,7 +5025,7 @@ const mngOutputExtras = (() => {
         el('button', { class: 'btn ' + (result === 'VALID' ? 'primary' : 'ghost'), disabled: result !== 'VALID', onclick: () => { const n = cfSlot; store.pset(MNG.cfSave(n), true); setTimeout(() => { for (const p of slotReads(n)) store.pget(p); }, 600); } }, 'Save'),
         awjTrigger(MNG.cfControl('xReset'), 'Reset editor', { reads: [...checkReads, ...['mode', 'userName', 'cvtReducedBlk', 'fullCvtRate', ...CF_FIELDS.map(f => f[0])].map(p => MNG.cfSetting(p))], after: 400 })));
   }
-  return { reset, canvas, signal, display, customFormats };
+  return { reset, canvas, signal, luts, display, customFormats };
 })();
 
 /** The base-block facts of an EDID: manufacturer, product name, preferred timing. */
@@ -5072,6 +5212,532 @@ const mngSaveFilters = (() => {
   return { reset, panel };
 })();
 
+// ---------- Midra 4K / Alta 4K: the screen canvas, shared by Layers and Show ----------
+// One screen's buffer drawn at the applied canvas size with the unit's own
+// pictures on the layers: drag to move (snapping), corners to resize, the
+// background set or colour as the ground, the top frame over everything. A
+// context `c` is `{ n, buf }` — the screen number and the buffer (UP / DOWN)
+// drawn — so the same code serves one screen at a time on the Layers page and
+// every screen at once on the Show page. Selection and re-rendering belong
+// to the view; the canvas reports through `onSelect`.
+const mngCanvas = (() => {
+  const seen = new Set();   // "n:buf" whose layers were read
+  const P = (c, l, tail) => MNG.layerProp(c.n, c.buf, l, tail);
+  const gv = (c, l, key) => store.pval(P(c, l, MNG_GEOM[key]));
+  const BG = (c, tail) => MNG.bgProp(c.n, c.buf, tail);
+  const TOP = (c, tail) => MNG.topProp(c.n, c.buf, tail);
+
+  /** The live layer slots the applied configuration gives screen `n`. */
+  function fitted(n) {
+    const out = [];
+    for (let l = 1; l <= 8; l++) {
+      const m = store.pval(MNG.layerMode(n, l));
+      if (m !== undefined && m !== 'DISABLE') out.push(l);
+    }
+    return out;
+  }
+  /** The canvas size the applied configuration built, or 1920×1080 until it answers. */
+  function size(n) {
+    const w = store.pval(MNG.canvasW(n)), h = store.pval(MNG.canvasH(n));
+    return { w: w > 0 ? w : 1920, h: h > 0 ? h : 1080, reported: w > 0 && h > 0 };
+  }
+  /** Read a buffer's layers, background and top frame once per buffer seen. */
+  function fetch(n, buf) {
+    const k = `${n}:${buf}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    for (const l of fitted(n)) {
+      for (const tail of Object.values(MNG_GEOM)) store.pget(MNG.layerProp(n, buf, l, tail));
+      store.pget(MNG.layerFreeze(n, l));
+      store.pget(MNG.layerFader(n, l));
+    }
+    for (const tail of ['source/@props/set', 'opacity/@props/opacity', 'color/@props/red', 'color/@props/green', 'color/@props/blue', 'status/@props/state']) store.pget(MNG.bgProp(n, buf, tail));
+    for (const tail of ['source/@props/frame', 'opacity/@props/opacity', 'position/@props/posH', 'position/@props/posV', 'status/@props/state']) store.pget(MNG.topProp(n, buf, tail));
+    for (let s = 1; s <= 8; s++) store.pget(MNG.bgSetContent(n, s));
+    for (let f = 1; f <= 4; f++) for (const tail of ['status/@props/isValid', 'control/@props/label', 'control/@props/librarySlot', 'control/@props/sizeH', 'control/@props/sizeV']) store.pget(MNG.frame(n, 'top', f, tail));
+  }
+  /** Every property the panel holds for one layer. */
+  function fetchProps(c, l) {
+    for (const g of MNG_LAYER_PROPS) for (const it of g.items) store.pget(P(c, l, it.tail));
+  }
+  function forget() { seen.clear(); }
+
+  // ---- geometry: the device keeps a layer's CENTRE; the canvas works in edges.
+  function rect(c, l) {
+    const w = gv(c, l, 'sizeH') ?? 0, h = gv(c, l, 'sizeV') ?? 0;
+    const cx = gv(c, l, 'posH') ?? 0, cy = gv(c, l, 'posV') ?? 0;
+    return { left: cx - w / 2, top: cy - h / 2, w, h };
+  }
+  function setGeom(c, l, r) {
+    pthrottledSet(P(c, l, MNG_GEOM.sizeH), Math.max(0, Math.round(r.w)));
+    pthrottledSet(P(c, l, MNG_GEOM.sizeV), Math.max(0, Math.round(r.h)));
+    pthrottledSet(P(c, l, MNG_GEOM.posH), Math.round(r.left + r.w / 2));
+    pthrottledSet(P(c, l, MNG_GEOM.posV), Math.round(r.top + r.h / 2));
+  }
+  // Reads after a write, since the device answers a replace with nothing and
+  // pushes only while Live updates is on.
+  function readBack(c, l) {
+    if (awjLive) return;
+    setTimeout(() => { for (const tail of Object.values(MNG_GEOM)) store.pget(P(c, l, tail)); }, 120);
+  }
+
+  // Snap a dragged edge or centre to the canvas edges and centre lines and to
+  // the other layers' edges and centres, within eight screen pixels. Alt held
+  // while dragging switches it off. A resize snaps only the edges that move.
+  function snap(c, r, l, scale, corner = null) {
+    const cs = size(c.n), tol = 8 / scale;
+    const xs = [0, cs.w / 2, cs.w], ys = [0, cs.h / 2, cs.h];
+    for (const o of fitted(c.n)) { if (o === l) continue; const q = rect(c, o); xs.push(q.left, q.left + q.w, q.left + q.w / 2); ys.push(q.top, q.top + q.h, q.top + q.h / 2); }
+    const near = (v, arr) => { let best = null; for (const a of arr) { const dd = Math.abs(v - a); if (dd <= tol && (best === null || dd < Math.abs(v - best))) best = a; } return best; };
+    if (!corner) {
+      for (const [v, off] of [[r.left, 0], [r.left + r.w, r.w], [r.left + r.w / 2, r.w / 2]]) { const s = near(v, xs); if (s !== null) { r.left = s - off; break; } }
+      for (const [v, off] of [[r.top, 0], [r.top + r.h, r.h], [r.top + r.h / 2, r.h / 2]]) { const s = near(v, ys); if (s !== null) { r.top = s - off; break; } }
+      return r;
+    }
+    if (corner.includes('w')) { const s = near(r.left, xs); if (s !== null) { r.w += r.left - s; r.left = s; } } else { const s = near(r.left + r.w, xs); if (s !== null) r.w = s - r.left; }
+    if (corner.includes('n')) { const s = near(r.top, ys); if (s !== null) { r.h += r.top - s; r.top = s; } } else { const s = near(r.top + r.h, ys); if (s !== null) r.h = s - r.top; }
+    return r;
+  }
+  // Arrow keys move a layer a pixel, ten with Shift, once the canvas has focus.
+  function nudge(e, c, l) {
+    if (typeof l !== 'number') return;
+    const step = e.shiftKey ? 10 : 1;
+    const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+    if (!dx && !dy) return;
+    e.preventDefault();
+    const r = rect(c, l);
+    setGeom(c, l, { ...r, left: r.left + dx, top: r.top + dy });
+    readBack(c, l);
+  }
+
+  function dragMove(e, c, l, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag();
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = rect(c, l);
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let r = { ...r0, left: r0.left + dx, top: r0.top + dy };
+      if (!ev.altKey) r = snap(c, r, l, scale);
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      setGeom(c, l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(c, l); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragResize(e, c, l, scale, corner) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag();
+    const box = e.currentTarget.parentNode;
+    const sx = e.clientX, sy = e.clientY, r0 = rect(c, l);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      let r = { left, top, w: right - left, h: bot - top };
+      if (!ev.altKey) r = snap(c, r, l, scale, corner);
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
+      setGeom(c, l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(c, l); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragTop(e, c, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag();
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = topRect(c);
+    if (!r0) { endDrag(); return; }
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      box.style.left = (r0.left + dx) * scale + 'px'; box.style.top = (r0.top + dy) * scale + 'px';
+      pthrottledSet(TOP(c, 'position/@props/posH'), Math.round(r0.left + dx + r0.w / 2));
+      pthrottledSet(TOP(c, 'position/@props/posV'), Math.round(r0.top + dy + r0.h / 2));
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); if (!awjLive) setTimeout(() => { store.pget(TOP(c, 'position/@props/posH')); store.pget(TOP(c, 'position/@props/posV')); }, 120); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+
+  // Layout presets over the fitted layers, in slot order. Only the geometry
+  // moves; sources stay where they are. Cells are fractions of the canvas.
+  const T = 1 / 3;
+  const LAYOUTS = {
+    fill: { label: 'Fill', cells: [[0, 0, 1, 1]] },
+    two: { label: '2-up', cells: [[0, 0.25, 0.5, 0.5], [0.5, 0.25, 0.5, 0.5]] },
+    three: { label: '3-up', cells: [[0, T, T, T], [T, T, T, T], [2 * T, T, T, T]] },
+    quad: { label: 'Quad', cells: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]] },
+    pip: { label: 'PiP', cells: [[0, 0, 1, 1], [0.66, 0.66, 0.3, 0.3]] },
+    pip2: { label: 'PiP ×2', cells: [[0, 0, 1, 1], [0.7, 0.04, 0.27, 0.27], [0.7, 0.69, 0.27, 0.27]] },
+    onetwo: { label: '1 + 2', cells: [[0, 0, 2 * T, 1], [2 * T, 0, T, 0.5], [2 * T, 0.5, T, 0.5]] },
+    onethree: { label: '1 + 3', cells: [[0, 0, 0.75, 1], [0.75, 0, 0.25, T], [0.75, T, 0.25, T], [0.75, 2 * T, 0.25, T]] },
+    six: { label: '3×2', cells: [[0, 0, T, 0.5], [T, 0, T, 0.5], [2 * T, 0, T, 0.5], [0, 0.5, T, 0.5], [T, 0.5, T, 0.5], [2 * T, 0.5, T, 0.5]] },
+    eight: { label: '4×2', cells: [[0, 0, 0.25, 0.5], [0.25, 0, 0.25, 0.5], [0.5, 0, 0.25, 0.5], [0.75, 0, 0.25, 0.5], [0, 0.5, 0.25, 0.5], [0.25, 0.5, 0.25, 0.5], [0.5, 0.5, 0.25, 0.5], [0.75, 0.5, 0.25, 0.5]] },
+    columns: { label: 'Columns', cells: null },   // one column per fitted layer
+    rows: { label: 'Rows', cells: null },         // one row per fitted layer
+  };
+  function layout(c, name) {
+    const cs = size(c.n), ls = fitted(c.n);
+    let cells = LAYOUTS[name]?.cells;
+    if (name === 'columns') cells = ls.map((_, i) => [i / ls.length, 0, 1 / ls.length, 1]);
+    if (name === 'rows') cells = ls.map((_, i) => [0, i / ls.length, 1, 1 / ls.length]);
+    if (!cells) return;
+    cells.forEach(([x, y, w, h], i) => {
+      const l = ls[i]; if (!l) return;
+      setGeom(c, l, { left: x * cs.w, top: y * cs.h, w: w * cs.w, h: h * cs.h });
+      readBack(c, l);
+    });
+  }
+
+  // The background layer: a set (whose content the screen names) or, with no
+  // set, the colour. Drawn as the canvas ground.
+  function bgStyle(c) {
+    const set = store.pval(BG(c, 'source/@props/set'));
+    const rgb = ['red', 'green', 'blue'].map(k => store.pval(BG(c, `color/@props/${k}`)) ?? 0);
+    if (!set || set === 'NONE') return `background: rgb(${rgb.join(',')})`;
+    return 'background: repeating-linear-gradient(45deg, #1b2230 0 12px, #141a24 12px 24px)';
+  }
+  function bgLabel(c) {
+    const set = store.pval(BG(c, 'source/@props/set'));
+    if (!set || set === 'NONE') return 'colour';
+    const content = store.pval(MNG.bgSetContent(c.n, +set));
+    return `set ${set}${content && content !== 'NONE' ? ' · ' + String(content).toLowerCase().replace(/_/g, ' ') : ''}`;
+  }
+  function topRect(c) {
+    const f = store.pval(TOP(c, 'source/@props/frame'));
+    if (!f || f === 'NONE') return null;
+    const w = store.pval(MNG.frame(c.n, 'top', +f, 'control/@props/sizeH')) ?? 0;
+    const h = store.pval(MNG.frame(c.n, 'top', +f, 'control/@props/sizeV')) ?? 0;
+    const cx = store.pval(TOP(c, 'position/@props/posH')) ?? 0, cy = store.pval(TOP(c, 'position/@props/posV')) ?? 0;
+    return { left: cx - w / 2, top: cy - h / 2, w, h, frame: f };
+  }
+
+  /**
+   * The canvas element. `sel` is the view's selection (a layer number, 'bg'
+   * or 'top'); `onSelect(s)` is called before a drag starts and when the
+   * ground is clicked, and decides whether to re-render. `width` is the
+   * element's width in CSS pixels; `tags` false hides the layer labels.
+   */
+  function element({ c, sel, width, onSelect, tags = true }) {
+    const cs = size(c.n);
+    const CW = width, scale = CW / cs.w, CH = cs.h * scale;
+    const cv = el('div', { class: 'screen-canvas' + (sel === 'bg' ? ' bg-sel' : '') + (tags ? '' : ' small'), style: `width:${CW}px;height:${Math.round(CH)}px;${bgStyle(c)}`, tabindex: 0,
+      onpointerdown: (e) => { e.currentTarget.focus(); onSelect('bg', true); }, onkeydown: (e) => nudge(e, c, sel) });
+    if (tags) cv.append(el('span', { class: 'lrect-tag bg-tag', text: `background · ${bgLabel(c)}` }));
+    for (const l of fitted(c.n)) {
+      const src = gv(c, l, 'source');
+      const on = src && src !== 'NONE';
+      const st = gv(c, l, 'state');
+      const r = rect(c, l);
+      const shot = on ? mngSnapshotUrl('inputs', +String(src).replace('INPUT_', '')) : null;
+      const box = el('div', {
+        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};` +
+          (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
+        onpointerdown: (e) => { e.currentTarget.parentNode.focus(); onSelect(l, false); dragMove(e, c, l, scale); },
+      },
+        el('span', { class: 'lrect-tag', text: tags ? `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` : `L${l}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => { onSelect(l, false); dragResize(e, c, l, scale, k); } })));
+      cv.append(box);
+    }
+    const tr = topRect(c);
+    if (tr) {
+      const shot = mngSnapshotUrl(`screens/${c.n}/top`, +tr.frame);
+      cv.append(el('div', {
+        class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
+        style: `left:${tr.left * scale}px;top:${tr.top * scale}px;width:${tr.w * scale}px;height:${tr.h * scale}px;z-index:99;` + (shot ? `background-image:url(${shot})` : ''),
+        onpointerdown: (e) => { onSelect('top', false); dragTop(e, c, scale); },
+      }, el('span', { class: 'lrect-tag', text: tags ? `top · frame ${tr.frame}` : 'top' })));
+    }
+    return el('div', { class: 'canvas-wrap' }, cv);
+  }
+
+  return { P, gv, BG, TOP, fitted, size, fetch, fetchProps, forget, rect, setGeom, readBack, snap, layout, LAYOUTS, bgStyle, bgLabel, topRect, element };
+})();
+
+// ---------- AWJ: Show (Midra 4K / Alta 4K) ----------
+// Every screen and auxiliary in service side by side — each screen's program
+// or preview on its own canvas, editable in place (drag, resize, snap, a
+// quick source and opacity for the picked layer), each auxiliary's source —
+// with take and cut per destination and for all of them. Show mode makes
+// the canvases and the take buttons big enough for a front-of-house table.
+let mngShowHandoff = null;   // {dest, sel, which} for the Layers page, set by Show's "Open in Layers"
+VIEWS.lpshow = (() => {
+  let which = 'preview';   // 'program' | 'preview'
+  let big = false;         // Show mode: one column, big targets
+  let picked = null;       // { dest, sel } — the layer (or 'bg' / 'top') last touched
+  let read = false;
+  const D = () => awj();
+
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    const used = D().destinations();
+    if (!used.length) return;
+    read = true;
+    mngCanvas.forget();
+    mngInputs.refresh();
+    for (const d of used) {
+      D().refresh(d); D().refreshExtras?.(d);
+      if (d.kind === 'aux') { for (const b of ['UP', 'DOWN']) store.pget(MNG.auxSource(d.n, b)); continue; }
+      for (const b of ['UP', 'DOWN']) mngCanvas.fetch(d.n, b);
+    }
+    awjViewSubs = () => [...D().destinations().map(d => MNG.subDestination(d))];
+    awjApplySubs();
+    startMngSnapshots();
+    setTimeout(mngEnableSnapshots, 600);
+  }
+  function enter() { if (awjDialect() !== 'mng') return; read = false; picked = null; settle(); }
+
+  const bufferOf = (d) => D().buffers(d)[which];
+
+  function quickPanel(d) {
+    if (!picked || picked.dest !== d.id || typeof picked.sel !== 'number') return null;
+    const c = { n: d.n, buf: bufferOf(d) }, l = picked.sel;
+    const src = mngCanvas.gv(c, l, 'source');
+    const opacity = store.pval(mngCanvas.P(c, l, 'opacity/@props/opacity'));
+    const srcSel = el('select', { onchange: (e) => { store.pset(mngCanvas.P(c, l, MNG_GEOM.source), e.target.value); mngCanvas.readBack(c, l); } });
+    for (const o of mngInputs.sourceOptions(src)) srcSel.append(el('option', { value: o.v, selected: o.v === src, text: o.text }));
+    return el('div', { class: 'row wrap quick' },
+      el('b', { text: `L${l}` }),
+      srcSel,
+      el('label', { class: 'field slider' },
+        el('span', {}, 'Opacity', el('b', { class: 'sv', text: opacity == null ? '·' : pct256(opacity) })),
+        el('input', { type: 'range', min: 0, max: 256, step: 1, value: opacity ?? 256,
+          onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+          oninput: (e) => { pthrottledSet(mngCanvas.P(c, l, 'opacity/@props/opacity'), +e.target.value); e.target.parentNode.querySelector('.sv').textContent = pct256(+e.target.value); } })),
+      el('button', { class: 'btn ghost small', onclick: () => { mngShowHandoff = { dest: d.id, sel: l, which }; location.hash = '#lplayers'; } }, 'Open in Layers'));
+  }
+
+  function card(d, width) {
+    const t = D().transition(d), moving = D().inFlight(d);
+    const { program, preview } = D().buffers(d);
+    // A take is silent and the transition runs for the take time, so the
+    // destination is read back twice: once for the in-flight state, once at rest.
+    const after = (ds) => { for (const ms of [300, 1500]) setTimeout(() => { for (const x of ds) D().refresh(x); }, ms); };
+    const takeBtns = el('div', { class: 'row' },
+      el('button', { class: 'btn pgm' + (big ? ' big' : ''), onclick: () => { D().take(d); after([d]); } }, 'Take'),
+      el('button', { class: 'btn ghost' + (big ? ' big' : ''), onclick: () => { D().cut(d); after([d]); } }, 'Cut'),
+      moving ? awjChip('on', moving) : null);
+    const head = el('div', { class: 'row' },
+      el('h2', { text: `${d.id} ${D().label(d) || ''}`.trim() }),
+      el('span', { class: 'hint', text: `${which} · ${which === 'program' ? program : preview}${t ? ' · ' + String(t).toLowerCase().replace(/_/g, ' ') : ''}` }),
+      el('div', { class: 'grow' }),
+      D().showsMemory ? el('span', { class: 'hint', text: ['program', 'preview'].map(w => { const m = D().memoryOn(d, w); return `${w === 'program' ? 'PGM' : 'PRW'} ${m == null ? '—' : 'M' + m}`; }).join(' · ') }) : null);
+    if (d.kind === 'aux') {
+      const path = MNG.auxSource(d.n, bufferOf(d));
+      const src = store.pval(path);
+      const s = el('select', { onchange: (e) => { store.pset(path, e.target.value); if (!awjLive) setTimeout(() => store.pget(path), 120); } });
+      for (const o of mngInputs.sourceOptions(src)) s.append(el('option', { value: o.v, selected: o.v === src, text: o.text }));
+      const shot = src && /^INPUT_/.test(src) ? mngSnapshotUrl('inputs', +String(src).replace('INPUT_', '')) : null;
+      return el('div', { class: 'panel show-card' }, head,
+        el('div', { class: 'aux-canvas' + (shot ? ' shot' : ''), style: `width:${width}px;height:${Math.round(width * 9 / 16)}px;` + (shot ? `background-image:url(${shot})` : `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)`) },
+          el('span', { class: 'lrect-tag', text: mngInputs.name(src) })),
+        el('div', { class: 'row wrap' }, el('label', { class: 'field' }, 'Source', s), el('div', { class: 'grow' }), takeBtns));
+    }
+    const c = { n: d.n, buf: bufferOf(d) };
+    const sel = picked && picked.dest === d.id ? picked.sel : null;
+    return el('div', { class: 'panel show-card' }, head,
+      mngCanvas.element({ c, sel, width, tags: true,
+        onSelect: (s, rerender) => { picked = { dest: d.id, sel: s }; if (typeof s === 'number') mngCanvas.fetchProps(c, s); if (rerender) store.notify(); } }),
+      el('div', { class: 'row wrap' },
+        el('div', { class: 'seg' }, ...Object.entries(mngCanvas.LAYOUTS).slice(0, 5).map(([k, v]) => el('button', { onclick: () => mngCanvas.layout(c, k) }, v.label))),
+        el('div', { class: 'grow' }), takeBtns),
+      quickPanel(d));
+  }
+
+  function render() {
+    settle();
+    const used = D().destinations();
+    const cols = big ? 1 : Math.max(1, Math.min(3, Math.floor(((window.innerWidth || 1200) - 260) / 520)));
+    const width = Math.max(300, Math.min(big ? 1100 : 640, Math.floor(((window.innerWidth || 1200) - 260 - 24 * cols) / cols) - 40));
+    return el('div', { class: big ? 'show-big' : '' },
+      el('div', { class: 'view-head' }, el('h1', { text: 'Show' }), el('span', { class: 'hint', text: 'Every screen and auxiliary in service, edited side by side and taken together' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row wrap' },
+          el('div', { class: 'seg' },
+            el('button', { class: which === 'program' ? 'on take' : '', onclick: () => { which = 'program'; picked = null; store.notify(); } }, 'Program'),
+            el('button', { class: which === 'preview' ? 'on recall' : '', onclick: () => { which = 'preview'; picked = null; store.notify(); } }, 'Preview')),
+          D().takeMany && used.length ? el('button', { class: 'btn pgm' + (big ? ' big' : ''), onclick: () => { D().takeMany(used); for (const ms of [300, 1500]) setTimeout(() => { for (const d of used) D().refresh(d); }, ms); } }, `Take all (${used.length})`) : null,
+          used.length ? el('button', { class: 'btn ghost' + (big ? ' big' : ''), onclick: () => { for (const d of used) D().cut(d); for (const ms of [300, 1500]) setTimeout(() => { for (const d of used) D().refresh(d); }, ms); } }, 'Cut all') : null,
+          el('div', { class: 'grow' }),
+          el('button', { class: 'btn ' + (big ? 'primary' : 'ghost'), onclick: () => { big = !big; store.notify(); } }, big ? 'Show mode on' : 'Show mode'),
+          el('button', { class: awjLive ? 'btn primary' : 'btn', onclick: () => setAwjLive(!awjLive) }, awjLive ? 'Live updates on' : 'Live updates off')),
+        el('div', { class: 'hint pad', text: `Editing ${which}. Drag a layer to move it, its corners to resize; a click on a layer offers its source and opacity here, Layers has the rest. Show mode is one big column with large take buttons for a front-of-house table.` })),
+      used.length
+        ? el('div', { class: 'show-grid', style: `grid-template-columns: repeat(${cols}, minmax(0, 1fr));` }, ...used.map(d => card(d, width)))
+        : el('div', { class: 'panel' }, el('div', { class: 'hint pad', text: store.connected ? 'No screen or auxiliary on this device is in service.' : 'Waiting for the processor.' })));
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Cues (LivePremier, Midra 4K / Alta 4K) ----------
+// A cue list over the preset banks: each cue recalls a memory — a master, or
+// a screen's or auxiliary's — to preview and takes it, or cuts it straight to
+// program; per-cue autofollow with a wait chains them. Neither Web RCS has a
+// sequencer, so this is the surface's own; it lives in this browser, keyed by
+// the processor it was written for.
+VIEWS.lpcues = (() => {
+  const key = () => `openrcs.lpcues.${store.meta?.host || 'device'}`;
+  let loadedFor = null;
+  let cues = [];      // { id, label, bank, slot, dest, follow, wait, notes }
+  let cur = -1;       // index of the last cue fired
+  function load() {
+    if (loadedFor === key()) return;
+    loadedFor = key(); cues = []; cur = -1;
+    try { const saved = JSON.parse(localStorage.getItem(key()) || '{}'); cues = saved.cues || []; cur = saved.cur ?? -1; } catch { /* first run */ }
+  }
+  const persist = () => { try { localStorage.setItem(key(), JSON.stringify({ cues, cur })); } catch { /* quota */ } };
+  const D = () => awj();
+
+  // Draft for the add row.
+  let dBank = null, dSlot = 1, dDest = null, dLabel = '', dFollow = false, dWait = 3000;
+
+  // Autofollow: after a cue with follow, a timer fires the next. Any manual
+  // action cancels it, so a hold is just leaving follow off.
+  let followTimer = null, followFrom = -1;
+  function clearFollow() { if (followTimer) { clearTimeout(followTimer); followTimer = null; followFrom = -1; } }
+
+  const bankOf = (c) => D().banks.find(b => b.kind === c.bank) || D().banks[0];
+  const destsOf = (c) => {
+    const b = bankOf(c);
+    if (b.targets === 'none') return D().destinations();
+    const d = awjDest(c.dest);
+    return d && D().destinations().some(x => x.id === d.id) ? [d] : [];
+  };
+  /** Recall the cue's memory: to preview and take it (`take`), or straight to program. */
+  function fire(c, take) {
+    const b = bankOf(c), dests = destsOf(c);
+    if (!dests.length) return;
+    if (b.targets === 'none') D().recall(b, c.slot, null, take ? 'PREVIEW' : 'PROGRAM');
+    else for (const d of dests) D().recall(b, c.slot, d, take ? 'PREVIEW' : 'PROGRAM');
+    // The recall is silent and lands a few tens of milliseconds later; the
+    // take waits for it, and every touched destination is read back after.
+    if (take) setTimeout(() => { for (const d of dests) D().take(d); }, 250);
+    const re = () => { for (const d of dests) D().refresh(d); };
+    setTimeout(re, 400); setTimeout(re, 1500);
+  }
+  function go(i) {
+    if (i < 0 || i >= cues.length) return;
+    clearFollow();
+    fire(cues[i], true); cur = i; persist();
+    const c = cues[i];
+    if (c.follow && cur + 1 < cues.length) {
+      followFrom = i;
+      followTimer = setTimeout(() => { followTimer = null; followFrom = -1; goNext(); }, Math.max(0, c.wait || 0));
+    }
+    store.notify();
+  }
+  function goNext() { go(cur + 1 < cues.length ? cur + 1 : cur); }
+  function hold() { clearFollow(); store.notify(); }
+  function arm(i) { clearFollow(); const c = cues[i]; const b = bankOf(c); for (const d of destsOf(c)) { if (b.targets === 'none') { D().recall(b, c.slot, null, 'PREVIEW'); break; } D().recall(b, c.slot, d, 'PREVIEW'); } setTimeout(() => { for (const d of destsOf(c)) D().refresh(d); }, 400); store.notify(); }
+  function addCue() {
+    const b = D().banks.find(x => x.kind === dBank) || D().banks[0];
+    const label = dLabel.trim() || (b.targets === 'none' ? `Master ${dSlot}` : `${dDest || ''} · ${b.label.toLowerCase()} ${dSlot}`);
+    cues.push({ id: Date.now(), label, bank: b.kind, slot: dSlot, dest: b.targets === 'none' ? null : dDest, follow: dFollow, wait: dWait, notes: '' });
+    dLabel = ''; persist(); store.notify();
+  }
+  function move(i, d) { const j = i + d; if (j < 0 || j >= cues.length) return; clearFollow(); [cues[i], cues[j]] = [cues[j], cues[i]]; if (cur === i) cur = j; else if (cur === j) cur = i; persist(); store.notify(); }
+  function del(i) { clearFollow(); cues.splice(i, 1); if (cur >= cues.length) cur = cues.length - 1; persist(); store.notify(); }
+  const patch = (c, k, v) => { c[k] = v; persist(); store.notify(); };
+
+  function enter() { load(); clearFollow(); }
+
+  function cueRow(c, i) {
+    const b = bankOf(c);
+    const valid = D().presetValid(b, c.slot);
+    const target = `${b.label} ${c.slot}${b.targets === 'none' ? '' : ' on ' + (c.dest || '?')}${valid === false ? ' (empty)' : ''}`;
+    return el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i ? ' following' : '') },
+      el('span', { class: 'cue-n', text: i + 1 }),
+      el('div', { class: 'cue-main' },
+        el('input', { class: 'cue-label-in', type: 'text', value: c.label, onchange: (e) => patch(c, 'label', e.target.value) }),
+        el('div', { class: 'cue-target', text: target + (c.follow ? ` · auto ${(c.wait / 1000).toFixed(1)} s` : '') }),
+        el('input', { class: 'cue-notes-in', type: 'text', placeholder: 'notes', value: c.notes || '', onchange: (e) => patch(c, 'notes', e.target.value) })),
+      el('label', { class: 'cue-follow', title: 'Autofollow to the next cue after the wait' },
+        el('input', { type: 'checkbox', checked: !!c.follow, onchange: (e) => patch(c, 'follow', e.target.checked) }), ' auto ',
+        el('input', { class: 'num', type: 'number', min: 0, max: 600, step: 0.5, value: (c.wait / 1000).toFixed(1), onchange: (e) => patch(c, 'wait', Math.round((+e.target.value || 0) * 1000)) }), ' s'),
+      el('div', { class: 'cue-acts' },
+        el('button', { class: 'btn ghost small', title: 'Load to preview only', onclick: () => arm(i) }, 'Arm'),
+        el('button', { class: 'btn pgm small', title: 'Load to preview and take', onclick: () => go(i) }, 'Go'),
+        el('button', { class: 'btn ghost small', title: 'Straight to program, no transition', onclick: () => { clearFollow(); fire(c, false); cur = i; persist(); store.notify(); } }, 'Cut'),
+        el('button', { class: 'btn ghost small', onclick: () => move(i, -1) }, '▲'),
+        el('button', { class: 'btn ghost small', onclick: () => move(i, 1) }, '▼'),
+        el('button', { class: 'btn ghost small', onclick: () => del(i) }, '✕')));
+  }
+
+  function render() {
+    load();
+    const banks = D().banks;
+    if (!dBank || !banks.some(b => b.kind === dBank)) dBank = banks[0].kind;
+    const b = banks.find(x => x.kind === dBank);
+    const cands = D().destinations().filter(d => d.kind === b.targets);
+    if (b.targets !== 'none' && (!dDest || !cands.some(d => d.id === dDest))) dDest = cands[0]?.id ?? null;
+    const next = cur + 1 < cues.length ? cues[cur + 1] : null;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Cues' }), el('span', { class: 'hint', text: 'A cue list over the memory banks — recall to preview and take, cue by cue, with autofollow' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row wrap' },
+          el('button', { class: 'btn pgm big', disabled: !next, onclick: goNext }, next ? `GO  ${cur + 2} · ${next.label}` : 'GO (end of list)'),
+          el('button', { class: 'btn ghost', disabled: !followTimer, onclick: hold }, 'Hold'),
+          el('button', { class: 'btn ghost', onclick: () => { clearFollow(); cur = -1; persist(); store.notify(); } }, 'Reset to top'),
+          el('span', { class: 'hint', text: cur >= 0 ? `Last fired: ${cur + 1} · ${cues[cur]?.label ?? ''}` : 'Nothing fired yet.' })),
+        cues.length ? el('div', { class: 'cue-list' }, ...cues.map(cueRow)) : el('div', { class: 'hint pad', text: 'No cues yet. Add one below: a master memory, or a screen or auxiliary memory on one destination.' })),
+      el('div', { class: 'panel' }, el('h2', 'Add a cue'),
+        el('div', { class: 'row wrap' },
+          el('label', { class: 'field' }, 'Bank', el('select', { onchange: (e) => { dBank = e.target.value; store.notify(); } }, ...banks.map(k => el('option', { value: k.kind, selected: k.kind === dBank, text: k.label })))),
+          el('label', { class: 'field' }, 'Slot', el('input', { class: 'num', type: 'number', min: 1, max: b.slots, value: dSlot, onchange: (e) => { dSlot = Math.max(1, Math.min(b.slots, Math.round(+e.target.value || 1))); } })),
+          b.targets === 'none' ? null : el('label', { class: 'field' }, 'On', el('select', { onchange: (e) => { dDest = e.target.value; } }, ...cands.map(d => el('option', { value: d.id, selected: d.id === dDest, text: `${d.id} ${D().label(d) || ''}`.trim() })))),
+          el('label', { class: 'field' }, 'Label', el('input', { type: 'text', maxlength: 48, value: dLabel, oninput: (e) => { dLabel = e.target.value; } })),
+          el('label', { class: 'field' }, 'Autofollow', el('input', { type: 'checkbox', checked: dFollow, onchange: (e) => { dFollow = e.target.checked; } })),
+          el('label', { class: 'field' }, 'Wait s', el('input', { class: 'num', type: 'number', min: 0, max: 600, step: 0.5, value: (dWait / 1000).toFixed(1), onchange: (e) => { dWait = Math.round((+e.target.value || 0) * 1000); } })),
+          el('button', { class: 'btn primary', onclick: addCue }, 'Add')),
+        el('div', { class: 'hint pad', text: 'Go loads the memory to preview and takes it a quarter of a second later, over the destination’s own take time; Cut loads it straight to program. The list is kept in this browser for this processor; the device has no sequencer of its own.' })));
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Plan (any AWJ family) ----------
+// Plan mode over paths: with it on, every write the AWJ views make is staged
+// in this browser instead of sent, reads show the staged values, and the
+// lot is pushed when a processor is there. Triggers (`x…` properties — a
+// take, a recall) are never staged: they are actions, not state.
+VIEWS.lpplan = (() => {
+  let busy = null;
+  async function push() {
+    if (!store.connected) { store.notify(); return; }
+    busy = { frac: 0 }; store.notify();
+    await store.pushPlan(f => { busy = { frac: f }; store.notify(); });
+    busy = null; store.notify();
+  }
+  function render() {
+    const list = store.planPathList();
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Plan' }), el('span', { class: 'hint', text: 'Build a look with no processor — every edit is staged, then pushed on connect' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row wrap' },
+          el('button', { class: 'btn ' + (store.plan ? 'pgm' : 'ghost'), onclick: () => store.setPlan(!store.plan) }, store.plan ? 'Plan mode ON — edits are staged' : 'Plan mode off — edits go to the processor'),
+          el('div', { class: 'grow' }),
+          awjChip(store.connected ? 'on' : 'off', store.connected ? 'processor online' : 'no processor')),
+        el('div', { class: 'hint pad', text: 'While on, what you set on Screens, Layers, Show, Audio, Inputs, Outputs, Setup and the rest is collected here instead of being written. Reads show your staged values, so the look previews as you build it. Takes, recalls and every other trigger still go straight to the processor — they are actions, not state, and cannot be planned.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('h2', `Staged changes (${list.length})`),
+          el('div', { class: 'grow' }),
+          el('button', { class: 'btn pgm', onclick: push, disabled: (!list.length || !store.connected || busy) ? true : undefined }, store.connected ? 'Push to processor' : 'Push (no processor)'),
+          list.length ? el('button', { class: 'btn ghost', onclick: () => store.clearPlan() }, 'Discard') : null),
+        busy ? el('div', { class: 'show-prog' }, el('div', { class: 'show-prog-bar', style: `width:${Math.round(busy.frac * 100)}%` }), el('span', { class: 'show-prog-label', text: 'Pushing…' })) : null,
+        list.length
+          ? el('table', { class: 'grid' }, el('thead', {}, el('tr', {}, el('th', { text: 'Path' }), el('th', { text: 'Value' }), el('th'))),
+              el('tbody', {}, ...list.slice(0, 400).map(e => el('tr', {},
+                el('td', { class: 'path', text: e.path.replace(/^DeviceObject\//, '') }),
+                el('td', { class: 'val', text: JSON.stringify(e.v) }),
+                el('td', {}, el('button', { class: 'btn ghost small', onclick: () => store.unplanPath(e.path) }, '✕'))))))
+          : el('div', { class: 'hint pad', text: store.plan ? 'No staged changes yet. Go build a look — every edit lands here.' : 'Turn plan mode on to start staging changes.' })));
+  }
+  return { render };
+})();
+
 // ---------- AWJ: Layers (Midra 4K / Alta 4K) ----------
 // One screen at a time, program or preview, its fitted live layers on a canvas
 // drawn to the applied configuration's size. Drag to move, corners to resize;
@@ -5092,49 +5758,24 @@ VIEWS.lplayers = (() => {
   const cur = () => (dest ? awjDest(dest) : null);
   const buffer = () => cur() ? D().buffers(cur())[which] : 'UP';
 
-  function fitted(d) {
-    if (!d || d.kind !== 'screen') return [];
-    const out = [];
-    for (let l = 1; l <= 8; l++) {
-      const m = store.pval(MNG.layerMode(d.n, l));
-      if (m !== undefined && m !== 'DISABLE') out.push(l);
-    }
-    return out;
-  }
-  function canvasPx(d) {
-    const w = store.pval(MNG.canvasW(d.n)), h = store.pval(MNG.canvasH(d.n));
-    return { w: w > 0 ? w : 1920, h: h > 0 ? h : 1080, reported: w > 0 && h > 0 };
-  }
-  const P = (l, tail) => MNG.layerProp(cur().n, buffer(), l, tail);
-  const gv = (l, key) => store.pval(P(l, MNG_GEOM[key]));
+  const ctx = () => ({ n: cur().n, buf: buffer() });
+  const fitted = (d) => (d && d.kind === 'screen' ? mngCanvas.fitted(d.n) : []);
+  const canvasPx = (d) => mngCanvas.size(d.n);
+  const P = (l, tail) => mngCanvas.P(ctx(), l, tail);
+  const gv = (l, key) => mngCanvas.gv(ctx(), l, key);
 
-  function fetchLayers(d, buf) {
-    if (!d || d.kind !== 'screen') return;
-    const k = `${d.id}:${buf}`;
-    if (seen.has(k)) return;
-    seen.add(k);
-    for (const l of fitted(d)) {
-      for (const tail of Object.values(MNG_GEOM)) store.pget(MNG.layerProp(d.n, buf, l, tail));
-      store.pget(MNG.layerFreeze(d.n, l));
-      store.pget(MNG.layerFader(d.n, l));
-    }
-    // The two fixed layers, and what their choices point at.
-    for (const tail of ['source/@props/set', 'opacity/@props/opacity', 'color/@props/red', 'color/@props/green', 'color/@props/blue', 'status/@props/state']) store.pget(MNG.bgProp(d.n, buf, tail));
-    for (const tail of ['source/@props/frame', 'opacity/@props/opacity', 'position/@props/posH', 'position/@props/posV', 'status/@props/state']) store.pget(MNG.topProp(d.n, buf, tail));
-    for (let s = 1; s <= 8; s++) store.pget(MNG.bgSetContent(d.n, s));
-    for (let f = 1; f <= 4; f++) for (const tail of ['status/@props/isValid', 'control/@props/label', 'control/@props/librarySlot', 'control/@props/sizeH', 'control/@props/sizeV']) store.pget(MNG.frame(d.n, 'top', f, tail));
-  }
   function fetchSelected() {
     const d = cur();
     if (!d || d.kind !== 'screen' || typeof sel !== 'number') return;
-    for (const g of MNG_LAYER_PROPS) for (const it of g.items) store.pget(P(sel, it.tail));
+    mngCanvas.fetchProps(ctx(), sel);
   }
   function refetch() {
-    seen.clear();
+    mngCanvas.forget();
     const d = cur();
     if (!d) return;
+    D().refresh(d);
     if (d.kind === 'aux') { for (const b of ['UP', 'DOWN']) store.pget(MNG.auxSource(d.n, b)); return; }
-    for (const b of ['UP', 'DOWN']) fetchLayers(d, b);
+    for (const b of ['UP', 'DOWN']) mngCanvas.fetch(d.n, b);
     fetchSelected();
   }
   // Settle on a destination and read it. Split from enter() because a view
@@ -5167,60 +5808,20 @@ VIEWS.lplayers = (() => {
 
   function enter() {
     if (awjDialect() !== 'mng') return;
+    // The Show page hands a destination and layer over when it sends the
+    // operator here for the full panel.
+    const h = mngShowHandoff; mngShowHandoff = null;
     dest = null;
     if (!settle()) awjViewSubs = () => [];
+    if (h && D().destinations().some(d => d.id === h.dest)) { which = h.which; sel = h.sel; pick(h.dest); }
     setTimeout(mngEnableSnapshots, 600);
   }
 
-  // ---- geometry: the device keeps a layer's CENTRE; the canvas works in edges.
-  function rectPx(l) {
-    const w = gv(l, 'sizeH') ?? 0, h = gv(l, 'sizeV') ?? 0;
-    const cx = gv(l, 'posH') ?? 0, cy = gv(l, 'posV') ?? 0;
-    return { left: cx - w / 2, top: cy - h / 2, w, h };
-  }
-  function setGeom(l, r) {
-    pthrottledSet(P(l, MNG_GEOM.sizeH), Math.max(0, Math.round(r.w)));
-    pthrottledSet(P(l, MNG_GEOM.sizeV), Math.max(0, Math.round(r.h)));
-    pthrottledSet(P(l, MNG_GEOM.posH), Math.round(r.left + r.w / 2));
-    pthrottledSet(P(l, MNG_GEOM.posV), Math.round(r.top + r.h / 2));
-  }
-  // Reads after a write, since the device answers a replace with nothing and
-  // pushes only while Live updates is on.
-  function readBack(l) {
-    if (awjLive) return;
-    setTimeout(() => { for (const tail of Object.values(MNG_GEOM)) store.pget(P(l, tail)); }, 120);
-  }
+  const rectPx = (l) => mngCanvas.rect(ctx(), l);
+  const setGeom = (l, r) => mngCanvas.setGeom(ctx(), l, r);
+  const readBack = (l) => mngCanvas.readBack(ctx(), l);
+  const layout = (name) => { if (cur()) mngCanvas.layout(ctx(), name); };
 
-  // Snap a dragged edge or centre to the canvas edges and centre lines and to
-  // the other layers' edges and centres, within eight screen pixels. Alt held
-  // while dragging switches it off. A resize snaps only the edges that move.
-  function snapRect(r, l, scale, corner = null) {
-    const d = cur(); if (!d) return r;
-    const c = canvasPx(d), tol = 8 / scale;
-    const xs = [0, c.w / 2, c.w], ys = [0, c.h / 2, c.h];
-    for (const o of fitted(d)) { if (o === l) continue; const q = rectPx(o); xs.push(q.left, q.left + q.w, q.left + q.w / 2); ys.push(q.top, q.top + q.h, q.top + q.h / 2); }
-    const near = (v, arr) => { let best = null; for (const a of arr) { const dd = Math.abs(v - a); if (dd <= tol && (best === null || dd < Math.abs(v - best))) best = a; } return best; };
-    if (!corner) {
-      for (const [v, off] of [[r.left, 0], [r.left + r.w, r.w], [r.left + r.w / 2, r.w / 2]]) { const s = near(v, xs); if (s !== null) { r.left = s - off; break; } }
-      for (const [v, off] of [[r.top, 0], [r.top + r.h, r.h], [r.top + r.h / 2, r.h / 2]]) { const s = near(v, ys); if (s !== null) { r.top = s - off; break; } }
-      return r;
-    }
-    if (corner.includes('w')) { const s = near(r.left, xs); if (s !== null) { r.w += r.left - s; r.left = s; } } else { const s = near(r.left + r.w, xs); if (s !== null) r.w = s - r.left; }
-    if (corner.includes('n')) { const s = near(r.top, ys); if (s !== null) { r.h += r.top - s; r.top = s; } } else { const s = near(r.top + r.h, ys); if (s !== null) r.h = s - r.top; }
-    return r;
-  }
-  // Arrow keys move the selected layer a pixel, ten with Shift, once the
-  // canvas has focus (a click gives it).
-  function nudge(e) {
-    if (typeof sel !== 'number') return;
-    const step = e.shiftKey ? 10 : 1;
-    const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-    if (!dx && !dy) return;
-    e.preventDefault();
-    const r = rectPx(sel);
-    setGeom(sel, { ...r, left: r.left + dx, top: r.top + dy });
-    readBack(sel);
-  }
   // A copied layer: every property the panel holds, source included, held in
   // this page until pasted onto any layer of any screen or buffer.
   let clip = null;
@@ -5236,132 +5837,12 @@ VIEWS.lplayers = (() => {
     setTimeout(() => { for (const [tl] of clip.values) store.pget(P(l, tl)); }, 300);
   }
 
-  function dragMove(e, l, scale) {
-    e.preventDefault(); e.stopPropagation();
-    beginDrag(); sel = l;
-    const box = e.currentTarget;
-    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
-    const move = (ev) => {
-      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
-      let r = { ...r0, left: r0.left + dx, top: r0.top + dy };
-      if (!ev.altKey) r = snapRect(r, l, scale);
-      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
-      setGeom(l, r);
-    };
-    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(l); };
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
-  }
-  function dragResize(e, l, scale, corner) {
-    e.preventDefault(); e.stopPropagation();
-    beginDrag(); sel = l;
-    const box = e.currentTarget.parentNode;
-    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
-    const west = corner.includes('w'), north = corner.includes('n');
-    const move = (ev) => {
-      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
-      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
-      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
-      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
-      let r = { left, top, w: right - left, h: bot - top };
-      if (!ev.altKey) r = snapRect(r, l, scale, corner);
-      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
-      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
-      setGeom(l, r);
-    };
-    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(l); };
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
-  }
-
-  // Layout presets over the fitted layers, in slot order. Only the geometry
-  // moves; sources stay where they are.
-  function layout(name) {
-    const d = cur(); if (!d) return;
-    const c = canvasPx(d), ls = fitted(d);
-    const cells = {
-      fill: [[0, 0, 1, 1]],
-      two: [[0, 0.25, 0.5, 0.5], [0.5, 0.25, 0.5, 0.5]],
-      three: [[0, 1 / 3, 1 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3, 1 / 3], [2 / 3, 1 / 3, 1 / 3, 1 / 3]],
-      quad: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
-      pip: [[0, 0, 1, 1], [0.66, 0.66, 0.3, 0.3]],
-    }[name];
-    cells.forEach(([x, y, w, h], i) => {
-      const l = ls[i]; if (!l) return;
-      setGeom(l, { left: x * c.w, top: y * c.h, w: w * c.w, h: h * c.h });
-      readBack(l);
-    });
-  }
-
-  // The background layer: a set (whose content the screen names) or, with no
-  // set, the colour. Drawn as the canvas ground.
-  function bgStyle() {
-    const set = store.pval(BG('source/@props/set'));
-    const rgb = ['red', 'green', 'blue'].map(c => store.pval(BG(`color/@props/${c}`)) ?? 0);
-    if (!set || set === 'NONE') return `background: rgb(${rgb.join(',')})`;
-    return `background: repeating-linear-gradient(45deg, #1b2230 0 12px, #141a24 12px 24px)`;
-  }
-  function bgLabel() {
-    const set = store.pval(BG('source/@props/set'));
-    if (!set || set === 'NONE') return 'colour';
-    const c = store.pval(MNG.bgSetContent(cur().n, +set));
-    return `set ${set}${c && c !== 'NONE' ? ' · ' + String(c).toLowerCase().replace(/_/g, ' ') : ''}`;
-  }
-  function topRect() {
-    const f = store.pval(TOP('source/@props/frame'));
-    if (!f || f === 'NONE') return null;
-    const w = store.pval(MNG.frame(cur().n, 'top', +f, 'control/@props/sizeH')) ?? 0;
-    const h = store.pval(MNG.frame(cur().n, 'top', +f, 'control/@props/sizeV')) ?? 0;
-    const cx = store.pval(TOP('position/@props/posH')) ?? 0, cy = store.pval(TOP('position/@props/posV')) ?? 0;
-    return { left: cx - w / 2, top: cy - h / 2, w, h, frame: f };
-  }
-  function dragTop(e, scale) {
-    e.preventDefault(); e.stopPropagation();
-    beginDrag(); sel = 'top';
-    const box = e.currentTarget;
-    const sx = e.clientX, sy = e.clientY, r0 = topRect();
-    if (!r0) return;
-    const move = (ev) => {
-      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
-      box.style.left = (r0.left + dx) * scale + 'px'; box.style.top = (r0.top + dy) * scale + 'px';
-      pthrottledSet(TOP('position/@props/posH'), Math.round(r0.left + dx + r0.w / 2));
-      pthrottledSet(TOP('position/@props/posV'), Math.round(r0.top + dy + r0.h / 2));
-    };
-    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); if (!awjLive) setTimeout(() => { store.pget(TOP('position/@props/posH')); store.pget(TOP('position/@props/posV')); }, 120); };
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
-  }
-
   function canvas(d) {
-    const c = canvasPx(d);
     const CW = Math.min(720, Math.max(360, (window.innerWidth || 1200) - 620));
-    const scale = CW / c.w, CH = c.h * scale;
-    const cv = el('div', { class: 'screen-canvas' + (sel === 'bg' ? ' bg-sel' : ''), style: `width:${CW}px;height:${Math.round(CH)}px;${bgStyle()}`, tabindex: 0,
-      onpointerdown: (e) => { e.currentTarget.focus(); sel = 'bg'; store.notify(); }, onkeydown: nudge });
-    cv.append(el('span', { class: 'lrect-tag bg-tag', text: `background · ${bgLabel()}` }));
-    for (const l of fitted(d)) {
-      const src = gv(l, 'source');
-      const on = src && src !== 'NONE';
-      const st = gv(l, 'state');
-      const r = rectPx(l);
-      const shot = on ? mngSnapshotUrl('inputs', +String(src).replace('INPUT_', '')) : null;
-      const box = el('div', {
-        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
-        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};` +
-          (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
-        onpointerdown: (e) => { e.currentTarget.parentNode.focus(); dragMove(e, l, scale); },
-      },
-        el('span', { class: 'lrect-tag', text: `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, l, scale, k) })));
-      cv.append(box);
-    }
-    const tr = topRect();
-    if (tr) {
-      const shot = mngSnapshotUrl(`screens/${d.n}/top`, +tr.frame);
-      cv.append(el('div', {
-        class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
-        style: `left:${tr.left * scale}px;top:${tr.top * scale}px;width:${tr.w * scale}px;height:${tr.h * scale}px;z-index:99;` + (shot ? `background-image:url(${shot})` : ''),
-        onpointerdown: (e) => dragTop(e, scale),
-      }, el('span', { class: 'lrect-tag', text: `top · frame ${tr.frame}` })));
-    }
-    return el('div', { class: 'canvas-wrap' }, cv);
+    return mngCanvas.element({ c: { n: d.n, buf: buffer() }, sel, width: CW,
+      // A click on the ground re-renders (the panel changes); a drag does
+      // not — the drag's own read-back does, once it ends.
+      onSelect: (s, rerender) => { sel = s; if (typeof s === 'number') fetchSelected(); if (rerender) store.notify(); } });
   }
 
   // A range/number/select bound to an arbitrary path, for the two fixed layers.
@@ -5521,7 +6002,7 @@ VIEWS.lplayers = (() => {
             el('button', { class: which === 'program' ? 'on take' : '', onclick: () => { which = 'program'; if (d && d.kind === 'screen') fetchSelected(); store.notify(); } }, `Program${bufs ? ' · ' + bufs.program : ''}`),
             el('button', { class: which === 'preview' ? 'on recall' : '', onclick: () => { which = 'preview'; if (d && d.kind === 'screen') fetchSelected(); store.notify(); } }, `Preview${bufs ? ' · ' + bufs.preview : ''}`)),
           d && d.kind === 'screen' ? el('div', { class: 'seg' },
-            ...[['fill', 'Fill'], ['two', '2-up'], ['three', '3-up'], ['quad', 'Quad'], ['pip', 'PiP']].map(([k, t]) => el('button', { onclick: () => layout(k) }, t))) : null,
+            ...Object.entries(mngCanvas.LAYOUTS).map(([k, v]) => el('button', { onclick: () => layout(k) }, v.label))) : null,
           el('button', { class: 'btn ghost', onclick: () => { refetch(); store.notify(); } }, 'Re-read'))),
       !d ? el('div', { class: 'panel' }, el('div', { class: 'hint pad', text: store.connected ? 'No screen or auxiliary on this device is in service.' : 'Waiting for the processor.' }))
         : d.kind === 'aux'
@@ -5603,6 +6084,9 @@ VIEWS.lpinputs = (() => {
     for (const prop of ['signalTypeValidity', 'hdcpValidity', 'type', 'canUseLutProcessing']) store.pget(MNG.plugStatusProp(i, p, prop));
     for (const prop of ['isValid', 'formatName', 'scanType', 'formatWidth', 'formatHeight', 'fieldFrequency', 'colorSpace', 'supportStatus']) store.pget(MNG.plugSignal(i, p, prop));
     for (const prop of ['mode', 'nitLevel']) { store.pget(MNG.plugHdr(i, p, prop)); store.pget(MNG.plugHdrStatus(i, p, prop)); }
+    for (const prop of ['mode', 'source']) { store.pget(MNG.plugConversionLut(i, p, prop)); store.pget(MNG.plugCorrectionLut(i, p, prop)); }
+    for (const prop of ['isEnabled', 'state', 'sourceValidity']) { store.pget(MNG.plugConversionLutStatus(i, p, prop)); store.pget(MNG.plugCorrectionLutStatus(i, p, prop)); }
+    mngLuts.fetch();
     for (const [prop] of COLOR) store.pget(MNG.plugSetting(i, p, `color/@props/${prop}`));
     for (const prop of ['sharpness', 'pulldown22', 'pulldown32']) store.pget(MNG.plugSetting(i, p, `processing/@props/${prop}`));
     for (const prop of ['signal', 'transformTo', 'customRatio', 'layerFill']) store.pget(MNG.plugSetting(i, p, `aspect/@props/${prop}`));
@@ -5710,6 +6194,16 @@ VIEWS.lpinputs = (() => {
           awjToggle(S('keying/assistant/@props/enable'), 'Assistant', { small: true, title: 'Sample a region of the picture to set the key' }),
           ...['top', 'bottom', 'left', 'right'].map(k => awjNumber(k, S(`keying/assistant/@props/${k}`), 0, 65535, { cls: 'num' })),
           awjTrigger(S('keying/assistant/@props/xGrab'), 'Grab', { reads: ['hue', 'transparency', 'foreground', 'background'].map(k => S(`keying/chroma/@props/${k}`)) })) : null),
+      el('details', { class: 'group' }, el('summary', { text: 'LUTs' }),
+        el('div', { class: 'row wrap' },
+          awjSelect('Conversion', MNG.plugConversionLut(i, p, 'mode'), [{ v: 'AUTO', text: 'auto' }, { v: 'CUSTOM', text: 'custom' }]),
+          awjSelect('Conversion LUT', MNG.plugConversionLut(i, p, 'source'), mngLuts.options('conversion', store.pval(MNG.plugConversionLutStatus(i, p, 'sourceValidity')))),
+          awjChip(store.pval(MNG.plugConversionLutStatus(i, p, 'isEnabled')) === true ? 'on' : 'off', awjWords(store.pval(MNG.plugConversionLutStatus(i, p, 'state'))))),
+        el('div', { class: 'row wrap' },
+          awjSelect('Correction', MNG.plugCorrectionLut(i, p, 'mode'), [{ v: 'MANUAL', text: 'manual' }, { v: 'AUTO', text: 'auto' }]),
+          awjSelect('Correction LUT', MNG.plugCorrectionLut(i, p, 'source'), mngLuts.options('correction', store.pval(MNG.plugCorrectionLutStatus(i, p, 'sourceValidity')))),
+          awjChip(store.pval(MNG.plugCorrectionLutStatus(i, p, 'isEnabled')) === true ? 'on' : 'off', awjWords(store.pval(MNG.plugCorrectionLutStatus(i, p, 'state'))))),
+        el('div', { class: 'hint', text: store.pval(MNG.plugStatusProp(i, p, 'canUseLutProcessing')) === false ? 'No LUT resource is allocated to this input (Setup › LUTs).' : 'A conversion LUT changes colour space or HDR on the way in; a correction LUT is applied after it. The lists offer what the libraries hold.' })),
       el('details', { class: 'group' }, el('summary', { text: 'EDID' }),
         edid ? (edid.bad ? el('div', { class: 'hint', text: 'The plug reports no EDID (blank).' })
           : el('div', { class: 'hint', text: `Presenting ${edid.mfr} ${edid.name || '(unnamed)'} — preferred ${edid.pw}×${edid.ph}${edid.rate ? ' at ' + edid.rate + ' Hz' : ''}, ${edid.year}, ${edid.ext} extension block${edid.ext === 1 ? '' : 's'}` + [1, 2, 3].map(b => store.pval(MNG.plugEdidExt(i, p, b, 'extensionType'))).filter(t => t && t !== 'UNKNOWN').map(t => ' · ' + awjWords(t)).join('') + '.' }))
@@ -6064,6 +6558,15 @@ VIEWS.lppresets = (() => {
           : null,
         blocked ? el('div', { class: 'hint bad pad', text: blocked }) : null,
         mode === 'save' && awjDialect() === 'mng' ? mngSaveFilters.panel(b, dest !== null ? awjDest(dest) : null) : null,
+        mode === 'recall' && awjDialect() === 'mng' && b.targets !== 'aux' ? (() => {
+          const screens = D.destinations().filter(d => d.kind === 'screen');
+          if (!screens.length) return null;
+          for (const d of screens) if (store.pval(MNG.presetAutoScale(d.n)) === undefined) store.pget(MNG.presetAutoScale(d.n));
+          return el('div', { class: 'row wrap' },
+            el('span', { class: 'hint', text: 'Autoscale on load:' }),
+            ...screens.map(d => awjToggle(MNG.presetAutoScale(d.n), (on) => `${d.id} ${on ? 'fit' : 'as saved'}`, { small: true, cls: 'primary', title: 'Rescale the memory’s layers to this screen’s canvas on load, or keep them as saved' })),
+            el('span', { class: 'hint', text: 'the device’s own flag per screen; a master load honours it for each screen it covers' }));
+        })() : null,
         el('div', { class: 'mem-grid' }, ...slots),
         mode === 'label' && armed !== null ? el('div', { class: 'row' },
           el('label', { text: `Slot ${armed} ` }),

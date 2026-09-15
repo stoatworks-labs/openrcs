@@ -416,6 +416,26 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   buffer already holds**, which writes no bank slot at all. Banks are read fifty
   slots at a time — each slot costs two reads — and **Read slots…** fetches the
   next page.
+- **Show** (Midra 4K / Alta 4K) — every screen and auxiliary in service side
+  by side: each screen's program or preview (one switch for all) on its own
+  canvas, editable exactly as on Layers — drag, resize, snap, the layout
+  presets — with a quick source and opacity for the layer you touch and
+  **Open in Layers** for the rest; each auxiliary's source with its picture;
+  **Take** and **Cut** per destination, **Take all** and **Cut all**. **Show
+  mode** puts everything in one big column with large take buttons, for a
+  front-of-house table or a touch screen.
+- **Cues** (every AWJ family) — a cue list over the memory banks. A cue is a
+  master memory, or a screen's or auxiliary's memory on one destination;
+  **Go** loads it to preview and takes it a quarter of a second later, **Cut**
+  loads it straight to program, **Arm** loads it to preview and leaves it
+  there. Per-cue **autofollow** with a wait chains cues; **Hold** stops the
+  chain. The list is kept in this browser for this processor — neither Web
+  RCS has a sequencer, so there is nothing on the device to keep it in.
+- **Plan** (every AWJ family) — with plan mode on, every value you set on
+  the other pages is staged here instead of written, reads show the staged
+  values so the look previews as you build it, and **Push** writes the lot
+  when a processor is there. Takes, recalls and every other trigger still go
+  straight to the processor: they are actions, not state.
 - **Inputs** (Midra 4K / Alta 4K) — every input the unit has, with its
   picture, its active plug, connector and the signal on it, **Freeze** and
   **Black**, and where the device says it is on air (program / preview) — from
@@ -427,9 +447,11 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   device's own trigger, the **keyer** — off, chroma, luma or cut and fill, with
   the parameters of whichever is chosen and the sampling assistant; the device
   says which inputs have a keyer and which can be a fill, and offers only
-  those — and the **EDID** the plug presents, decoded (make, name, preferred
-  timing) and replaceable from the device's library of factory and saved
-  EDIDs.
+  those — the **LUTs**: a conversion LUT (colour space and HDR on the way in)
+  and a correction LUT after it, each auto or a slot from the library the
+  device offers this plug — and the **EDID** the plug presents, decoded (make,
+  name, preferred timing) and replaceable from the device's library of factory
+  and saved EDIDs.
 - **Audio** (Midra 4K / Alta 4K) — the clock and rate, then every routing
   point the device has: for each screen and auxiliary the **audio layer** its
   program and preview buffers carry (one source per buffer, saved with the
@@ -454,14 +476,23 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   seconds. The second tab is each screen's **canvas**: one output, a grid of
   outputs (columns, rows, empty-cell size, gaps, which cell each output sits
   in) or free placement (canvas size and each output's top-left corner), each
-  applied with the device's trigger, plus the screen's **test pattern**.
+  applied with the device's trigger, plus the screen's **test pattern** and,
+  on a grid, the **soft edge** of each gap — blend on or off, a gamma or Bézier
+  curve, the black level — applied with the grid's own soft-edge trigger (only
+  an Eikos 4K blends; the others hold the settings). The third tab is **LUTs**:
+  the conversion and correction libraries — each slot's label, file and colour
+  spaces, erase — and the four LUT resources, each allocated to an input; a
+  `.cube` file reaches a slot through the Web RCS's upload.
 - **Presets** (Midra 4K / Alta 4K) — in Save mode a panel shows **what a save
   records**: for a screen the categories (source, position, size, opacity,
   crop, mask, border, transitions, effects, flying curve, timing, speed,
   audio), which live layers, and whether the background and top layers go in;
   for an auxiliary its four categories; for the master bank which screens and
   auxiliaries and what of each. The filter is the device's own and stays set;
-  a memory recalls only what it recorded.
+  a memory recalls only what it recorded. In Recall mode, **Autoscale on
+  load** per screen — the device's own flag — rescales a memory's layers to
+  that screen's canvas on load, or keeps them as saved; the Multiviewer page
+  has the same switch for its layout memories.
 - **Screens** (Midra 4K / Alta 4K) — tick destinations to **take, cut or
   T-bar them as one group** (All / Screens / Auxes / None pick them quickly);
   each keeps its own take time.
@@ -470,7 +501,8 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   free); the arrow keys **nudge** the selected layer a pixel, ten with Shift,
   once the canvas has focus; **Copy layer** takes every property the panel
   holds, source included, and **Paste** puts it onto any layer of any screen or
-  buffer.
+  buffer. Twelve layout presets: Fill, 2-up, 3-up, Quad, PiP, PiP ×2, 1 + 2,
+  1 + 3, 3×2, 4×2, Columns and Rows, over the fitted layers in slot order.
 - **Multiviewer** (Midra 4K / Alta 4K) — the monitoring output's windows on a
   canvas at that output's size: drag to move, corners to resize, **Quad / 3×3
   / 4×3 / 4×4** grids over the windows this unit can use. The panel sets a
@@ -488,7 +520,8 @@ processors, so the nav does not offer them. LivePremier gets **Screens** and
   with overscan) and the **pitch** for LED walls, each applied with its own
   trigger; HDR mode and nits with what the output is sending; colorimetry; the
   plug's pixel encoding, HDCP policy (from the list the plug allows), embedded
-  audio and SDI level, with whether HDCP is up on the link; the **connected
+  audio and SDI level, with whether HDCP is up on the link; the output's
+  conversion and correction **LUTs**; the **connected
   display's EDID**, decoded, with a button to save it into the device's EDID
   library under a name and slot so an input can present it; and **custom
   formats** — sixteen slots to name and erase, and an editor that takes a

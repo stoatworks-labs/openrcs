@@ -182,6 +182,16 @@ std binary and may use crates. Keep the split.
   role being the applied preconfig's `mode` for that output (`SCREEN_FORMAT`,
   `AUX*`, `MULTIVIEWER`, `DISABLE`). Write `format`, then `xUpdate`; the status
   follows within a second. Outputs are keyed `1`…`6` and `MTVW`.
+- **The screen canvas is one module, `mngCanvas`, shared by Layers and
+  Show.** A context `{n, buf}` names the screen and buffer drawn; selection
+  and re-rendering belong to the view, which the canvas reaches through
+  `onSelect`. Do not grow a second copy of the drag / snap / layout code in a
+  view.
+- **Plan mode on AWJ stages by path** (`store.planPaths`, beside the mnemonic
+  `planState`) and never stages a trigger — `Store.isTrigger` matches the
+  `x…` property at the end of a path — because a take or a recall is an
+  action, not state. `pval` prefers the staged value while plan mode is on,
+  so every view previews the plan without knowing about it.
 - **A list-valued property is spelled like a collection on the wire.** The
   store's `outputList` under a preconfig state is `@props/$output` in the
   device's reply, whichever way it was asked for — a `get` of

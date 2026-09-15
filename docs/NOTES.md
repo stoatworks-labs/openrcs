@@ -605,6 +605,61 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K: Show, Cues, Plan, LUTs, soft edge, autoscale — 2026-09-15, round five
+
+After v0.6.0. Still simulator-only; every write below made through the surface
+and read back with a second socket.
+
+- **`mngCanvas`** — the Layers canvas extracted into one module keyed by
+  `{n, buf}` (drag, resize, snap, nudge, layouts, background, top frame, the
+  fetches). Layers is a thin wrapper over it; **Show** (`lpshow`) draws every
+  destination in service with it, a card each: canvas at a width computed from
+  the pane and the column count (1–3, or one big column in Show mode), a quick
+  source/opacity row for the touched layer, `Open in Layers` (a handoff object
+  `mngShowHandoff` the Layers view's enter() consumes), take/cut per card with
+  read-backs at 300/1500 ms, Take all / Cut all. Verified: a drag on S1's card
+  moved L1 by exactly the delta, a card take ran (AT_UP), the handoff opened
+  Layers on S1/L1/preview.
+- **Twelve layouts** in `mngCanvas.LAYOUTS` (Fill … Rows); Columns/Rows divide
+  by the number of fitted layers.
+- **Cues** (`lpcues`, both AWJ families): cue = {bank kind, slot, dest, follow,
+  wait, notes}; Go = `recall(bank, slot, d, 'PREVIEW')` then `take(d)` 250 ms
+  later; Cut = recall to PROGRAM; Arm = recall to preview only; refresh at
+  400/1500 ms; autofollow timer; localStorage `openrcs.lpcues.<host>`.
+  Verified on the sim: cue 1 (screen memory 2 on S1) → UP=2 and AT_UP; autofollow
+  2 s → cue 2 (memory 2 on S2) → UP=2, AT_UP. **Sim memory slot 1 ("Fixture
+  one") is degenerate** — screenWidth 0, the round-two master-save clobber — and
+  loading it clears memoryId rather than setting it; use slot 2 for tests.
+- **Plan** (`lpplan`, both families): `store.planPaths`; `pset` stages unless
+  `Store.isTrigger(path)` (`/x[A-Z]…$`); `pval` prefers staged; `pushPlan`
+  sends the mnemonic plan then the path plan and reads every pushed path back
+  300 ms later; the header chip counts both. Verified: posH 700 staged (device
+  still 960), shown in the Layers field, pushed → device 700.
+- **Autoscale on load:** `preset/bank/control/$screen/@items/n/@props/autoScale`
+  (per screen — the Web RCS's global switch sets all four; a master load
+  honours each screen's flag) and `multiviewer/$bank/control/load/@props/
+  autoScale`. Not on the load node (`…/load/@props/autoScale` is E12). The
+  store dump had both; the vendor bundle's LOAD_ATTRIBUTES / SCREEN_ATTRIBUTES
+  name them.
+- **LUTs:** libraries `lutLibraries/{conversion|correction}/$bank/@items/n/
+  {control/@props/{label, xDelete}, status/@props/{isValid, fileName, isUsed,
+  from*/to* | colorSpace}}` — the sim answers 20 slots, the 3.3.10 store has 4,
+  so slots 6..20 are read only if 5 answers; import is `lutLibraries/<kind>/
+  import/cmd/@props/{path, label, …, slot, xRequest}` from a path on the unit
+  (not spelled — the Web RCS uploads); resources `$inputLutResource/@items/1..4/
+  control/@props/useOnInput` (`inputLutResourceList` keeps its singular);
+  per plug `control/conversionLut/@props/{mode AUTO|CUSTOM, source}` +
+  `status/conversionLut/@props/{isEnabled, state, sourceValidity}` and
+  `settings/correctionLut/{control/@props/{mode MANUAL|AUTO, source}, status/…}`;
+  per output `conversionLut/{control,status}` and `settings/correctionLut/…`.
+  Verified: resource 2 → INPUT_5 and back. The sim's libraries are empty, so
+  every sourceValidity is ["NONE"].
+- **Soft edge:** `$screen/@items/n/canvas/grid/$columnSpacing|$rowSpacing/
+  @items/i/softedge/{curve/@props/{enable, type GAMMA|BEZIER, gamma},
+  curve/point1|point2/@props/{posH, posV}, blackLevel/@props/{offset, red,
+  green, blue}}` + `canvas/grid/control/@props/xSoftedgeUpdate`. Verified
+  enable true/false on the Pulse sim, which has no blend to show — Eikos 4K only.
+
 ## Midra 4K / Alta 4K: audio, setup, input plugs, output canvas, backup, streaming — 2026-09-15, round four
 
 Two new views (Audio, Setup) and the rest of the setup surface on the existing

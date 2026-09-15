@@ -137,7 +137,10 @@ two are separate modules and why the surface tells you when it has been pointed
 at the wrong one. The take, cut, recall and subscription operations underneath
 were fired at that Pulse 4K by a separate test harness and behaved as the
 LivePremier ones do (a subscribed second socket saw a write within 40 ms).
-`openrcs`'s own surface for these goes further than the LivePremier one:
+`openrcs`'s own surface for these goes further than the LivePremier one: a
+**Show** page with every screen and auxiliary in service side by side, each
+screen's program or preview editable on its own canvas and taken alone or all
+together, with a Show mode of big targets for a front-of-house table;
 **Screens** with a T-bar, take time, freeze, copy-to-preview, step back, the
 preset toggle, Take all and the device's **quick preset** (fade to black, a
 library image or a master memory, on and off from one switch); a **Layers**
@@ -171,7 +174,15 @@ connected display's EDID (saved into the library from here) and **custom
 formats**; Presets show and set **what a save records**; Screens take, cut and
 T-bar a ticked **group** of destinations; the Layers canvas **snaps** to edges
 and centres, nudges from the arrow keys and copies a layer's whole property set
-onto any other. All of it has been driven end to end against the vendor's
+onto any other; twelve layout presets; **autoscale on load** per screen and for
+the multiviewer; **LUTs** — the two libraries named, erased and allocated to
+inputs, a conversion and a correction LUT picked per plug and per output — and
+**soft edge** on a grid canvas's gaps for the models that blend. Two more pages
+serve LivePremier as well: **Cues**, a cue list over the memory banks (recall to
+preview and take, or cut, with per-cue autofollow — neither Web RCS has a
+sequencer), and **Plan**, which stages every edit in the browser with no
+processor attached and pushes the lot on connect. All of it has been driven end
+to end against the vendor's
 **Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only — and what the
 simulators accept but do not act on is written but unproven: a timer never
 leaves `IDLE`, a capture never completes, the tally lists never fill, a stream

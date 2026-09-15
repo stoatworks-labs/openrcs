@@ -635,3 +635,25 @@ fn a_save_records_what_its_filter_says() {
     // The mode and the bank slots sit on the same node as the filters.
     assert!(mng::master_save_mode().starts_with("DeviceObject/preset/masterBank/control/save/@props/"));
 }
+
+#[test]
+fn luts_soft_edge_and_autoscale_are_spelled_where_the_simulator_answers() {
+    use mng::{GridDim, LutKind};
+    // Probed on the Midra 4K simulator 2026-09-15; the store dump spells the same.
+    assert_eq!(mng::lut_bank(LutKind::Conversion, 1, "label"), "DeviceObject/lutLibraries/conversion/$bank/@items/1/control/@props/label");
+    assert_eq!(mng::lut_bank_status(LutKind::Correction, 2, "colorSpace"), "DeviceObject/lutLibraries/correction/$bank/@items/2/status/@props/colorSpace");
+    // `inputLutResourceList` keeps the singular of its own name: `$inputLutResource`.
+    assert_eq!(mng::lut_resource(3), "DeviceObject/$inputLutResource/@items/3/control/@props/useOnInput");
+    // The conversion LUT hangs off control/status; the correction one off settings.
+    assert_eq!(mng::plug_conversion_lut(1, 1, "source"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/control/conversionLut/@props/source");
+    assert_eq!(mng::plug_conversion_lut_status(1, 1, "sourceValidity"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/status/conversionLut/@props/sourceValidity");
+    assert_eq!(mng::plug_correction_lut(1, 1, "mode"), "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/settings/correctionLut/control/@props/mode");
+    assert_eq!(mng::output_conversion_lut("1", "mode"), "DeviceObject/$output/@items/1/conversionLut/control/@props/mode");
+    assert_eq!(mng::output_correction_lut_status("MTVW", "state"), "DeviceObject/$output/@items/MTVW/settings/correctionLut/status/@props/state");
+    assert_eq!(mng::screen_grid_softedge(1, GridDim::Column, 1, "curve/@props/enable"), "DeviceObject/$screen/@items/1/canvas/grid/$columnSpacing/@items/1/softedge/curve/@props/enable");
+    assert_eq!(mng::screen_grid_softedge(2, GridDim::Row, 3, "blackLevel/@props/offset"), "DeviceObject/$screen/@items/2/canvas/grid/$rowSpacing/@items/3/softedge/blackLevel/@props/offset");
+    // Autoscale on load is a per-screen flag on the screen bank's control, not on the load node.
+    assert_eq!(mng::preset_auto_scale(2), "DeviceObject/preset/bank/control/$screen/@items/2/@props/autoScale");
+    assert_eq!(mng::mvw_load_auto_scale(), "DeviceObject/multiviewer/$bank/control/load/@props/autoScale");
+    assert_eq!(mng::LUT_RESOURCES, 4);
+}

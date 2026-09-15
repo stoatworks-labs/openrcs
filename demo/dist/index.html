@@ -6,20 +6,20 @@
 <title>openrcs — demo</title>
 <meta name="description" content="A browsable demo of openrcs, the open control surface for Analog Way Midra and LiveCore video processors. Runs a simulated device in your browser.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d1015'/%3E%3Crect x='3' y='4' width='10' height='3' rx='1' fill='%2322b8cf'/%3E%3Crect x='3' y='9' width='6' height='3' rx='1' fill='%233fb950'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=82865bda">
-<link rel="stylesheet" href="demo.css?v=82865bda">
+<link rel="stylesheet" href="style.css?v=f3652e74">
+<link rel="stylesheet" href="demo.css?v=f3652e74">
 </head>
 <body>
 <!-- Installs globalThis.OPENRCS_DEMO_DEVICE. Classic, not deferred: it has to
      exist before app.js constructs its Store and looks for the seam. -->
-<script src="device.js?v=82865bda" data-fixtures="./fixtures.json?v=82865bda"></script>
+<script src="device.js?v=f3652e74" data-fixtures="./fixtures.json?v=f3652e74"></script>
 <div id="app" class="app"></div>
-<script type="module">import('./app.js?v=82865bda');</script>
-<script src="demo-footer.js?v=82865bda" defer></script>
-<script src="support-footer.js?v=82865bda" defer
+<script type="module">import('./app.js?v=f3652e74');</script>
+<script src="demo-footer.js?v=f3652e74" defer></script>
+<script src="support-footer.js?v=f3652e74" defer
         data-app="openrcs"
         data-repo="https://github.com/stoatworks-labs/openrcs"
-        data-version="v0.5.2"
+        data-version="v0.6.0"
         data-note="This is a demo running a simulated device in your browser — no processor is involved, and nothing you do here leaves the tab."
 ></script>
 </body>

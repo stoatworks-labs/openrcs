@@ -1764,6 +1764,118 @@ pub fn master_save_filter(prop: &str) -> String {
     format!("DeviceObject/preset/masterBank/control/save/@props/{prop}")
 }
 
+/// Rescale a memory's layers to the screen's canvas on load (true), or keep
+/// them as saved. The device's own flag, per screen; a master load honours it
+/// for each screen it covers. The Web RCS's "Auto Scale" switch sets all four.
+pub fn preset_auto_scale(screen: u8) -> String {
+    format!("DeviceObject/preset/bank/control/$screen/@items/{screen}/@props/autoScale")
+}
+
+/// The multiviewer's own autoscale-on-load flag.
+pub fn mvw_load_auto_scale() -> String {
+    String::from("DeviceObject/multiviewer/$bank/control/load/@props/autoScale")
+}
+
+// -------------------------------------------------------------------- LUTs
+
+/// The two LUT libraries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LutKind {
+    /// Colour-space and HDR conversion, described by a from/to pair.
+    Conversion,
+    /// A correction applied after it, in one colour space.
+    Correction,
+}
+
+impl LutKind {
+    fn node(self) -> &'static str {
+        match self {
+            LutKind::Conversion => "conversion",
+            LutKind::Correction => "correction",
+        }
+    }
+}
+
+/// LUT resources (processors) on the model; each is allocated to one input.
+pub const LUT_RESOURCES: u8 = 4;
+
+/// A library slot's control: `label`, or the trigger `xDelete`. A `.cube`
+/// file reaches a slot through `lutLibraries/<kind>/import/cmd` from a path
+/// on the unit — the Web RCS uploads it — which this crate does not spell.
+pub fn lut_bank(kind: LutKind, slot: u8, prop: &str) -> String {
+    format!("DeviceObject/lutLibraries/{}/$bank/@items/{slot}/control/@props/{prop}", kind.node())
+}
+
+/// A library slot's status: `isValid`, `fileName`, `isUsed`, and for a
+/// conversion LUT `fromColorSpace`, `fromHdrType`, `fromHdrNitLevel`,
+/// `toColorSpace`, `toHdrType`, `toHdrNitLevel`; for a correction LUT
+/// `colorSpace`. A Pulse 4K on 3.3.10 carries four slots per library; the
+/// simulator answers twenty.
+pub fn lut_bank_status(kind: LutKind, slot: u8, prop: &str) -> String {
+    format!("DeviceObject/lutLibraries/{}/$bank/@items/{slot}/status/@props/{prop}", kind.node())
+}
+
+/// Which input a LUT resource serves (`INPUT_<n>`). Only an input with one
+/// can run a LUT on its plug (`plug_status(…, "canUseLutProcessing")`).
+pub fn lut_resource(n: u8) -> String {
+    format!("DeviceObject/$inputLutResource/@items/{n}/control/@props/useOnInput")
+}
+
+/// A plug's conversion LUT: `mode` (`AUTO` / `CUSTOM`) and `source` (a slot
+/// number as a string, or `NONE`), from the status `sourceValidity`.
+pub fn plug_conversion_lut(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/control/conversionLut/@props/{prop}")
+}
+
+/// The plug's conversion LUT as running: `isEnabled`, `state`, `source`,
+/// `sourceValidity`.
+pub fn plug_conversion_lut_status(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/status/conversionLut/@props/{prop}")
+}
+
+/// A plug's correction LUT: `mode` (`MANUAL` / `AUTO`) and `source`. Under
+/// `settings`, unlike the conversion one.
+pub fn plug_correction_lut(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/settings/correctionLut/control/@props/{prop}")
+}
+
+/// The plug's correction LUT as running.
+pub fn plug_correction_lut_status(n: u8, plug: u8, prop: &str) -> String {
+    format!("DeviceObject/$input/@items/INPUT_{n}/$plug/@items/{plug}/settings/correctionLut/status/@props/{prop}")
+}
+
+/// An output's conversion LUT: `mode`, `source`.
+pub fn output_conversion_lut(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/conversionLut/control/@props/{prop}")
+}
+
+/// The output's conversion LUT as running.
+pub fn output_conversion_lut_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/conversionLut/status/@props/{prop}")
+}
+
+/// An output's correction LUT: `mode`, `source`. Under `settings`.
+pub fn output_correction_lut(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/settings/correctionLut/control/@props/{prop}")
+}
+
+/// The output's correction LUT as running.
+pub fn output_correction_lut_status(key: &str, prop: &str) -> String {
+    format!("DeviceObject/$output/@items/{key}/settings/correctionLut/status/@props/{prop}")
+}
+
+// --------------------------------------------------------------- soft edge
+
+/// Soft edge on one gap of a grid canvas, by the tail of its path under
+/// `softedge`: `curve/@props/{enable, type (GAMMA / BEZIER), gamma}`,
+/// `curve/point1/@props/{posH, posV}`, `curve/point2/…`,
+/// `blackLevel/@props/{offset, red, green, blue}`. Applied with the grid's
+/// `xSoftedgeUpdate` ([`screen_grid`]). Only an Eikos 4K blends; the other
+/// models carry the settings and do nothing with them.
+pub fn screen_grid_softedge(screen: u8, dim: GridDim, i: u8, tail: &str) -> String {
+    format!("DeviceObject/$screen/@items/{screen}/canvas/grid/${}Spacing/@items/{i}/softedge/{tail}", dim.word())
+}
+
 /// A subscription prefix that covers every destination's transition control
 /// and status — both lists, since the pushes are filtered by prefix.
 pub const SUB_TRANSITIONS: &str = "DeviceObject/transition";
