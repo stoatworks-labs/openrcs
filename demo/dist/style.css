@@ -760,3 +760,18 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
   color: color-mix(in srgb, var(--accent) 85%, #fff);
   background: #000a; padding: 1px 5px; border-radius: 3px 3px 0 0; white-space: nowrap;
 }
+
+/* ---- AWJ (Midra 4K / Alta 4K) surface ---- */
+.btn.small { padding: 4px 8px; font-size: 11px; min-height: 0; }
+.chip.pgm .dot { background: var(--pgm); box-shadow: 0 0 8px var(--pgm); }
+.chip.pgm { color: var(--pgm); }
+.chip.pvw .dot { background: var(--pvw); box-shadow: 0 0 8px var(--pvw); }
+.chip.pvw { color: var(--pvw); }
+details.group { border: 1px solid var(--line); border-radius: var(--r); padding: 6px 10px; }
+details.group summary { cursor: pointer; font-weight: 600; font-size: 12px; color: var(--muted); user-select: none; }
+details.group > :not(summary) { margin-top: 8px; }
+tr.dim { opacity: .5; }
+input.tbar { width: 120px; vertical-align: middle; }
+input.num { width: 64px; }
+td.acts { white-space: nowrap; }
+td.acts .btn { margin-right: 4px; }

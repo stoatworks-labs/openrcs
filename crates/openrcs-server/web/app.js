@@ -455,7 +455,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lppresets', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -517,7 +517,7 @@ function header() {
 
 const NAV = [
   { section: () => awjSeriesName() },
-  ['lpscreens', 'Screens'], ['lppresets', 'Presets'],
+  ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpinputs', 'Inputs'],
   { section: 'Program' },
   ['showmode', 'Show mode'], ['workspace', 'Workspace'], ['stage', 'Stage'], ['wall', 'Wall'], ['memories', 'Memories'], ['cues', 'Cues'], ['keys', 'Keys'], ['live', 'Live'], ['layers', 'Layers'], ['destinations', 'Destinations'],
   { section: 'Setup' },
@@ -544,6 +544,10 @@ const VIEW_REQUIRES = {
   shows: () => store.byGroup.has('PRESET') || store.byGroup.has('GRP_PRESET_ELEMENT'),
   destinations: 'GCsta',   // screen-group take model (LiveCore)
   wall: 'OSpoh',           // screen output-position map (LiveCore)
+  // Live layers and inputs are spelled for the Midra 4K / Alta 4K model only;
+  // the LivePremier dialect has neither yet.
+  lplayers: () => awjDialect() === 'mng',
+  lpinputs: () => awjDialect() === 'mng',
 };
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
@@ -2989,9 +2993,55 @@ const MNG = {
     `DeviceObject/${root}/control/load/$slot/@items/${slot}/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${target}/@props/xRequest`,
   loadMaster: (slot, target) =>
     `DeviceObject/preset/masterBank/control/load/$slot/@items/${slot}/$preset/@items/${target}/@props/xRequest`,
+  // Save nests the other way round: destination, buffer, then slot.
+  save: (root, slot, d, from) =>
+    `DeviceObject/${root}/control/save/${MNG_LIST[d.kind]}/@items/${d.n}/$preset/@items/${from}/$slot/@items/${slot}/@props/xRequest`,
+  saveMaster: (slot) => `DeviceObject/preset/masterBank/control/save/$slot/@items/${slot}/@props/xRequest`,
+  masterSaveMode: () => 'DeviceObject/preset/masterBank/control/save/@props/mode',
+  // Where a SAVE_FROM_* master save puts each destination's buffer: a slot in
+  // its own bank, 1 by default for every one of them. Set before the save.
+  masterSaveBankSlot: (d) => `DeviceObject/preset/masterBank/control/save/${MNG_LIST[d.kind]}/@items/${d.n}/@props/bankSlot`,
+  presetDelete: (root, n) => `DeviceObject/${root}/$slot/@items/${n}/control/@props/xDelete`,
+  // The rest of the take node: the T-bar is written on control and read on
+  // status, and TAKE ALL is one list on the node's own control.
+  tbarControl: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/tbarPosition`,
+  tbarStatus: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/status/@props/tbarPosition`,
+  presetToggle: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/enablePresetToggle`,
+  stepBack: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/xStepBack`,
+  copyToPreview: (d) => `DeviceObject/transition/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/xCopyProgramToPreview`,
+  freeze: (d) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}/control/@props/freeze`,
+  // Layers: geometry and every other leaf hang off the buffer; the canvas,
+  // freeze and fader off the screen. `layerMode` (applied preconfig) says
+  // which of the eight slots are real.
+  canvasW: (n) => `DeviceObject/$screen/@items/${n}/canvas/status/size/@props/sizeH`,
+  canvasH: (n) => `DeviceObject/$screen/@items/${n}/canvas/status/size/@props/sizeV`,
+  layerMode: (n, l) => `${MNG_CURRENT}/$screen/@items/${n}/$liveLayer/@items/${l}/@props/mode`,
+  layerProp: (n, buffer, l, tail) => `DeviceObject/$screen/@items/${n}/$preset/@items/${buffer}/$liveLayer/@items/${l}/${tail}`,
+  layerFreeze: (n, l) => `DeviceObject/$screen/@items/${n}/$liveLayer/@items/${l}/control/@props/freeze`,
+  layerFader: (n, l) => `DeviceObject/$screen/@items/${n}/$liveLayer/@items/${l}/fader/@props/opacity`,
+  layerFadeIn: (n, l) => `DeviceObject/$screen/@items/${n}/$liveLayer/@items/${l}/fader/@props/xFadeIn`,
+  layerFadeOut: (n, l) => `DeviceObject/$screen/@items/${n}/$liveLayer/@items/${l}/fader/@props/xFadeOut`,
+  auxSource: (n, buffer) => `DeviceObject/$auxiliaryScreen/@items/${n}/$preset/@items/${buffer}/background/source/@props/content`,
+  subDestination: (d) => `DeviceObject/${MNG_LIST[d.kind]}/@items/${d.n}`,
+  // Inputs are keyed INPUT_n; labels, connector and signal live on the plug.
+  inputAvailable: (i) => `DeviceObject/$input/@items/INPUT_${i}/status/@props/isAvailable`,
+  inputLed: (i) => `DeviceObject/$input/@items/INPUT_${i}/status/@props/ledColor`,
+  inputPlug: (i) => `DeviceObject/$input/@items/INPUT_${i}/control/@props/plug`,
+  inputFreeze: (i) => `DeviceObject/$input/@items/INPUT_${i}/control/@props/freeze`,
+  inputBlack: (i) => `DeviceObject/$input/@items/INPUT_${i}/control/@props/black`,
+  plugLabel: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/control/@props/label`,
+  plugType: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/@props/type`,
+  plugSignalValid: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/signal/@props/isValid`,
+  plugFormat: (i, p) => `DeviceObject/$input/@items/INPUT_${i}/$plug/@items/${p}/status/signal/@props/formatName`,
+  // The device's own on-air lists: usedOnScreenPgm / usedOnScreenPrw / usedOnAuxPgm / usedOnAuxPrw.
+  tally: (bus) => `DeviceObject/tallies/inputs/@props/${bus}`,
   // Both lists' control and status, one prefix.
   SUB_TRANSITIONS: 'DeviceObject/transition',
+  SUB_TALLIES: 'DeviceObject/tallies',
+  SUB_INPUTS: 'DeviceObject/$input',
 };
+const MNG_INPUTS = 16;
+const MNG_TALLY_BUSES = ['usedOnScreenPgm', 'usedOnScreenPrw', 'usedOnAuxPgm', 'usedOnAuxPrw'];
 
 // Every transition state names the end the T-bar is at or came from, so the
 // rule is the DOWN/UP suffix. Testing only for AT_UP gets the four in-flight
@@ -3087,9 +3137,52 @@ const AWJ_DIALECTS = {
     // Transitions for every destination, plus the memory bookkeeping of each
     // one in service — a recall made anywhere then shows up here too.
     subscriptions() {
-      return [MNG.SUB_TRANSITIONS,
+      return [MNG.SUB_TRANSITIONS, MNG.SUB_TALLIES,
         ...this.destinations().flatMap(d => ['UP', 'DOWN'].map(b => MNG.bufferStatus(d, b)))];
     },
+    // The rest of the take node. Every one is feature-detected by the views,
+    // so the LivePremier dialect simply lacks them.
+    stepBack: (d) => store.pset(MNG.stepBack(d), true),
+    copyToPreview: (d) => store.pset(MNG.copyToPreview(d), true),
+    frozen: (d) => store.pval(MNG.freeze(d)) === true,
+    setFrozen(d, on) { store.pset(MNG.freeze(d), on); if (!awjLive) setTimeout(() => store.pget(MNG.freeze(d)), 120); },
+    tbar: (d) => store.pval(MNG.tbarStatus(d)),
+    setTbar: (d, v) => pthrottledSet(MNG.tbarControl(d), Math.max(0, Math.min(65535, Math.round(v)))),
+    presetToggle: (d) => store.pval(MNG.presetToggle(d)),
+    setPresetToggle(d, on) { store.pset(MNG.presetToggle(d), on); if (!awjLive) setTimeout(() => store.pget(MNG.presetToggle(d)), 120); },
+    setTakeTime(d, tenths) { store.pset(MNG.takeTime(d), Math.max(0, Math.min(3000, Math.round(tenths)))); if (!awjLive) setTimeout(() => store.pget(MNG.takeTime(d)), 120); },
+    // TAKE ALL the way the vendor's Web RCS does it: one xTake per
+    // destination, back to back. (The take node also carries an `xTakeMany`
+    // list; the simulator ignores it and the vendor UI never writes it.)
+    takeMany(dests) { for (const d of dests) store.pset(MNG.take(d), true); },
+    refreshExtras(d) { store.pget(MNG.freeze(d)); store.pget(MNG.tbarStatus(d)); store.pget(MNG.presetToggle(d)); },
+    // Bank writes. A screen or auxiliary saves one of its buffers. A master
+    // save records what `mode` says: from a buffer, the device first stores
+    // every in-service destination's buffer into that destination's own bank
+    // at `bankSlot` — 1 for all of them out of the box, which is how a master
+    // save overwrites screen memory 1 — so the slots are written first, to
+    // the master's own number, and the view refuses when any is occupied.
+    // `EXISTING` records the memories the buffers already hold and writes no
+    // bank slot at all.
+    save(bank, slot, d, from) {
+      if (bank.kind !== 'master') { store.pset(MNG.save(bank.root, slot, d, from), true); return; }
+      if (from === 'EXISTING') store.pset(MNG.masterSaveMode(), 'USE_EXISTING_MEMORIES');
+      else {
+        for (const dest of this.destinations()) store.pset(MNG.masterSaveBankSlot(dest), slot);
+        store.pset(MNG.masterSaveMode(), from === 'PROGRAM' ? 'SAVE_FROM_PGM' : 'SAVE_FROM_PRW');
+      }
+      store.pset(MNG.saveMaster(slot), true);
+    },
+    // The screen/aux slots a master save from a buffer would write, and
+    // which of them already hold something.
+    masterSaveTouches(slot) {
+      return this.destinations().map(dest => {
+        const b = this.banks.find(x => x.kind === dest.kind);
+        return { dest, bank: b, occupied: store.pval(MNG.presetValid(b.root, slot)) === true };
+      });
+    },
+    erase: (bank, slot) => store.pset(MNG.presetDelete(bank.root, slot), true),
+    setLabel: (bank, slot, text) => store.pset(MNG.presetLabel(bank.root, slot), String(text ?? '')),
     // Which memory a buffer holds is on the destination here: 0 when it was
     // not loaded from one.
     showsMemory: true,
@@ -3125,22 +3218,550 @@ function awjMismatch() {
   return `This processor reports itself as ${name}, which is not a ${awjSeriesName()}. Pick ${pick} in Connection.`;
 }
 
-// ---------- AWJ: Screens ----------
-VIEWS.lpscreens = (() => {
-  let live = false;      // whether we have written a subscription list
+// ---------- AWJ: live subscriptions, shared ----------
+// The device's subscription list is one list per connection and every write
+// of it is a replace, so the views cannot each keep their own: whichever wrote
+// last would silence the rest. One flag, one union — the dialect's base
+// prefixes (transitions, memory bookkeeping, tallies) plus whatever the view
+// on screen asked for — and the toggle lives on every view that needs pushes.
+let awjLive = false;
+let awjViewSubs = () => [];
+function awjApplySubs() {
+  if (!isAwj()) return;
+  store.psub(awjLive ? [...new Set([...awj().subscriptions(), ...awjViewSubs()])] : []);
+}
+function setAwjLive(on) { awjLive = on; awjApplySubs(); store.notify(); }
+function awjLiveRow(what = 'changes') {
+  return el('div', { class: 'row' },
+    el('button', { class: awjLive ? 'btn primary' : 'btn', onclick: () => setAwjLive(!awjLive) },
+      awjLive ? 'Live updates on' : 'Live updates off'),
+    el('span', { class: 'hint', text: awjLive
+      ? `The device is pushing ${what} to this bridge.`
+      : 'This processor tells a client nothing until asked to. Until this is on, what you see is what was last read.' }));
+}
 
-  function setLive(on) {
-    live = on;
-    // An empty list turns pushes off again — the device filters by prefix, and
-    // nothing matches nothing.
-    store.psub(on ? awj().subscriptions() : []);
+// AWJ writes from a drag: the same 40 ms gate as the mnemonic side, keyed by path.
+function pthrottledSet(path, v) {
+  const now = performance.now();
+  const last = _throttle.get(path) || 0;
+  if (now - last > 40) { _throttle.set(path, now); store.pset(path, v); }
+  else { clearTimeout(_throttle.get(path + ':t')); _throttle.set(path + ':t', setTimeout(() => store.pset(path, v), 45)); }
+}
+
+// ---------- Midra 4K / Alta 4K: the live-layer property set ----------
+// The fifty-seven leaves a live layer carries, with the ranges and enums the
+// device declares — read off a Pulse 4K's own bundle and store, not guessed.
+// Position and size are what the canvas edits; the rest is the properties
+// panel. `opacity` runs to 256, not 255; borders and shadows to 255.
+const MNG_ENUMS = {
+  LAYER_ASPECT: ['GLOBAL_SETTING', '1_1', 'CENTERED', 'FULLSCREEN', 'CROPPED', 'INPUT_SETTING'],
+  PRESET_EFFECT_FLAGS: ['FLIP_H', 'FLIP_V', 'BLACK_N_WHITE', 'NEGATIVE', 'SEPIA', 'SOLAR'],
+  LAYER_BORDER_FLAGS: ['EDGE', 'SMOOTH', 'ROUNDED'],
+  PRESET_TRANSITION_FLAGS: ['DISABLE_CROSS_EFFECT', 'DISABLE_CROSS_DEPTH'],
+  LAYER_TRANSITION: ['CUT', 'FADE', 'SLIDE', 'WIPE', 'CIRCLE', 'STRETCH'],
+  LAYER_TRANSITION_WAY: ['LEFT_TO_RIGHT', 'RIGHT_TO_LEFT', 'BOTTOM_TO_UP', 'UP_TO_BOTTOM', 'V_FROM_TO_CENTER', 'H_FROM_TO_CENTER', 'HV_FROM_TO_CENTER', 'SW_TO_NE', 'SE_TO_NW', 'NW_TO_SE', 'NE_TO_SW'],
+  PRESET_FLYING_TYPE: ['LINEAR', 'BEZIER_1PT', 'BEZIER_2PT', 'DEVIANT_CLOCKWISE', 'DEVIANT_ANTICLOCKWISE'],
+  PRESET_TRANSITION_SPEED: ['LINEAR', 'SMOOTH'],
+};
+const MNG_GEOM = {
+  posH: 'position/@props/posH', posV: 'position/@props/posV',
+  sizeH: 'size/@props/sizeH', sizeV: 'size/@props/sizeV',
+  source: 'source/@props/input', opacity: 'opacity/@props/opacity', state: 'status/@props/state',
+};
+const pct256 = (v) => Math.round(v / 256 * 100) + '%';
+const MNG_LAYER_PROPS = [
+  { g: 'Opacity', items: [
+    { tail: 'opacity/@props/opacity', label: 'Opacity', type: 'range', min: 0, max: 256, fmt: pct256 },
+    { tail: 'opacity/@props/inhibitKeying', label: 'Inhibit keying', type: 'bool' }] },
+  { g: 'Crop', items: [
+    { tail: 'crop/@props/top', label: 'Top', type: 'int', min: 0, max: 65535 },
+    { tail: 'crop/@props/bottom', label: 'Bottom', type: 'int', min: 0, max: 65535 },
+    { tail: 'crop/@props/left', label: 'Left', type: 'int', min: 0, max: 65535 },
+    { tail: 'crop/@props/right', label: 'Right', type: 'int', min: 0, max: 65535 },
+    { tail: 'crop/@props/aspectOverride', label: 'Aspect', type: 'enum', values: MNG_ENUMS.LAYER_ASPECT }] },
+  { g: 'Mask', items: [
+    { tail: 'mask/@props/top', label: 'Top', type: 'int', min: 0, max: 65535 },
+    { tail: 'mask/@props/bottom', label: 'Bottom', type: 'int', min: 0, max: 65535 },
+    { tail: 'mask/@props/left', label: 'Left', type: 'int', min: 0, max: 65535 },
+    { tail: 'mask/@props/right', label: 'Right', type: 'int', min: 0, max: 65535 }] },
+  { g: 'Effects', items: [
+    { tail: 'effects/@props/flags', label: 'Effects', type: 'flags', values: MNG_ENUMS.PRESET_EFFECT_FLAGS }] },
+  { g: 'Border', items: [
+    { tail: 'border/edge/@props/style', label: 'Style', type: 'flags', values: MNG_ENUMS.LAYER_BORDER_FLAGS },
+    { tail: 'border/edge/@props/sizeH', label: 'Width', type: 'int', min: 0, max: 255 },
+    { tail: 'border/edge/@props/sizeV', label: 'Height', type: 'int', min: 0, max: 255 },
+    { tail: 'border/edge/@props/radius', label: 'Radius', type: 'int', min: 0, max: 255 },
+    { tail: 'border/edge/@props/opacity', label: 'Opacity', type: 'range', min: 0, max: 255, fmt: v => Math.round(v / 255 * 100) + '%' },
+    { tail: 'border/edge/color/@props/red', label: 'Red', type: 'int', min: 0, max: 255 },
+    { tail: 'border/edge/color/@props/green', label: 'Green', type: 'int', min: 0, max: 255 },
+    { tail: 'border/edge/color/@props/blue', label: 'Blue', type: 'int', min: 0, max: 255 }] },
+  { g: 'Shadow', items: [
+    { tail: 'border/shadow/@props/style', label: 'Style', type: 'flags', values: MNG_ENUMS.LAYER_BORDER_FLAGS },
+    { tail: 'border/shadow/@props/sizeH', label: 'Offset X', type: 'int', min: -512, max: 512 },
+    { tail: 'border/shadow/@props/sizeV', label: 'Offset Y', type: 'int', min: -512, max: 512 },
+    { tail: 'border/shadow/@props/radius', label: 'Radius', type: 'int', min: 0, max: 255 },
+    { tail: 'border/shadow/@props/opacity', label: 'Opacity', type: 'range', min: 0, max: 255, fmt: v => Math.round(v / 255 * 100) + '%' }] },
+  { g: 'Transitions', items: [
+    { tail: 'transition/opening/@props/type', label: 'Opening', type: 'enum', values: MNG_ENUMS.LAYER_TRANSITION },
+    { tail: 'transition/opening/@props/way', label: 'Opening way', type: 'enum', values: MNG_ENUMS.LAYER_TRANSITION_WAY },
+    { tail: 'transition/closing/@props/type', label: 'Closing', type: 'enum', values: MNG_ENUMS.LAYER_TRANSITION },
+    { tail: 'transition/closing/@props/way', label: 'Closing way', type: 'enum', values: MNG_ENUMS.LAYER_TRANSITION_WAY },
+    { tail: 'transition/@props/flags', label: 'Cross', type: 'flags', values: MNG_ENUMS.PRESET_TRANSITION_FLAGS },
+    { tail: 'flying/@props/type', label: 'Flying curve', type: 'enum', values: MNG_ENUMS.PRESET_FLYING_TYPE },
+    { tail: 'speed/@props/type', label: 'Speed', type: 'enum', values: MNG_ENUMS.PRESET_TRANSITION_SPEED }] },
+];
+
+// ---------- Midra 4K / Alta 4K: inputs, shared by the views ----------
+// Labels live on plugs, so the input's active plug has to be known before its
+// label can be asked for; this fetches that second layer once per plug seen.
+const mngInputs = (() => {
+  const fetched = new Set();
+  function ensure(i) {
+    const plug = store.pval(MNG.inputPlug(i));
+    if (plug == null) return;
+    const k = `${i}:${plug}`;
+    if (fetched.has(k)) return;
+    fetched.add(k);
+    for (const p of [MNG.plugLabel(i, plug), MNG.plugType(i, plug), MNG.plugSignalValid(i, plug), MNG.plugFormat(i, plug)]) store.pget(p);
+  }
+  function refresh() {
+    fetched.clear();
+    for (let i = 1; i <= MNG_INPUTS; i++)
+      for (const p of [MNG.inputAvailable(i), MNG.inputLed(i), MNG.inputPlug(i), MNG.inputFreeze(i), MNG.inputBlack(i)]) store.pget(p);
+    for (const b of MNG_TALLY_BUSES) store.pget(MNG.tally(b));
+  }
+  /** One input, as the surface sees it. */
+  function get(i) {
+    ensure(i);
+    const plug = store.pval(MNG.inputPlug(i));
+    const at = (f) => (plug == null ? undefined : store.pval(f(i, plug)));
+    return {
+      n: i, key: `INPUT_${i}`,
+      available: store.pval(MNG.inputAvailable(i)),
+      led: store.pval(MNG.inputLed(i)),
+      plug,
+      label: at(MNG.plugLabel) || '',
+      type: at(MNG.plugType),
+      signal: at(MNG.plugSignalValid),
+      format: at(MNG.plugFormat),
+      frozen: store.pval(MNG.inputFreeze(i)) === true,
+      black: store.pval(MNG.inputBlack(i)) === true,
+    };
+  }
+  /** The inputs this unit actually has, in order. */
+  function available() {
+    const out = [];
+    for (let i = 1; i <= MNG_INPUTS; i++) if (store.pval(MNG.inputAvailable(i)) === true) out.push(get(i));
+    return out;
+  }
+  /** Which buses an input is on right now, from the device's own lists. */
+  function tally(key) {
+    const on = (b) => (store.pval(MNG.tally(b)) || []).includes(key);
+    return { pgm: on('usedOnScreenPgm') || on('usedOnAuxPgm'), pvw: on('usedOnScreenPrw') || on('usedOnAuxPrw') };
+  }
+  /** `INPUT_7` -> "IN 7 · Stage"; `COLOR` -> "Colour"; NONE -> "— none —". */
+  function name(v) {
+    if (!v || v === 'NONE') return '— none —';
+    if (v === 'COLOR') return 'Colour';
+    const m = /^INPUT_(\d+)$/.exec(v);
+    if (!m) return String(v);
+    const lbl = get(+m[1]).label;
+    return `IN ${m[1]}${lbl ? ' · ' + lbl : ''}`;
+  }
+  function sourceOptions(cur) {
+    const opts = [{ v: 'NONE', text: '— none —' }];
+    for (const i of available()) opts.push({ v: i.key, text: `IN ${i.n}${i.label ? ' · ' + i.label : ''}${i.signal === false ? ' (no signal)' : ''}` });
+    opts.push({ v: 'COLOR', text: 'Colour' });
+    if (cur && !opts.some(o => o.v === cur)) opts.push({ v: cur, text: String(cur) });
+    return opts;
+  }
+  return { ensure, refresh, get, available, tally, name, sourceOptions };
+})();
+
+const mngSourceColor = (v) => {
+  const m = /^INPUT_(\d+)$/.exec(String(v || ''));
+  if (m) return srcColor(+m[1]);
+  return v === 'COLOR' ? '#777' : 'transparent';
+};
+
+// ---------- AWJ: Layers (Midra 4K / Alta 4K) ----------
+// One screen at a time, program or preview, its fitted live layers on a canvas
+// drawn to the applied configuration's size. Drag to move, corners to resize;
+// the panel on the right edits everything else the device holds for a layer.
+// An auxiliary has no layers — its preset is one background source — so it
+// gets a picker and nothing to drag.
+VIEWS.lplayers = (() => {
+  let dest = null;         // destination id
+  let which = 'preview';   // 'program' | 'preview'
+  let sel = 1;             // selected layer
+  const seen = new Set();  // destination+buffer whose layers were read
+
+  const D = () => awj();
+  const cur = () => (dest ? awjDest(dest) : null);
+  const buffer = () => cur() ? D().buffers(cur())[which] : 'UP';
+
+  function fitted(d) {
+    if (!d || d.kind !== 'screen') return [];
+    const out = [];
+    for (let l = 1; l <= 8; l++) {
+      const m = store.pval(MNG.layerMode(d.n, l));
+      if (m !== undefined && m !== 'DISABLE') out.push(l);
+    }
+    return out;
+  }
+  function canvasPx(d) {
+    const w = store.pval(MNG.canvasW(d.n)), h = store.pval(MNG.canvasH(d.n));
+    return { w: w > 0 ? w : 1920, h: h > 0 ? h : 1080, reported: w > 0 && h > 0 };
+  }
+  const P = (l, tail) => MNG.layerProp(cur().n, buffer(), l, tail);
+  const gv = (l, key) => store.pval(P(l, MNG_GEOM[key]));
+
+  function fetchLayers(d, buf) {
+    if (!d || d.kind !== 'screen') return;
+    const k = `${d.id}:${buf}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    for (const l of fitted(d)) {
+      for (const tail of Object.values(MNG_GEOM)) store.pget(MNG.layerProp(d.n, buf, l, tail));
+      store.pget(MNG.layerFreeze(d.n, l));
+      store.pget(MNG.layerFader(d.n, l));
+    }
+  }
+  function fetchSelected() {
+    const d = cur();
+    if (!d || d.kind !== 'screen') return;
+    for (const g of MNG_LAYER_PROPS) for (const it of g.items) store.pget(P(sel, it.tail));
+  }
+  function refetch() {
+    seen.clear();
+    const d = cur();
+    if (!d) return;
+    if (d.kind === 'aux') { for (const b of ['UP', 'DOWN']) store.pget(MNG.auxSource(d.n, b)); return; }
+    for (const b of ['UP', 'DOWN']) fetchLayers(d, b);
+    fetchSelected();
+  }
+  // Settle on a destination and read it. Split from enter() because a view
+  // opened from a bookmark runs enter() before the processor has answered
+  // anything — so render() calls this too, and it only acts when something
+  // changed. No notify here: a render in progress picks the result up.
+  function settle() {
+    const used = D().destinations();
+    if (!used.length) return false;
+    if (dest && used.some(d => d.id === dest)) return false;
+    dest = used[0].id;
+    const d = cur();
+    if (d && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
+    awjViewSubs = () => (cur() ? [MNG.subDestination(cur())] : []);
+    awjApplySubs();
+    mngInputs.refresh();
+    refetch();
+    return true;
+  }
+  function pick(id) {
+    dest = id;
+    const d = cur();
+    if (d && !fitted(d).includes(sel)) sel = fitted(d)[0] ?? 1;
+    awjViewSubs = () => (cur() ? [MNG.subDestination(cur())] : []);
+    awjApplySubs();
+    refetch();
     store.notify();
   }
 
   function enter() {
+    if (awjDialect() !== 'mng') return;
+    dest = null;
+    if (!settle()) awjViewSubs = () => [];
+  }
+
+  // ---- geometry: the device keeps a layer's CENTRE; the canvas works in edges.
+  function rectPx(l) {
+    const w = gv(l, 'sizeH') ?? 0, h = gv(l, 'sizeV') ?? 0;
+    const cx = gv(l, 'posH') ?? 0, cy = gv(l, 'posV') ?? 0;
+    return { left: cx - w / 2, top: cy - h / 2, w, h };
+  }
+  function setGeom(l, r) {
+    pthrottledSet(P(l, MNG_GEOM.sizeH), Math.max(0, Math.round(r.w)));
+    pthrottledSet(P(l, MNG_GEOM.sizeV), Math.max(0, Math.round(r.h)));
+    pthrottledSet(P(l, MNG_GEOM.posH), Math.round(r.left + r.w / 2));
+    pthrottledSet(P(l, MNG_GEOM.posV), Math.round(r.top + r.h / 2));
+  }
+  // Reads after a write, since the device answers a replace with nothing and
+  // pushes only while Live updates is on.
+  function readBack(l) {
+    if (awjLive) return;
+    setTimeout(() => { for (const tail of Object.values(MNG_GEOM)) store.pget(P(l, tail)); }, 120);
+  }
+
+  function dragMove(e, l, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      const r = { ...r0, left: r0.left + dx, top: r0.top + dy };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      setGeom(l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(l); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragResize(e, l, scale, corner) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget.parentNode;
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      const r = { left, top, w: right - left, h: bot - top };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
+      setGeom(l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(l); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+
+  // Layout presets over the fitted layers, in slot order. Only the geometry
+  // moves; sources stay where they are.
+  function layout(name) {
+    const d = cur(); if (!d) return;
+    const c = canvasPx(d), ls = fitted(d);
+    const cells = {
+      fill: [[0, 0, 1, 1]],
+      two: [[0, 0.25, 0.5, 0.5], [0.5, 0.25, 0.5, 0.5]],
+      three: [[0, 1 / 3, 1 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3, 1 / 3], [2 / 3, 1 / 3, 1 / 3, 1 / 3]],
+      quad: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+      pip: [[0, 0, 1, 1], [0.66, 0.66, 0.3, 0.3]],
+    }[name];
+    cells.forEach(([x, y, w, h], i) => {
+      const l = ls[i]; if (!l) return;
+      setGeom(l, { left: x * c.w, top: y * c.h, w: w * c.w, h: h * c.h });
+      readBack(l);
+    });
+  }
+
+  function canvas(d) {
+    const c = canvasPx(d);
+    const CW = Math.min(720, Math.max(360, (window.innerWidth || 1200) - 620));
+    const scale = CW / c.w, CH = c.h * scale;
+    const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px`,
+      onpointerdown: () => { /* click on bare canvas keeps the selection */ } });
+    for (const l of fitted(d)) {
+      const src = gv(l, 'source');
+      const on = src && src !== 'NONE';
+      const st = gv(l, 'state');
+      const r = rectPx(l);
+      const box = el('div', {
+        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off'),
+        style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};background:${on ? `color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''}`,
+        onpointerdown: (e) => dragMove(e, l, scale),
+      },
+        el('span', { class: 'lrect-tag', text: `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` }),
+        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, l, scale, k) })));
+      cv.append(box);
+    }
+    return el('div', { class: 'canvas-wrap' }, cv);
+  }
+
+  // ---- the properties panel, driven by the table above
+  function field(it, l) {
+    const path = P(l, it.tail);
+    const v = store.pval(path);
+    if (it.type === 'range') {
+      return el('label', { class: 'field slider' },
+        el('span', {}, it.label, el('b', { class: 'sv', text: v == null ? '·' : it.fmt(v) })),
+        el('input', { type: 'range', min: it.min, max: it.max, step: 1, value: v ?? it.min,
+          onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+          oninput: (e) => { pthrottledSet(path, +e.target.value); e.target.parentNode.querySelector('.sv').textContent = it.fmt(+e.target.value); } }));
+    }
+    if (it.type === 'int') {
+      return el('label', { class: 'field' }, it.label,
+        el('input', { type: 'number', min: it.min, max: it.max, step: 1, value: v ?? '',
+          onchange: (e) => { const n = Math.max(it.min, Math.min(it.max, Math.round(+e.target.value || 0))); store.pset(path, n); readBack(l); } }));
+    }
+    if (it.type === 'bool') {
+      return el('button', { class: 'btn ' + (v === true ? 'pgm' : 'ghost'), onclick: () => { store.pset(path, v !== true); if (!awjLive) setTimeout(() => store.pget(path), 120); } }, it.label);
+    }
+    if (it.type === 'enum') {
+      const s = el('select', { onchange: (e) => { store.pset(path, e.target.value); if (!awjLive) setTimeout(() => store.pget(path), 120); } });
+      for (const o of it.values) s.append(el('option', { value: o, selected: o === v, text: o.toLowerCase().replace(/_/g, ' ') }));
+      if (v != null && !it.values.includes(v)) s.append(el('option', { value: v, selected: true, text: String(v) }));
+      return el('label', { class: 'field' }, it.label, s);
+    }
+    if (it.type === 'flags') {
+      const set = new Set(Array.isArray(v) ? v : []);
+      return el('div', { class: 'field' }, el('span', { text: it.label }),
+        el('div', { class: 'row wrap' }, ...it.values.map(f =>
+          el('button', { class: 'btn small ' + (set.has(f) ? 'pgm' : 'ghost'),
+            onclick: () => { const n = new Set(set); n.has(f) ? n.delete(f) : n.add(f); store.pset(path, [...n]); if (!awjLive) setTimeout(() => store.pget(path), 120); } },
+            f.toLowerCase().replace(/_/g, ' ')))));
+    }
+    return null;
+  }
+
+  function panel(d) {
+    const l = sel;
+    const src = gv(l, 'source');
+    const frozen = store.pval(MNG.layerFreeze(d.n, l)) === true;
+    const fader = store.pval(MNG.layerFader(d.n, l));
+    const srcSel = el('select', { onchange: (e) => { store.pset(P(l, MNG_GEOM.source), e.target.value); readBack(l); } });
+    for (const o of mngInputs.sourceOptions(src)) srcSel.append(el('option', { value: o.v, selected: o.v === src, text: o.text }));
+    const num = (key, label) => el('label', { class: 'field' }, label,
+      el('input', { type: 'number', step: 1, value: gv(l, key) ?? '',
+        onchange: (e) => { store.pset(P(l, MNG_GEOM[key]), Math.round(+e.target.value || 0)); readBack(l); } }));
+    return el('div', { class: 'editor' },
+      el('h2', {}, `Layer ${l}`, ' ',
+        el('span', { class: 'chip ' + (gv(l, 'state') && gv(l, 'state') !== 'OFF' ? 'on' : 'off') }, el('span', { class: 'dot' }), String(gv(l, 'state') ?? '·').toLowerCase())),
+      el('label', { class: 'field' }, 'Source', srcSel),
+      el('div', { class: 'nrow' }, num('posH', 'Centre X'), num('posV', 'Centre Y')),
+      el('div', { class: 'nrow' }, num('sizeH', 'Width'), num('sizeV', 'Height')),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn ' + (frozen ? 'pgm' : 'ghost'), onclick: () => { store.pset(MNG.layerFreeze(d.n, l), !frozen); if (!awjLive) setTimeout(() => store.pget(MNG.layerFreeze(d.n, l)), 120); } }, frozen ? 'Frozen' : 'Freeze'),
+        el('span', { class: 'hint', text: 'Freeze is on the screen, not the buffer: it holds through a take.' })),
+      el('label', { class: 'field slider' },
+        el('span', {}, 'Fader', el('b', { class: 'sv', text: fader == null ? '·' : Math.round(fader / 255 * 100) + '%' })),
+        el('input', { type: 'range', min: 0, max: 255, step: 1, value: fader ?? 255,
+          onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+          oninput: (e) => { pthrottledSet(MNG.layerFader(d.n, l), +e.target.value); e.target.parentNode.querySelector('.sv').textContent = Math.round(+e.target.value / 255 * 100) + '%'; } })),
+      el('div', { class: 'row' },
+        el('button', { class: 'btn ghost', onclick: () => store.pset(MNG.layerFadeIn(d.n, l), true) }, 'Fade in'),
+        el('button', { class: 'btn ghost', onclick: () => store.pset(MNG.layerFadeOut(d.n, l), true) }, 'Fade out'),
+        el('span', { class: 'hint', text: 'over the take time; a master over the layer’s own opacity' })),
+      ...MNG_LAYER_PROPS.map(g => el('details', { class: 'group' },
+        el('summary', { text: g.g }),
+        ...g.items.map(it => field(it, l)))));
+  }
+
+  function auxPanel(d) {
+    const b = buffer();
+    const path = MNG.auxSource(d.n, b);
+    const src = store.pval(path);
+    const s = el('select', { onchange: (e) => { store.pset(path, e.target.value); if (!awjLive) setTimeout(() => store.pget(path), 120); } });
+    for (const o of mngInputs.sourceOptions(src)) s.append(el('option', { value: o.v, selected: o.v === src, text: o.text }));
+    return el('div', { class: 'editor' },
+      el('h2', { text: `${d.id} ${which} — background` }),
+      el('label', { class: 'field' }, 'Source', s),
+      el('div', { class: 'hint', text: 'An auxiliary has no layers on this platform: its preset is one background source.' }));
+  }
+
+  function render() {
+    settle();
+    const used = D().destinations();
+    const d = cur();
+    const bufs = d ? D().buffers(d) : null;
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Layers' }),
+        el('span', { class: 'hint', text: 'A screen’s live layers on its canvas — drag to move, corners to resize; an auxiliary is one background source' })),
+      el('div', { class: 'panel' },
+        awjLiveRow('layer changes'),
+        el('div', { class: 'row' },
+          el('label', { text: 'Destination ' }),
+          el('select', { onchange: (e) => pick(e.target.value) },
+            ...used.map(u => el('option', { value: u.id, selected: u.id === dest, text: `${u.id} ${D().label(u) || ''}`.trim() }))),
+          el('div', { class: 'seg' },
+            el('button', { class: which === 'program' ? 'on take' : '', onclick: () => { which = 'program'; if (d && d.kind === 'screen') fetchSelected(); store.notify(); } }, `Program${bufs ? ' · ' + bufs.program : ''}`),
+            el('button', { class: which === 'preview' ? 'on recall' : '', onclick: () => { which = 'preview'; if (d && d.kind === 'screen') fetchSelected(); store.notify(); } }, `Preview${bufs ? ' · ' + bufs.preview : ''}`)),
+          d && d.kind === 'screen' ? el('div', { class: 'seg' },
+            ...[['fill', 'Fill'], ['two', '2-up'], ['three', '3-up'], ['quad', 'Quad'], ['pip', 'PiP']].map(([k, t]) => el('button', { onclick: () => layout(k) }, t))) : null,
+          el('button', { class: 'btn ghost', onclick: () => { refetch(); store.notify(); } }, 'Re-read'))),
+      !d ? el('div', { class: 'panel' }, el('div', { class: 'hint pad', text: store.connected ? 'No screen or auxiliary on this device is in service.' : 'Waiting for the processor.' }))
+        : d.kind === 'aux'
+          ? el('div', { class: 'panel' }, auxPanel(d))
+          : el('div', { class: 'split-wide' },
+              el('div', { class: 'panel' },
+                el('div', { class: 'row' },
+                  el('span', { class: 'hint', text: (() => { const c = canvasPx(d); return `${c.w}×${c.h}${c.reported ? '' : ' (assumed)'} · ${fitted(d).length} layer${fitted(d).length === 1 ? '' : 's'} fitted · editing ${which} (${buffer()})`; })() }),
+                  el('div', { class: 'grow' }),
+                  el('div', { class: 'seg' }, ...fitted(d).map(l => el('button', { class: l === sel ? 'on recall' : '', onclick: () => { sel = l; fetchSelected(); store.notify(); } }, `L${l}`)))),
+                canvas(d)),
+              el('div', { class: 'panel' }, fitted(d).length ? panel(d) : el('div', { class: 'hint pad', text: 'The applied configuration gives this screen no live layers.' }))));
+  }
+
+  return { enter, render };
+})();
+
+// ---------- AWJ: Inputs (Midra 4K / Alta 4K) ----------
+VIEWS.lpinputs = (() => {
+  let read = false;    // whether the inputs were read since this view was entered
+  function settle() {
+    if (read || !store.meta || !store.connected) return;
+    read = true;
+    mngInputs.refresh();
+    awjViewSubs = () => [MNG.SUB_INPUTS, MNG.SUB_TALLIES];
+    awjApplySubs();
+  }
+  function enter() {
+    if (awjDialect() !== 'mng') return;
+    read = false;
+    settle();
+  }
+  function row(i) {
+    const t = mngInputs.tally(i.key);
+    const flag = (path, on, label) => el('button', { class: 'btn small ' + (on ? 'pgm' : 'ghost'),
+      onclick: () => { store.pset(path, !on); if (!awjLive) setTimeout(() => store.pget(path), 120); } }, label);
+    return el('tr', { class: i.available === false ? 'dim' : '' },
+      el('td', { text: `IN ${i.n}` }),
+      el('td', { text: i.label || '—' }),
+      el('td', { class: 'val', text: i.plug ?? '·' }),
+      el('td', { class: 'val', text: i.type ? i.type.replace('DISPLAY_PORT', 'DP') : '·' }),
+      el('td', {}, i.available === false
+        ? el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'not fitted')
+        : el('span', { class: 'chip ' + (i.signal === true ? 'on' : 'off') }, el('span', { class: 'dot' }), i.format || (i.signal === true ? 'signal' : i.signal === false ? 'no signal' : '·'))),
+      el('td', {},
+        t.pgm ? el('span', { class: 'chip pgm' }, el('span', { class: 'dot' }), 'program') : null, ' ',
+        t.pvw ? el('span', { class: 'chip pvw' }, el('span', { class: 'dot' }), 'preview') : null),
+      el('td', {}, flag(MNG.inputFreeze(i.n), i.frozen, i.frozen ? 'Frozen' : 'Freeze'), ' ', flag(MNG.inputBlack(i.n), i.black, i.black ? 'Black' : 'Black')));
+  }
+  function render() {
+    settle();
+    const rows = [];
+    for (let i = 1; i <= MNG_INPUTS; i++) rows.push(mngInputs.get(i));
+    const fitted = rows.filter(r => r.available !== false);
+    return el('div', {},
+      el('div', { class: 'view-head' },
+        el('h1', { text: 'Inputs' }),
+        el('span', { class: 'hint', text: 'Every input the unit has, its active plug and signal, and where it is on air — from the device’s own tally lists' })),
+      el('div', { class: 'panel' },
+        awjLiveRow('input and tally changes'),
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Input', 'Label', 'Plug', 'Type', 'Signal', 'On air', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...fitted.map(row))),
+        rows.length > fitted.length ? el('div', { class: 'hint pad', text: `${rows.length - fitted.length} of the model’s ${MNG_INPUTS} inputs are not fitted on this unit.` }) : null));
+  }
+  return { enter, render };
+})();
+
+// ---------- AWJ: Screens ----------
+VIEWS.lpscreens = (() => {
+  function enter() {
     // The server inventories on connect; this covers a view opened later, or
     // after a device has been away.
-    for (const d of awj().destinations()) awj().refresh(d);
+    const D = awj();
+    for (const d of D.destinations()) { D.refresh(d); D.refreshExtras?.(d); }
+    awjViewSubs = () => [];
+    awjApplySubs();
+  }
+
+  // What is not in the transition status: a take time typed in seconds, a
+  // T-bar, and the flags. Only where the dialect has them.
+  function takeTimeField(D, d) {
+    if (!D.setTakeTime) return el('td', { class: 'val', text: `${D.takeTimes(d).map(awjSeconds).join(' / ')} s` });
+    const v = D.takeTimes(d)[0];
+    return el('td', {}, el('input', { class: 'num', type: 'number', min: 0, max: 300, step: 0.1, value: v == null ? '' : (v / 10).toFixed(1),
+      onchange: (e) => D.setTakeTime(d, Math.round((+e.target.value || 0) * 10)) }), ' s');
+  }
+  function tbarField(D, d) {
+    if (!D.setTbar) return null;
+    const v = D.tbar(d);
+    return el('td', {}, el('input', { class: 'tbar', type: 'range', min: 0, max: 65535, step: 1, value: v ?? 0, title: 'T-bar',
+      onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+      oninput: (e) => D.setTbar(d, +e.target.value) }));
   }
 
   function row(d) {
@@ -3158,14 +3779,21 @@ VIEWS.lpscreens = (() => {
       D.showsMemory
         ? el('td', { class: 'val', text: mem.map(m => (m == null ? '—' : `M${m}`)).join(' / ') })
         : null,
-      el('td', { class: 'val', text: `${times} s` }),
+      takeTimeField(D, d),
       el('td', {},
         moving
           ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), moving)
           : el('span', { class: 'chip off' }, el('span', { class: 'dot' }), 'idle')),
-      el('td', {},
+      tbarField(D, d),
+      el('td', { class: 'acts' },
         el('button', { class: 'btn pgm', onclick: () => D.take(d) }, 'Take'),
-        el('button', { class: 'btn ghost', onclick: () => D.cut(d) }, 'Cut')));
+        el('button', { class: 'btn ghost', onclick: () => D.cut(d) }, 'Cut'),
+        D.stepBack ? el('button', { class: 'btn ghost', title: 'Revert the last change to layer settings (the device\u2019s own Step Back — an edit undo, not a return to the previous look)', onclick: () => D.stepBack(d) }, 'Step back') : null,
+        D.copyToPreview ? el('button', { class: 'btn ghost', title: 'Copy program to preview', onclick: () => D.copyToPreview(d) }, 'PGM \u2192 PRW') : null,
+        D.frozen ? el('button', { class: 'btn ' + (D.frozen(d) ? 'pgm' : 'ghost'), onclick: () => D.setFrozen(d, !D.frozen(d)) }, D.frozen(d) ? 'Frozen' : 'Freeze') : null,
+        D.presetToggle ? el('button', { class: 'btn small ' + (D.presetToggle(d) === true ? 'primary' : 'ghost'),
+          title: 'Preset toggle: swap program and preview on a take (on), or copy preview to program and keep it (off)',
+          onclick: () => D.setPresetToggle(d, D.presetToggle(d) !== true) }, 'swap') : null));
   }
 
   function render() {
@@ -3173,7 +3801,7 @@ VIEWS.lpscreens = (() => {
     const used = D.destinations();
     const mismatch = awjMismatch();
     const heads = ['Screen', 'Label', 'Transition', 'PGM / PRW',
-      ...(D.showsMemory ? ['Memory'] : []), D.takeTimesHead, 'State', ''];
+      ...(D.showsMemory ? ['Memory'] : []), D.takeTimesHead, 'State', ...(D.setTbar ? ['T-bar'] : []), ''];
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Screens' }),
@@ -3182,17 +3810,10 @@ VIEWS.lpscreens = (() => {
           : 'Screens in use, and the transition each is holding' })),
       mismatch ? el('div', { class: 'panel' }, el('div', { class: 'hint bad pad', text: mismatch })) : null,
       el('div', { class: 'panel' },
-        el('div', { class: 'row' },
-          el('button', {
-            class: live ? 'btn primary' : 'btn',
-            onclick: () => setLive(!live),
-          }, live ? 'Live updates on' : 'Live updates off'),
-          el('span', {
-            class: 'hint',
-            text: live
-              ? 'The device is pushing transition changes to this bridge.'
-              : 'This processor tells a client nothing until asked to. Until this is on, what you see is what was last read.',
-          })),
+        awjLiveRow('transition changes'),
+        D.takeMany && used.length ? el('div', { class: 'row' },
+          el('button', { class: 'btn pgm', onclick: () => D.takeMany(used) }, `Take all (${used.length})`),
+          el('span', { class: 'hint', text: 'Every destination in service, each with its own take time.' })) : null,
         used.length
           ? el('table', { class: 'grid' },
               el('thead', {}, el('tr', {}, ...heads.map(h => el('th', { text: h })))),
@@ -3211,6 +3832,9 @@ VIEWS.lppresets = (() => {
   let bankKind = 'screen';
   let target = 'PREVIEW';
   let dest = null;               // destination id; null = every one in service of the bank's kind
+  let mode = 'recall';           // 'recall' | 'save' | 'erase' | 'label' — the last three only where the dialect writes
+  let armed = null;              // slot awaiting a second tap (erase) or a label (label)
+  let labelDraft = '';
 
   const bank = () => awj().banks.find(b => b.kind === bankKind) || awj().banks[0];
   const pagesOf = (b) => pages[b.kind] ?? (b.kind === 'screen' ? 1 : 0);
@@ -3224,10 +3848,13 @@ VIEWS.lppresets = (() => {
   function pickBank(kind) {
     bankKind = kind;
     dest = null;
+    blocked = '';
     const b = bank();
     // The screen bank's first page comes with the connect-time inventory;
-    // the others are read when first shown.
+    // the others are read when first shown. The master bank's occupancy
+    // check needs the aux bank's first page too.
     if (pagesOf(b) === 0) { fetchPage(b, 0); pages[b.kind] = 1; }
+    if (b.targets === 'none') for (const o of awj().banks) if (pagesOf(o) === 0) { fetchPage(o, 0); pages[o.kind] = 1; }
     store.notify();
   }
 
@@ -3257,6 +3884,53 @@ VIEWS.lppresets = (() => {
     setTimeout(() => { for (const d of dests) D.refresh(d); }, 300);
   }
 
+  // A write is silent, so the slot and the destinations it touches are read
+  // back — after a beat, as the recall does.
+  function afterWrite(b, n) {
+    const D = awj();
+    const re = () => { D.fetchSlot(b, n); for (const d of D.destinations()) D.refresh(d); };
+    re(); setTimeout(re, 300);
+  }
+  let blocked = '';              // why the last master save did not fire
+  function save(n) {
+    const b = bank(), D = awj();
+    if (b.targets === 'none') {
+      blocked = '';
+      if (target !== 'EXISTING' && D.masterSaveTouches) {
+        const busy = D.masterSaveTouches(n).filter(x => x.occupied);
+        if (busy.length) {
+          blocked = `Not saved: a master save from ${target.toLowerCase()} also stores each destination into its own bank at slot ${n}, and ${busy.map(x => `${x.bank.label.toLowerCase()} slot ${n}`).filter((v, i, arr) => arr.indexOf(v) === i).join(' and ')} already hold${busy.length === 1 ? 's' : ''} something. Pick a master slot whose screen and aux slots are free, erase them, or save from existing memories.`;
+          store.notify();
+          return;
+        }
+      }
+      D.save(b, n, null, target); afterWrite(b, n);
+      // The bank slots it wrote too, so the marks and labels follow — after
+      // the same beat, since the device fills them as part of the save.
+      if (target !== 'EXISTING') setTimeout(() => { for (const x of D.masterSaveTouches?.(n) ?? []) D.fetchSlot(x.bank, n); }, 300);
+      return;
+    }
+    const dests = dest === null ? candidates(b) : [awjDest(dest)];
+    // One buffer of ONE destination goes into a slot; saving "every screen"
+    // into one slot would just be the last one written.
+    const d = dests.length === 1 ? dests[0] : null;
+    if (!d) return;
+    D.save(b, n, d, target);
+    afterWrite(b, n);
+  }
+  function tap(n) {
+    const b = bank(), D = awj();
+    const valid = D.presetValid(b, n) === true;
+    if (mode === 'recall') { if (valid) recall(n); return; }
+    if (mode === 'save') { save(n); return; }
+    if (mode === 'label') { armed = n; labelDraft = D.presetLabel(b, n) || ''; store.notify(); return; }
+    if (mode === 'erase') {
+      if (!valid) return;
+      if (armed !== n) { armed = n; store.notify(); return; }
+      D.erase(b, n); armed = null; afterWrite(b, n); store.notify();
+    }
+  }
+
   function slotTile(b, n) {
     const D = awj();
     const valid = D.presetValid(b, n) === true;
@@ -3265,11 +3939,18 @@ VIEWS.lppresets = (() => {
     // model says so.
     const d = dest !== null ? awjDest(dest) : null;
     const on = d ? ['program', 'preview'].filter(w => D.memoryOn(d, w) === n) : [];
+    const saveable = mode === 'save' && (b.targets === 'none' || dest !== null);
+    const titles = {
+      recall: valid ? `Recall ${n} to ${target.toLowerCase()}` : `Slot ${n} is empty`,
+      save: saveable ? `Save ${target.toLowerCase()} into slot ${n}${valid ? ' (overwrites)' : ''}` : 'Pick one destination to save from',
+      erase: valid ? (armed === n ? `Tap again to erase slot ${n}` : `Erase slot ${n}`) : `Slot ${n} is empty`,
+      label: `Label slot ${n}`,
+    };
     return el('button', {
-      class: 'slot' + (valid ? ' valid' : '') + (on.includes('program') ? ' pgm' : on.includes('preview') ? ' pvw' : ''),
-      disabled: !valid,
-      title: valid ? `Recall ${n} to ${target.toLowerCase()}` : `Slot ${n} is empty`,
-      onclick: () => valid && recall(n),
+      class: 'slot' + (valid ? ' valid' : '') + (on.includes('program') ? ' pgm' : on.includes('preview') ? ' pvw' : '') + (armed === n ? ' sel' : ''),
+      disabled: mode === 'recall' || mode === 'erase' ? !valid : mode === 'save' ? !saveable : false,
+      title: titles[mode],
+      onclick: () => tap(n),
     },
       el('span', { class: 'num', text: String(n) }),
       valid ? el('span', { class: 'lbl', text: label || 'preset' }) : null);
@@ -3293,11 +3974,22 @@ VIEWS.lppresets = (() => {
               el('div', { class: 'seg' },
                 ...D.banks.map(k => el('button', { class: k.kind === b.kind ? 'on recall' : '', onclick: () => pickBank(k.kind) }, `${k.label} · ${k.slots}`))))
           : null,
+        D.save ? el('div', { class: 'row' },
+          el('div', { class: 'seg' },
+            ...[['recall', 'Recall', 'recall'], ['save', 'Save', 'save'], ['erase', 'Erase', 'take'], ['label', 'Label', 'recall']].map(([m, t, cls]) =>
+              el('button', { class: mode === m ? 'on ' + cls : '', onclick: () => { mode = m; armed = null; blocked = ''; if (m !== 'save' && target === 'EXISTING') target = 'PREVIEW'; store.notify(); } }, t))),
+          el('span', { class: 'hint', text: {
+            recall: 'Tap a slot to recall it.',
+            save: b.targets === 'none' ? 'Tap a slot to record every screen and auxiliary from ' + target.toLowerCase() + '.' : 'Tap a slot to save the chosen destination\u2019s ' + target.toLowerCase() + ' into it.',
+            erase: 'Tap a slot, then tap it again to erase it.',
+            label: 'Tap a slot to name it.',
+          }[mode] })) : null,
         el('div', { class: 'row' },
-          el('label', { text: 'To ' }),
+          el('label', { text: mode === 'save' ? 'From ' : 'To ' }),
           el('select', {
-            onchange: (e) => { target = e.target.value; store.notify(); },
-          }, ...['PREVIEW', 'PROGRAM'].map(v => el('option', { value: v, selected: v === target, text: v.toLowerCase() }))),
+            onchange: (e) => { target = e.target.value; blocked = ''; store.notify(); },
+          }, ...['PREVIEW', 'PROGRAM', ...(mode === 'save' && b.targets === 'none' ? ['EXISTING'] : [])].map(v =>
+            el('option', { value: v, selected: v === target, text: v === 'EXISTING' ? 'the memories each buffer already holds' : v.toLowerCase() }))),
           b.targets === 'none'
             ? el('span', { class: 'hint', text: 'A master preset recalls every screen and auxiliary it recorded.' })
             : el('label', { text: ' on ' }),
@@ -3306,7 +3998,16 @@ VIEWS.lppresets = (() => {
           },
             el('option', { value: 'all', selected: dest === null, text: `every ${kindWord} in service` }),
             ...cands.map(d => el('option', { value: d.id, selected: d.id === dest, text: `${d.id} ${D.label(d) || ''}`.trim() })))),
+        mode === 'save' && b.targets === 'none' && target !== 'EXISTING'
+          ? el('div', { class: 'hint pad', text: `A master save from ${target.toLowerCase()} also stores every screen and auxiliary in service into its own bank, at the same slot number as the master. Slots already in use block the save.` })
+          : null,
+        blocked ? el('div', { class: 'hint bad pad', text: blocked }) : null,
         el('div', { class: 'mem-grid' }, ...slots),
+        mode === 'label' && armed !== null ? el('div', { class: 'row' },
+          el('label', { text: `Slot ${armed} ` }),
+          el('input', { type: 'text', maxlength: 64, value: labelDraft, oninput: (e) => { labelDraft = e.target.value; } }),
+          el('button', { class: 'btn primary', onclick: () => { D.setLabel(b, armed, labelDraft); afterWrite(b, armed); armed = null; store.notify(); } }, 'Set label'),
+          el('button', { class: 'btn ghost', onclick: () => { armed = null; store.notify(); } }, 'Cancel')) : null,
         shown < b.slots
           ? el('div', { class: 'row' },
               el('button', {

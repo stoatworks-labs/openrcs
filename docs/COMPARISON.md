@@ -20,7 +20,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 1 | 5 | 1 | 48 | 3 |
-| Midra 4K | Web RCS | 1 | 7 | 1 | 45 | 4 |
+| Midra 4K | Web RCS | 7 | 10 | 1 | 36 | 4 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -319,12 +319,12 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Take and Cut, per screen and all | Yes — Take, Take Cut, T-bar, Step Back, TAKE ALL | **Partial** — Take and Cut per screen and per auxiliary, with the take time shown; no take-all |
-| T-bar | Yes | **Missing** |
-| Step back | Yes | **Missing** — in the crate (mng::step_back), not on the surface |
-| Preset toggle, auto-take, dynamic fit | Yes | **Missing** |
+| Take and Cut, per screen and all | Yes — Take, Take Cut, T-bar, Step Back, TAKE ALL | **Full** — Take / Cut per screen and per auxiliary, the take time typed in seconds, and Take all (one take per destination, as the vendor's own Web RCS does it) |
+| T-bar | Yes | **Full** — per destination, on the take node's own control; the device reports the ends |
+| Step back | Yes | **Partial** — the device's own xStepBack — an edit undo (the last change to layer settings), which is what the vendor manual means by it here; not a return to the previous look |
+| Preset toggle, auto-take, dynamic fit | Yes | **Partial** — the preset toggle (swap) per destination; no auto-take or dynamic fit |
 | Fade to black / master fade | Yes — Quick Preset → Fade to Black | **Missing** |
-| Freeze | Yes — layer, screen and input freeze | **Missing** |
+| Freeze | Yes — layer, screen and input freeze | **Full** — destination freeze, per-layer freeze (holds through a take), input freeze |
 | Screen groups / destinations | Yes — TAKE ALL / selection | **Missing** |
 | Sequencer / cue list | No — none | **Missing** — Cues are not offered on this family |
 | User keys / macros / quick presets | Yes — Quick Preset on the front panel: fade to black, a library image or a master memory | **Missing** |
@@ -336,12 +336,12 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Graphical layer editor | Yes | **Missing** — a table, no layer editing |
-| All screens editable at once | Yes | **Missing** |
-| Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Missing** |
-| Layout presets | Yes — live-layer layouts | **Missing** |
+| Graphical layer editor | Yes | **Partial** — one screen at a time on a canvas at the applied size: drag to move, corners to resize, layouts; an auxiliary is one background source |
+| All screens editable at once | Yes | **Missing** — one destination at a time |
+| Layer properties | Yes — opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed | **Partial** — source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, plus freeze and a fader with fade in/out; not the timing bars, flying curve points, speed points or a COLOR layer's colour |
+| Layout presets | Yes — live-layer layouts | **Partial** — Fill / 2-up / 3-up / Quad / PiP over the fitted layers, in slot order |
 | Snap, align, multi-select | Yes | **Missing** |
-| Native background / background sets | Yes — background sets | **Missing** |
+| Native background / background sets | Yes — background sets | **Missing** — the preset's background set is not exposed |
 | Input keying | Yes — chroma, luma | **Missing** |
 | Cut & Fill | Yes — on odd inputs | **Missing** |
 | Perspective / 3D layers | — | — |
@@ -352,14 +352,14 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 
 | Feature | Web RCS | openrcs |
 |---|---|---|
-| Screen memories | Yes — 200 screen + 200 aux | **Partial** — recall only, from the 200-slot screen bank and the 200-slot aux bank, paged 50 at a time with validity and label, and a red/green mark on the slot each buffer holds; no save, label or erase |
-| Master memories | Yes — 50, self-contained or from screen memories | **Partial** — recall only, from the 50-slot master bank |
+| Screen memories | Yes — 200 screen + 200 aux | **Full** — recall, save (from program or preview), label and erase on the 200-slot screen and aux banks, paged 50 at a time, with a red/green mark on the slot each buffer holds |
+| Master memories | Yes — 50, self-contained or from screen memories | **Full** — recall, save, label and erase on the 50-slot master bank; a save from a buffer writes the bank slots the device would otherwise put in slot 1, and refuses when they are in use; or record the memories the buffers already hold |
 | Layer memories | No | **Missing** |
 | Recall filters (categories) | Yes | **Missing** |
-| Labels, colours, inspect | Yes | **Partial** — labels are read, nothing is written |
+| Labels, colours, inspect | Yes | **Partial** — labels read and written; no colours, no inspect thumbnail |
 | Autoscale on recall | Yes | **Missing** |
 | Confidence screens and memories | — | — |
-| Aux screens and aux memories | Yes — aux screens, 200 aux memories | **Partial** — auxiliaries in service are destinations — take, cut, memory bookkeeping and the aux bank; no aux source editing |
+| Aux screens and aux memories | Yes — aux screens, 200 aux memories | **Full** — auxiliaries are destinations — take, cut, T-bar, freeze, memory bookkeeping, background source — and the aux bank recalls, saves, labels and erases |
 
 ### Setup
 
@@ -370,13 +370,13 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Midra video out (the second output) | — | — |
 | Area of interest (output crop) | Yes | **Missing** |
 | Custom output formats | Yes | **Missing** |
-| Input setup | Yes — plug, LUT allocation, signal, correction, aspect, keying | **Missing** |
+| Input setup | Yes — plug, LUT allocation, signal, correction, aspect, keying | **Partial** — availability, active plug, connector and signal format per input, freeze and black; no plug selection, image, aspect or keying |
 | EDID | Yes — same | **Missing** |
 | Stills / image library | Yes — library, background and foreground image slots | **Missing** |
 | Multiviewer / monitoring | Yes — one multiviewer, audio monitoring, 20 memories | **Missing** |
 | Soft edge blending | Yes — Eikos 4K blend mode | **Missing** |
 | Audio | Yes — routing, Dante, VU meters, custom sources | **Missing** |
-| GPIO and tally | Yes — TSL tally protocol; no GPIO | **Missing** |
+| GPIO and tally | Yes — TSL tally protocol; no GPIO | **Partial** — the device's own on-air lists per input are read and shown; never seen populated on the simulator, so unverified |
 | System, network, health, front panel | Yes | **Missing** — model, series and firmware only |
 | Firmware update | Yes | **Missing** |
 | Backup / restore | Yes — configuration slots, export / import, USB | **Missing** |
@@ -389,7 +389,7 @@ This page describes **openrcs main (after v0.5.2)** as of 2026-09-15, read from 
 | Feature | Web RCS | openrcs |
 |---|---|---|
 | Every device variable, raw protocol | No | **Missing** — no Inspector for the AWJ tree here (livepremier-plus's Console covers it) |
-| Verified writes | No | **Partial** — recalls read the destination back — twice, because the memory bookkeeping lands a few tens of ms after the request |
+| Verified writes | No | **Partial** — every write reads its target back; recalls read the destination twice because the bookkeeping lands late; a master save is refused rather than allowed to overwrite bank slots |
 | Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
 
 ---

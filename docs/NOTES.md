@@ -605,6 +605,65 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Midra 4K / Alta 4K: Layers, Inputs, bank writes and the rest of the take node, 2026-09-15
+
+Same day as the landing below, simulator-only (no hardware access). The mng
+surface grew from two views to four, and the crate from 30 to ~55 path builders.
+
+**Sources for the new paths, in order of trust:** (1) the fleet's field-test
+sweep, 429 paths answered by the real Pulse 4K (`~/dev/pulse-field-test/results/
+20-paths-detail-*.json`) — tbarPosition control/status, enablePresetToggle,
+xStepBack, xCopyProgramToPreview, every one of the 57 live-layer leaves, canvas
+size, master save mode/filters, slot label/xDelete; (2) that unit's full store
+dump (`store-device-2026-09-12T12-03-40.json`, the `/api/stores/device` HTTP
+endpoint) for what the sweep never asked: `control/@props/freeze` on screens,
+auxes, inputs and live layers, the per-layer `fader` (opacity 0..255, xFadeIn,
+xFadeOut), `inputList` (16 inputs, `status/@props/{isAvailable, ledColor}`,
+`control/@props/{plug, freeze, black}`, labels/type/signal on `plugList/items/N`),
+`tallies/inputs/@props/usedOn{Screen,Aux}{Pgm,Prw}`, `quickPreset`,
+`stillLibrary`, `multiviewer`; (3) awj-surface's `catalogue-mng.json` for the
+ranges/enums (opacity is 0..256; borders 0..255; shadow offsets ±512); (4) the
+vendor's own web bundle inside the simulator app (`Midra_Simulator.app/…/
+webapp-bundle/dist/client/app.*.js`) for attribute definitions — e.g.
+`xTakeMany` is a map of up to 8 `SCREEN_n`/`AUX_n`, `QUICK_PRESET_MODE` is
+NULL/FRAME/MASTER, `LED_STATUS_COLOR` OFF/RED/GREEN/ORANGE_BLINK.
+
+**Two things the simulator settled that the docs had wrong or open:**
+- `xStepBack` is an EDIT UNDO (posH 779 → 960 after a drag), not a return to
+  the previous look; it moved nothing after a take. The crate doc said the
+  latter; fixed.
+- `xTakeMany` does nothing on the sim. Watching the vendor UI's TAKE with ALL
+  selected over a second AWJ socket: it writes `xTake=false, xTake=true` per
+  screen, back to back, and both go `EFFECT_FROM_x` together. The surface now
+  does that; the crate keeps `take_many()` documented as unproven.
+
+**The master-save trap, reproduced:** my first master save (mode SAVE_FROM_PRW,
+bankSlots untouched = 1) overwrote screen slot 1 "Fixture one" on the sim —
+both S1 buffers then reported memoryId 1. The guard now writes
+`control/save/$screen/@items/N/@props/bankSlot` = the master slot for every
+destination in service, refuses if any such screen/aux slot isValid, and
+offers USE_EXISTING_MEMORIES. Verified: save into master 12 wrote screen slot
+12 (valid on the device, S1 UP memoryId 12); save into master 1 refused.
+
+**Verified end to end on the Midra 4K sim (Pulse, :10610):** T-bar 0→32768→65535
+(EFFECT_FROM_DOWN → AT_UP), freeze on/off, Take all (both screens), layer
+source INPUT_3, 2-up layout, canvas drag (device read back posH 779/posV 300),
+screen save/label/erase (slot 5), master save guard, input freeze. **Alta 4K
+sim (Zenith 200, :13021):** A1 preview background INPUT_6 → INPUT_2 → back.
+**LivePremier sim:** nav still Screens/Presets only, no extras, no mode
+segment. **Not seen working:** tallies (empty on the sim whatever is on a
+layer; the real dump had empty layers), the `status/tbarPosition` readback
+while a bar is mid-travel (the sim only reports the ends).
+
+**Browser-side shape:** one global `awjLive` flag and `awjApplySubs()` union
+the base prefixes with the active view's (`awjViewSubs`), because the device's
+subscription list is one replace per connection. `MNG_LAYER_PROPS` is the
+catalogue table the properties panel renders from; `mngInputs` fetches plug
+labels lazily once an input's active plug is known. The hub inventory grew by
+~120 reads (canvas, layer modes, freeze/tbar/toggle per destination, tallies,
+input availability/led/plug); layer properties are read when a screen is
+opened.
+
 ## Midra 4K / Alta 4K as AWJ targets, built 2026-09-13, landed 2026-09-15
 
 The current range's other two families join LivePremier: **Midra 4K** (QuickVu /

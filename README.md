@@ -140,12 +140,22 @@ two are separate modules and why the surface tells you when it has been pointed
 at the wrong one. The take, cut, recall and subscription operations underneath
 were fired at that Pulse 4K by a separate test harness and behaved as the
 LivePremier ones do (a subscribed second socket saw a write within 40 ms).
-`openrcs`'s own surface for these — the same two views as LivePremier, with the
-auxiliaries and the extra banks — has been driven end to end against the
-vendor's **Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only. One
-difference from the LivePremier simulator is worth knowing: these two *do*
-reproduce the recall-overwrites-the-take-time behaviour, so what you see on
-them is what the hardware does.
+`openrcs`'s own surface for these goes further than the LivePremier one:
+**Screens** with a T-bar, take time, freeze, copy-to-preview, step back, the
+preset toggle and Take all; a **Layers** editor — drag and resize a screen's
+live layers on its canvas, set their sources, opacity, freeze and fader, and
+every other property the device declares, or an auxiliary's background source;
+**Presets** that save, label and erase as well as recall, with a master save
+that refuses to overwrite the screen and aux slots the device would otherwise
+write silently; and **Inputs** with plug, signal, freeze, black and the
+device's own tally lists. All of it has been driven end to end against the
+vendor's **Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators** only. The paths
+behind the newer views were spelled from the Pulse 4K's own store dump rather
+than answered over AWJ by the unit — the simulators answer every one — so a
+`get` of those on a real unit is still owed. One difference from the LivePremier
+simulator is worth knowing: these two *do* reproduce the
+recall-overwrites-the-take-time behaviour, so what you see on them is what the
+hardware does.
 
 `openrcs-server` adds a browser control surface over that engine (see below).
 Roadmap: package it as a system-tray app, then a standalone gateway (Pi or

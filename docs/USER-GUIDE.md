@@ -358,29 +358,63 @@ bookmark or link straight to the panel you want.
 The current range — **LivePremier** (Aquilon C / RS), **Midra 4K** (QuickVu 4K,
 Pulse 4K, Eikos 4K, QuickMatrix 4K) and **Alta 4K** (Zenith 100 / 200) — speaks a
 different protocol from the two families above, the vendor's published AWJ, and
-openrcs drives it through a smaller surface of its own: two views, and the
-Connection view they share with everything else. None of the Midra/LiveCore views
-apply to these processors, so the nav does not offer them.
+openrcs drives it through a surface of its own, plus the Connection view it
+shares with everything else. None of the Midra/LiveCore views apply to these
+processors, so the nav does not offer them. LivePremier gets **Screens** and
+**Presets**; Midra 4K and Alta 4K get those two with more on them, and
+**Layers** and **Inputs** besides.
 
 - **Screens** — every screen (and, on a Midra 4K or Alta 4K, every auxiliary)
   the processor has in service, with the transition state it is holding, which
   preset buffer is on program and which is preview, its take time — one on Midra
   4K / Alta 4K, an up/down pair on LivePremier — and **Take** and **Cut** per
-  destination. On Midra 4K and Alta 4K a **Memory** column shows which bank slot
-  each buffer was loaded from, program / preview, so you can see at a glance what
-  is on air and what is staged.
+  destination. On Midra 4K and Alta 4K the row also has a **Memory** column
+  (which bank slot each buffer was loaded from, program / preview), a take time
+  you can type, a **T-bar**, **Freeze** for the destination, **PGM → PRW** (copy
+  program to preview), **Step back** and a **swap** flag, and the panel has
+  **Take all**. Two of those are not what the same words mean on a LiveCore:
+  **Step back** here is the device's own — it reverts the last change to layer
+  settings, an edit undo, and does not return to the previous look; and **swap**
+  is the preset toggle: on, a take swaps the two buffers; off, it copies preview
+  to program and leaves preview as it was. Take all fires one take per
+  destination in service, which is exactly what the vendor's Web RCS does.
+- **Layers** (Midra 4K / Alta 4K) — one screen at a time, program or preview,
+  its fitted live layers drawn on a canvas at the applied configuration's size.
+  **Drag** a layer to move it and its **corners** to resize; **Fill / 2-up /
+  3-up / Quad / PiP** lay the fitted layers out in one tap. The panel on the
+  right edits the selected layer: its **source** (an input by number and label,
+  or colour), centre and size in pixels, **Freeze** and a **Fader** with **Fade
+  in / Fade out** — both live on the screen rather than the buffer, so they hold
+  through a take — and, folded away below, opacity, crop, mask, effects, border,
+  shadow and transitions with the ranges the device declares. An auxiliary has
+  no layers on this platform; picking one shows its single background source
+  instead. Every write is read back; with **Live updates** on, the device pushes
+  the whole destination as it changes.
 - **Presets** — the processor's preset banks: one 1000-slot screen bank on
   LivePremier; on Midra 4K and Alta 4K the **Screen** (200), **Aux** (200) and
   **Master** (50) banks as chips. Pick preview or program, pick the destination
   (or every one in service), and tap a slot to recall it; a slot the device
   reports as empty cannot be recalled. With a single destination selected, the
-  slot on its program is outlined red and the one on its preview green. Banks
-  are read fifty slots at a time — each slot costs two reads — and **Read
-  slots…** fetches the next page.
-- **Live updates** on the Screens view asks the processor to push changes; it
-  tells a client nothing until asked. Until it is on, what you see is what was
-  last read, and a Take or a recall reads its destination back rather than
-  assuming it landed.
+  slot on its program is outlined red and the one on its preview green. On Midra
+  4K and Alta 4K the bank also writes: **Save** stores the chosen destination's
+  program or preview into a slot, **Label** names one, and **Erase** clears one
+  on a second tap. A master save from program or preview also stores every
+  destination in service into its own bank — the device does that, at a slot
+  number of its choosing, and out of the box that number is 1 for every
+  destination, which is how a master save silently overwrites screen memory 1.
+  openrcs points those at the master's own slot number instead and refuses the
+  save if any of them is already in use; or save **from the memories each
+  buffer already holds**, which writes no bank slot at all. Banks are read fifty
+  slots at a time — each slot costs two reads — and **Read slots…** fetches the
+  next page.
+- **Inputs** (Midra 4K / Alta 4K) — every input the unit has, its active plug,
+  connector and the signal on it, **Freeze** and **Black**, and where the device
+  says it is on air (program / preview) — from the processor's own tally lists,
+  so nothing is inferred.
+- **Live updates** asks the processor to push changes; it tells a client nothing
+  until asked. One switch for all these views: until it is on, what you see is
+  what was last read, and every write reads its target back rather than assuming
+  it landed.
 
 A wrong pick is caught rather than shown as an empty show: LivePremier and the
 4K boxes share a port but not an object model, so if the surface was pointed at

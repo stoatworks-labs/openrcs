@@ -653,10 +653,39 @@ fn mng_inventory() -> Vec<String> {
         // destination, and the buffers have fixed names, so two reads cover it.
         out.push(mng::buffer_memory_id(d, Buffer::Up));
         out.push(mng::buffer_memory_id(d, Buffer::Down));
+        // The rest of what the Screens view shows per destination.
+        out.push(mng::freeze(d));
+        out.push(mng::tbar_position(d));
+        out.push(mng::preset_toggle(d));
     }
     for slot in 1..=AWJ_PRESET_PAGE {
         out.push(mng::preset_is_valid(Bank::Screen, slot));
         out.push(mng::preset_label(Bank::Screen, slot));
+    }
+    // What the layer editor needs before it can draw anything: each screen's
+    // canvas and which of its eight layer slots the applied configuration
+    // fitted. The layers' own properties are read when a screen is opened.
+    for screen in 1..=4u8 {
+        out.push(mng::canvas_width(screen));
+        out.push(mng::canvas_height(screen));
+        for layer in 1..=8u8 {
+            out.push(mng::layer_mode(screen, layer));
+        }
+    }
+    // The inputs and the device's own on-air lists. Labels live on plugs, so
+    // the browser asks for them once it knows each input's active plug.
+    for bus in [
+        mng::TallyBus::ScreenProgram,
+        mng::TallyBus::ScreenPreview,
+        mng::TallyBus::AuxProgram,
+        mng::TallyBus::AuxPreview,
+    ] {
+        out.push(mng::tally_inputs(bus));
+    }
+    for n in 1..=mng::INPUTS {
+        out.push(mng::input_is_available(n));
+        out.push(mng::input_led(n));
+        out.push(mng::input_plug(n));
     }
     out
 }

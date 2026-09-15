@@ -136,6 +136,36 @@ std binary and may use crates. Keep the split.
   `system/$device/@items/1/@props/dev` on a LivePremier,
   `system/@props/dev` on the others — so the hub reads both on connect and the
   surface can say which processor is really there when the pick was wrong.
+- **A master save from a buffer writes bank slots.** In `SAVE_FROM_PGM` /
+  `SAVE_FROM_PRW` mode the device first stores every in-service destination's
+  buffer into that destination's own bank at
+  `preset/masterBank/control/save/$screen/@items/N/@props/bankSlot` (and the
+  aux equivalent) — `1` for all of them out of the box, which is how a real
+  Pulse 4K lost screen memory 1. The surface writes those to the master's own
+  slot number first and refuses when any is occupied; `USE_EXISTING_MEMORIES`
+  writes no bank slot. Never fire a master save without handling this.
+- **Step Back is an edit undo here**, not LiveCore's return to the previous
+  look: `xStepBack` reverts the last change to layer settings and moves nothing
+  after a take (simulator, 2026-09-15). Say so wherever it is offered.
+- **`xTakeMany` is unproven.** It exists, is accepted and echoed, and does
+  nothing on the simulator; the vendor's own TAKE ALL writes one `xTake` per
+  screen, back to back. The surface does the same.
+- **The store-spelled paths.** Freeze, layer faders, inputs, plugs and tallies
+  were spelled from the Pulse 4K's `/api/stores/device` dump (the same
+  `xxxList/items/K` → `$xxx/@items/K`, `pp` → `@props` rule as everything else)
+  and answer on both simulators; the hardware sweep never asked for them. Keep
+  the "simulator-only" wording until a unit answers a `get`.
+- **Tallies have never been seen populated.** `tallies/inputs/@props/*` reads
+  as four empty lists on the simulator whatever is on a layer, and the real
+  unit had nothing on its layers when dumped. The Inputs view shows them; do
+  not describe them as verified.
+- **A view opened from a bookmark runs `enter()` before the processor has
+  answered.** Reads sent then go nowhere and destinations are empty, so the
+  AWJ views settle themselves on render (`settle()`) and everything the
+  Screens view shows per destination is in the hub's connect-time inventory.
+- **Web RCS refs go stale on every render** — the surface rebuilds its tree on
+  each store notify, so a browser-driven test must re-find an element after
+  any action that changes state.
 
 ## Protocol facts worth not regressing
 

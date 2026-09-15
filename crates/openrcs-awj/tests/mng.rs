@@ -2,10 +2,12 @@
 //!
 //! Every path pinned here was answered by a Pulse 4K on firmware 3.3.10 on
 //! 2026-09-12, and by the vendor's Midra 4K (3.2.29) and Alta 4K (1.3.7)
-//! simulators. The negative controls at the bottom are what the same device
-//! said to the LivePremier spellings: `E12`, every one.
+//! simulators — except the block marked "from the store", which is spelled
+//! from that same unit's store dump and has so far been answered over AWJ by
+//! the simulators only. The negative controls at the bottom are what the
+//! device said to the LivePremier spellings: `E12`, every one.
 
-use openrcs_awj::mng::{self, Bank, Dest};
+use openrcs_awj::mng::{self, Bank, Dest, TallyBus};
 use openrcs_awj::{paths, Buffer, Dialect, Preset, Transition};
 
 #[test]
@@ -65,6 +67,146 @@ fn takes_live_under_a_transition_node_with_one_take_time() {
     // The subscription prefix the surface writes covers both lists.
     assert!(mng::take(Dest::Screen(4)).starts_with(mng::SUB_TRANSITIONS));
     assert!(mng::transition(Dest::Aux(4)).starts_with(mng::SUB_TRANSITIONS));
+}
+
+#[test]
+fn the_tbar_is_driven_on_control_and_read_on_status() {
+    assert_eq!(
+        mng::tbar_control(Dest::Screen(1)),
+        "DeviceObject/transition/$screen/@items/1/control/@props/tbarPosition"
+    );
+    assert_eq!(
+        mng::preset_toggle(Dest::Aux(1)),
+        "DeviceObject/transition/$auxiliaryScreen/@items/1/control/@props/enablePresetToggle"
+    );
+}
+
+#[test]
+fn take_many_names_destinations_a_third_way() {
+    // Not `S1`, not `1`: the list the device's own TAKE ALL writes.
+    assert_eq!(
+        mng::take_many(),
+        "DeviceObject/transition/control/@props/xTakeMany"
+    );
+    assert_eq!(Dest::Screen(1).take_many_id(), "SCREEN_1");
+    assert_eq!(Dest::Aux(4).take_many_id(), "AUX_4");
+}
+
+#[test]
+fn a_master_save_records_what_its_mode_says_and_writes_bank_slots() {
+    assert_eq!(
+        mng::master_save_mode(),
+        "DeviceObject/preset/masterBank/control/save/@props/mode"
+    );
+    // The slot each destination's buffer lands in on a SAVE_FROM_* save —
+    // 1 for all of them by default, which is the trap.
+    assert_eq!(
+        mng::master_save_bank_slot(Dest::Screen(2)),
+        "DeviceObject/preset/masterBank/control/save/$screen/@items/2/@props/bankSlot"
+    );
+    assert_eq!(
+        mng::master_save_bank_slot(Dest::Aux(1)),
+        "DeviceObject/preset/masterBank/control/save/$auxiliaryScreen/@items/1/@props/bankSlot"
+    );
+}
+
+#[test]
+fn layer_properties_hang_off_the_buffer_and_the_canvas_off_the_screen() {
+    assert_eq!(
+        mng::layer_pos_h(1, Buffer::Up, 2),
+        "DeviceObject/$screen/@items/1/$preset/@items/UP/$liveLayer/@items/2/position/@props/posH"
+    );
+    assert_eq!(
+        mng::layer_size_v(2, Buffer::Down, 1),
+        "DeviceObject/$screen/@items/2/$preset/@items/DOWN/$liveLayer/@items/1/size/@props/sizeV"
+    );
+    assert_eq!(
+        mng::layer_opacity(1, Buffer::Up, 1),
+        "DeviceObject/$screen/@items/1/$preset/@items/UP/$liveLayer/@items/1/opacity/@props/opacity"
+    );
+    assert_eq!(
+        mng::layer_state(1, Buffer::Up, 1),
+        "DeviceObject/$screen/@items/1/$preset/@items/UP/$liveLayer/@items/1/status/@props/state"
+    );
+    // The generic builder spells the deeper leaves the same way.
+    assert_eq!(
+        mng::layer_prop(1, Buffer::Up, 1, "border/edge/color/@props/red"),
+        "DeviceObject/$screen/@items/1/$preset/@items/UP/$liveLayer/@items/1/border/edge/color/@props/red"
+    );
+    assert_eq!(
+        mng::canvas_width(1),
+        "DeviceObject/$screen/@items/1/canvas/status/size/@props/sizeH"
+    );
+}
+
+// ---- from the store: spelled from the Pulse 4K's dump, answered by the simulators
+
+#[test]
+fn freeze_and_faders_are_per_screen_not_per_buffer() {
+    assert_eq!(
+        mng::freeze(Dest::Screen(1)),
+        "DeviceObject/$screen/@items/1/control/@props/freeze"
+    );
+    assert_eq!(
+        mng::freeze(Dest::Aux(2)),
+        "DeviceObject/$auxiliaryScreen/@items/2/control/@props/freeze"
+    );
+    assert_eq!(
+        mng::layer_freeze(1, 3),
+        "DeviceObject/$screen/@items/1/$liveLayer/@items/3/control/@props/freeze"
+    );
+    assert_eq!(
+        mng::layer_fader(1, 1),
+        "DeviceObject/$screen/@items/1/$liveLayer/@items/1/fader/@props/opacity"
+    );
+    assert_eq!(
+        mng::layer_fade_out(1, 1),
+        "DeviceObject/$screen/@items/1/$liveLayer/@items/1/fader/@props/xFadeOut"
+    );
+}
+
+#[test]
+fn inputs_are_keyed_input_n_and_labels_live_on_plugs() {
+    assert_eq!(mng::input_key(7), "INPUT_7");
+    assert_eq!(
+        mng::input_is_available(1),
+        "DeviceObject/$input/@items/INPUT_1/status/@props/isAvailable"
+    );
+    assert_eq!(
+        mng::input_led(16),
+        "DeviceObject/$input/@items/INPUT_16/status/@props/ledColor"
+    );
+    assert_eq!(
+        mng::input_plug(1),
+        "DeviceObject/$input/@items/INPUT_1/control/@props/plug"
+    );
+    assert_eq!(
+        mng::input_freeze(1),
+        "DeviceObject/$input/@items/INPUT_1/control/@props/freeze"
+    );
+    assert_eq!(
+        mng::plug_label(1, 1),
+        "DeviceObject/$input/@items/INPUT_1/$plug/@items/1/control/@props/label"
+    );
+    assert_eq!(
+        mng::plug_format_name(3, 1),
+        "DeviceObject/$input/@items/INPUT_3/$plug/@items/1/status/signal/@props/formatName"
+    );
+}
+
+#[test]
+fn the_device_keeps_four_input_tallies() {
+    assert_eq!(
+        mng::tally_inputs(TallyBus::ScreenProgram),
+        "DeviceObject/tallies/inputs/@props/usedOnScreenPgm"
+    );
+    assert_eq!(
+        mng::tally_inputs(TallyBus::AuxPreview),
+        "DeviceObject/tallies/inputs/@props/usedOnAuxPrw"
+    );
+    assert_eq!(mng::SUB_TALLIES, "DeviceObject/tallies");
+    assert_eq!(mng::sub_destination(Dest::Aux(1)), "DeviceObject/$auxiliaryScreen/@items/1");
+    assert_eq!(mng::sub_input(2), "DeviceObject/$input/@items/INPUT_2");
 }
 
 #[test]

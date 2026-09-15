@@ -367,8 +367,8 @@
         "text": "Take, Take Cut, T-bar, Step Back, TAKE ALL"
        },
        "openrcs": {
-        "state": "P",
-        "text": "Take and Cut per screen and per auxiliary, with the take time shown; no take-all"
+        "state": "F",
+        "text": "Take / Cut per screen and per auxiliary, the take time typed in seconds, and Take all (one take per destination, as the vendor's own Web RCS does it)"
        }
       }
      }
@@ -412,8 +412,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "per destination, on the take node's own control; the device reports the ends"
        }
       }
      }
@@ -457,8 +457,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": "in the crate (mng::step_back), not on the surface"
+        "state": "P",
+        "text": "the device's own xStepBack — an edit undo (the last change to layer settings), which is what the vendor manual means by it here; not a return to the previous look"
        }
       }
      }
@@ -502,8 +502,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the preset toggle (swap) per destination; no auto-take or dynamic fit"
        }
       }
      }
@@ -592,8 +592,8 @@
         "text": "layer, screen and input freeze"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "F",
+        "text": "destination freeze, per-layer freeze (holds through a take), input freeze"
        }
       }
      }
@@ -912,8 +912,8 @@
         "text": ""
        },
        "openrcs": {
-        "state": "M",
-        "text": "a table, no layer editing"
+        "state": "P",
+        "text": "one screen at a time on a canvas at the applied size: drag to move, corners to resize, layouts; an auxiliary is one background source"
        }
       }
      }
@@ -958,7 +958,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "one destination at a time"
        }
       }
      }
@@ -1002,8 +1002,8 @@
         "text": "opacity, crop/aspect, mask, border, smooth border, shadow, colour filter, flip, transition effect / timing / speed"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "source, centre/size, opacity, crop, mask, effects, border, shadow, transitions (type/way), flying curve type, speed type, plus freeze and a fader with fade in/out; not the timing bars, flying curve points, speed points or a COLOR layer's colour"
        }
       }
      }
@@ -1047,8 +1047,8 @@
         "text": "live-layer layouts"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "Fill / 2-up / 3-up / Quad / PiP over the fitted layers, in slot order"
        }
       }
      }
@@ -1138,7 +1138,7 @@
        },
        "openrcs": {
         "state": "M",
-        "text": ""
+        "text": "the preset's background set is not exposed"
        }
       }
      }
@@ -1412,8 +1412,8 @@
         "text": "200 screen + 200 aux"
        },
        "openrcs": {
-        "state": "P",
-        "text": "recall only, from the 200-slot screen bank and the 200-slot aux bank, paged 50 at a time with validity and label, and a red/green mark on the slot each buffer holds; no save, label or erase"
+        "state": "F",
+        "text": "recall, save (from program or preview), label and erase on the 200-slot screen and aux banks, paged 50 at a time, with a red/green mark on the slot each buffer holds"
        }
       }
      }
@@ -1457,8 +1457,8 @@
         "text": "50, self-contained or from screen memories"
        },
        "openrcs": {
-        "state": "P",
-        "text": "recall only, from the 50-slot master bank"
+        "state": "F",
+        "text": "recall, save, label and erase on the 50-slot master bank; a save from a buffer writes the bank slots the device would otherwise put in slot 1, and refuses when they are in use; or record the memories the buffers already hold"
        }
       }
      }
@@ -1593,7 +1593,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "labels are read, nothing is written"
+        "text": "labels read and written; no colours, no inspect thumbnail"
        }
       }
      }
@@ -1727,8 +1727,8 @@
         "text": "aux screens, 200 aux memories"
        },
        "openrcs": {
-        "state": "P",
-        "text": "auxiliaries in service are destinations — take, cut, memory bookkeeping and the aux bank; no aux source editing"
+        "state": "F",
+        "text": "auxiliaries are destinations — take, cut, T-bar, freeze, memory bookkeeping, background source — and the aux bank recalls, saves, labels and erases"
        }
       }
      }
@@ -2002,8 +2002,8 @@
         "text": "plug, LUT allocation, signal, correction, aspect, keying"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "availability, active plug, connector and signal format per input, freeze and black; no plug selection, image, aspect or keying"
        }
       }
      }
@@ -2272,8 +2272,8 @@
         "text": "TSL tally protocol; no GPIO"
        },
        "openrcs": {
-        "state": "M",
-        "text": ""
+        "state": "P",
+        "text": "the device's own on-air lists per input are read and shown; never seen populated on the simulator, so unverified"
        }
       }
      }
@@ -2638,7 +2638,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "recalls read the destination back — twice, because the memory bookkeeping lands a few tens of ms after the request"
+        "text": "every write reads its target back; recalls read the destination twice because the bookkeeping lands late; a master save is refused rather than allowed to overwrite bank slots"
        }
       }
      }
