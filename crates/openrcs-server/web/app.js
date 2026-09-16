@@ -8318,7 +8318,9 @@ VIEWS.workspace = (() => {
     },
       el('span', {
         class: 'src-sw' + (snap ? ' shot' : ''),
-        style: `background:${n === 0 ? 'var(--line-hi)' : srcColor(n)}`
+        // background-color, not the shorthand: `background:` also resets size and
+        // repeat inline, which outranks .shot's `cover` and tiles the thumbnail
+        style: `background-color:${n === 0 ? 'var(--line-hi)' : srcColor(n)}`
              + (snap ? `;background-image:url("${snap}")` : ''),
       }),
       el('span', { class: 'src-nm', text: name }),
@@ -8417,7 +8419,8 @@ VIEWS.workspace = (() => {
       const box = el('div', {
         class: 'lrect' + (isSel ? ' sel' : '') + (src ? '' : ' empty') + (missing ? ' missing' : '') + (snap ? ' shot' : ''),
         title: missing ? `${sourceName(src)} is not available — a take waiting on this layer will not land` : '',
-        style: `background:${srcColor(src)};z-index:${l + 1};opacity:${Math.max(0.15, alpha)}`
+        // background-color, not the shorthand — see srcTile
+        style: `background-color:${srcColor(src)};z-index:${l + 1};opacity:${Math.max(0.15, alpha)}`
              + (snap ? `;background-image:url("${snap}")` : ''),
         ...dropTarget((e) => {
           const n2 = droppedSource(e);
