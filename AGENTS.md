@@ -241,6 +241,31 @@ std binary and may use crates. Keep the split.
   each store notify, so a browser-driven test must re-find an element after
   any action that changes state.
 
+## Midra (10500) and LiveCore facts worth not regressing
+
+- **Keep the Midra's preset-update mode OFF.** `CTpmu`=1 makes `GCtak` inert
+  (accepted, latched at 1, nothing moves, `GCtav` pinned at 0); with it off,
+  preview (ctx 1) edits stick and the take lands. Measured on a Pulse2
+  2026-09-16. `midraEditMode()` is the one place it is written; a Midra take
+  pulses `GCtak` 0 then 1; a Midra cut runs the T-bar through the middle to
+  the far end (one write of the far end is ignored).
+- **`MAmfa`/`MAnfa`/`MAsfa` are FADE_AUTO: 1 = fade IN (up), 2 = fade OUT (to
+  black).** `MAnas`/`MAsas` are ALPHA_STATUS (0 at max, 1 at min, 3/4 in
+  transition). Both verified on a NeXtage 16; the constants are `FADE_IN`,
+  `FADE_OUT`, `ALPHA_STATUS`.
+- **`TAopr`/`TAopw` are indexed by source number** (the `PRinp` space), not
+  by input. Entry 0 is "no source".
+- **`OS*` (OUTPUT_SCREEN) is indexed by output.** `OSsou[o]` names the screen
+  output o carries; never read `OSpoh[s]` as a screen's position.
+- **The multiviewer and still-capture source lists start at input 1, not at
+  "none"** (`MLces`/`MLfes` 0..55, `STcso` 0..31); the names are the device's
+  own enumerations, spelled in `monName`/`capName`.
+- **A capability probe compares `store.errCount`**, never a slice of
+  `store.log` — the log is a ring.
+- **The bridge drops a silent link after 20 s** and the browser re-runs
+  `onReady()` when it returns. Do not add a "quiet" code path that stops the
+  probe.
+
 ## Protocol facts worth not regressing
 
 - The reply format mirrors the command: commands end with the mnemonic, replies

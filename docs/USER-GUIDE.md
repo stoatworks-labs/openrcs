@@ -83,8 +83,11 @@ single shape.
 - **Show mode** — a stripped, big-target front-of-house surface: large CUT ALL /
   TAKE ALL, a TAKE tile per destination, and a grid of master-memory recall tiles.
   The one to drive a show from a touchscreen at front-of-house.
-- **Wall** — where each screen sits in the output. Every screen is placed in the
-  output-tile grid at its real position; drag to rearrange, then apply.
+- **Wall** — which output shows which tile of which screen. Each screen is a
+  grid of output tiles (its size in tiles is set here), and the outputs that
+  carry it sit on the tile they show, marked program or preview. Click an
+  output, then a tile, to move it; **Apply to device** commits the layout with
+  the frame's global output update, which re-syncs the outputs.
 - **Destinations** — take, cut, T-bar and step-back whole **screen groups** as one
   destination, with a grouping editor and a TAKE ALL GROUPS.
 - **Shows** — capture the device's writable state (the live look, the memory

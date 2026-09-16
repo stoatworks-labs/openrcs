@@ -632,6 +632,86 @@ caret by id across the per-frame rebuild, and typing only re-renders when the
 Connect button's state flips. Enter connects. A typed hostname works —
 `normalise_device` never required an IP and the hub connects through tokio's
 resolver — so the "needs --device" hint went.
+## Bench session before a show: NeXtage 16 + Pulse2, 2026-09-16 evening
+
+Both units on the home LAN (NeXtage 16 `192.168.1.42`, DHCP on; Pulse2
+`192.168.1.140`, static). Every mnemonic view rendered clean on both — zero
+device NAKs beyond the two deliberate capability probes, zero JS errors — and
+then every operator action was fired at the real units. What the hardware
+corrected, in order of how badly it would have hurt on the show:
+
+- **Master fade was inverted.** `MAmfa` (and `MAnfa`/`MAsfa`) is the device's
+  FADE_AUTO enum: 0 idle, **1 FADE IN (up), 2 FADE OUT (to black)**. The
+  Live view sent 1 for "Fade to Black" and 2 for "Fade Up", so "Fade Up"
+  blacked the screen. Proven by `MAnas` (ALPHA_STATUS: 0 at max, 1 at min,
+  2 at level, 3 fading in, 4 fading out) running 4→1 on a 2 and 3→0 on a 1.
+  The device pushes `MAnas`/`MAsas` unsolicited, so the Live view now shows
+  the fade state live. The Keys "Master fade" action carried the same swap.
+- **The Midra take verb is dead in preset-update mode.** With `CTpmu`=1 a
+  `GCtak` is accepted, latches at 1, transitions nothing and `GCtav` stays 0
+  whatever the preview holds; with `CTpmu`=0 preview (ctx 1) edits stick just
+  the same and `GCtak` puts them on air (`GCtav` back to 1, `GCtak` back to
+  0). Every view used to switch the mode ON on entry, on the August belief
+  that preview edits needed it. `midraEditMode()` now keeps it OFF, and a
+  Midra take pulses `GCtak` 0 then 1 (a 1 over a latched 1 is nothing). The
+  Midra **cut** is the T-bar: `GCtba` 0..10000, either end-to-end move puts
+  the preview on air — but the bar has to be seen to travel: one write of the
+  far end is ignored, two writes 50 ms apart (the middle, then the end) land
+  every time. `GCtal` (take all) was as inert as `GCtak` under `CTpmu`=1.
+- **Tally was off by one.** `TAopr`/`TAopw` are indexed by *source number*
+  (the PRinp space: 0 none, 1–24 inputs, 25–32 frames, 33–40 logos, 41
+  colour); with inputs 1–4 on air, entries 1–4 lit, and the view labelled
+  entry i as "IN i+1". Now named through `sourceName`, index 0 skipped.
+- **Wall and Screens read the output map backwards.** `OUTPUT_SCREEN` (`OS*`)
+  is indexed by OUTPUT: `OSsou[o]` is the screen output o carries,
+  `OSpoh/OSpov[o]` the tile of that screen it shows, `OSomo[o]` program or
+  preview (OUTPUT_MODE 0/1); `SCsih/SCsiv[s]` is the screen's size in tiles.
+  On this frame outputs 1 and 2 carry screens 1 and 2 at tile 1,1 — the old
+  Wall drew both screens on one tile, one hidden behind the other, and a drag
+  would have written an *output's* tile. Rewritten around outputs on their
+  screens' grids; the Screens table now lists the outputs feeding each screen.
+- **The capability probes could never fail once the log had wrapped.** They
+  sliced `store.log` from a mark, and the log is a 400-entry ring, so on a
+  page open for more than a few seconds the Pulse2's Stills view scanned 24
+  logo vars it had just been told were E10 and the Audio view drew 12 input
+  channels of defaults over E10s. `store.errCount` (monotonic) replaces the
+  mark.
+- **A deaf session looked ONLINE.** The Pulse2's one control session stopped
+  answering mid-session (a fresh socket answered `DEV259` at once) and the
+  bridge sat on the open socket showing ONLINE. `pump`/`pump_awj` now probe
+  after 5 s of silence (`?` on the mnemonic platforms, the model's identity
+  path on AWJ) and drop the link after 20 s, which shows OFFLINE, reconnects,
+  and — new in the browser — re-runs `onReady()` when the link is back.
+- **Erase and save-over had no second tap.** Every memory erase (screen,
+  master, Midra preset, layer bank, still library) and every save onto a slot
+  in use now arms on the first tap and fires on the second within 3 s
+  (`confirmBtn`, `ARMED`).
+
+Recovered from the vendor RCS files the same evening (the `{label,data}`
+registry method, `ENUM_*` in `ORX_WebRCS.swf` from the unit and RCS2's
+`MDR_launcher.swf`) and now spelled in the surface: the multiviewer widget
+sources (MONITORING_ELEMENT_SOURCES: 0–23 inputs, 24–31 frames, 32–39 logos,
+40–47 screen program, 48–55 screen preview — there is no "none", 0 is input
+1), the still-capture sources (0–23 inputs, 24–31 screens), the LiveCore
+frames and logos by the vendor's own names, GROUPSTATUS 4/5 = COPY FROM
+DOWN/UP, the Midra layer slots (Frame, PiP 1–4, Logo 1–2, Audio — `SCmly`=2
+on a Pulse2 is the frame layer and one PiP), and the 27 `GCqly` layouts by
+name. On the Midra's frame layer INPUTLAYER reads "INPUT / FRAME n": a Pulse2
+with frames 1 and 2 loaded accepted exactly 1, 2, 9, 10 and 11 there and only
+0 and 11 on the PiP with no input signals present; what 9 and 10 show is
+unverified without a monitor.
+
+Two things the bench could not settle. The NeXtage's screen memory 5 read
+empty at the end of the session; the first Workspace screenshot appeared to
+show slots 1–6 lit and nothing sent addressed slot 5 (the only erase was
+`PMmet 47` + `PMres`), so either it was empty all along or something in
+`PMres`/`PSloa` reaches further than the table says — check the memory before
+trusting it. And AW Browser could not be driven for a side-by-side (its window
+sat on another Space behind a full-screen app; Flash does not repaint there).
+
+Restored at the end: NeXtage both screens at bank A with every layer clear,
+memories 1–4, 6 and masters 1–2 untouched, slot 48 erased; Pulse2 program
+empty, preview back to frame-layer 9 + colour, `CTpmu`=0.
 
 ## Pulse PLS300 — the generation before Midra, from its published guide, 2026-09-16
 

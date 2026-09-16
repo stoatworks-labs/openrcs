@@ -167,6 +167,8 @@ table.grid tbody tr.sel-row { background: var(--accent-dim); box-shadow: inset 2
 .btn.pvw { background: color-mix(in srgb, var(--pvw) 22%, var(--panel)); border-color: var(--pvw); }
 .btn.ghost { background: none; }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.armed-danger { background: var(--pgm); border-color: var(--pgm); color: #fff; }
+.slot.armed-danger { border-color: var(--pgm); box-shadow: 0 0 0 2px var(--pgm); }
 
 label.field { display: inline-flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
 select, input[type=number], input[type=text] {
@@ -230,6 +232,7 @@ select, input[type=number], input[type=text] {
 .tally-tile.pvw { background: color-mix(in srgb, var(--pvw) 22%, var(--panel-2)); border-color: var(--pvw); }
 .tally-tile.pvw .tally-src { color: var(--text); }
 .tally-tile.pvw .tally-state { color: var(--pvw); }
+.tally-tile.dim:not(.pgm):not(.pvw) { opacity: .45; }
 
 /* ---- User keys ---- */
 .key-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -634,6 +637,19 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .wall-name { font: 700 13px var(--sans); }
 .wall-dim { font: 600 10px var(--mono); opacity: .85; }
 .wall-sel-name { font: 700 13px var(--sans); color: var(--text); }
+.wall-screen-card { margin-bottom: 12px; }
+.wall-grid { display: grid; gap: 4px; padding: 4px; background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r); width: max-content; }
+.wall-tile { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; padding: 14px 4px 4px; border: 1px dashed var(--line-hi); border-radius: 3px; min-height: 40px; }
+.wall-tile.empty { color: var(--muted); }
+.wall-tile.drop { border-style: solid; border-color: var(--accent); cursor: pointer; }
+.wall-tile.drop:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.wall-tile-n { position: absolute; top: 2px; left: 5px; font: 600 10px var(--mono); color: var(--muted); }
+.wall-out { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 8px; border: 2px solid rgba(255,255,255,.35); border-radius: 3px; background: var(--panel-2); color: var(--text); cursor: pointer; font: 700 12px var(--sans); }
+.wall-out.pvw { border-color: var(--pvw); }
+.wall-out.off { opacity: .45; }
+.wall-out.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.wall-out-mode { font: 600 9px var(--mono); color: var(--muted); }
+.wall-out.pvw .wall-out-mode { color: var(--pvw); }
 .wall-ro { font: 600 12px var(--mono); color: var(--text); padding: 0 6px; }
 
 /* ---------- Cue autofollow ---------- */

@@ -92,19 +92,28 @@ const layerShown = (s, ctx, l) => (store.val('PRinp', s, ctx, l) || 0) > 0;
 // screen to its group (identity unless screens have been grouped).
 // Verified on a NeXtage 16; see docs/PROTOCOL.md.
 const GRP_AT_DOWN = 0, GRP_AT_UP = 1, GRP_FROM_DOWN = 2, GRP_FROM_UP = 3;
+// The device's own GROUPSTATUS enum continues: 4 COPY FROM DOWN, 5 COPY FROM UP —
+// the copy that follows an effect when the preset toggle is off. In both the
+// screen is still leaving the bank named, so they sit with the EFFECT states.
+const GRP_COPY_FROM_DOWN = 4, GRP_COPY_FROM_UP = 5;
+// FADE_AUTO (MAmfa / MAnfa / MAsfa): 0 idle, 1 FADE IN (picture up), 2 FADE OUT
+// (to black); ALPHA_STATUS (MAnas / MAsas) names where the alpha is. Both from
+// the device's own enumerations, the fade direction confirmed on a NeXtage 16.
+const FADE_IN = 1, FADE_OUT = 2;
+const ALPHA_STATUS = ['at max', 'at min', 'at level', 'fading in', 'fading out'];
 const hasBanks = () => store.byMnem.has('GCsta');
 const groupOf = (s) => store.val('Plngr', s) ?? s;
 /** Preset index currently on air for a screen (Midra has one program context). */
 function liveCtx(s) {
   if (!hasBanks()) return 0;
   const st = store.val('GCsta', groupOf(s));
-  return (st === GRP_AT_UP || st === GRP_FROM_UP) ? 1 : 0;
+  return (st === GRP_AT_UP || st === GRP_FROM_UP || st === GRP_COPY_FROM_UP) ? 1 : 0;
 }
 /** Preset index safe to edit — the one that isn't on air. */
 const editCtx = (s) => hasBanks() ? 1 - liveCtx(s) : 1;
 const midTransition = (s) => {
   const v = store.val('GCsta', groupOf(s));
-  return v === GRP_FROM_DOWN || v === GRP_FROM_UP;
+  return v === GRP_FROM_DOWN || v === GRP_FROM_UP || v === GRP_COPY_FROM_DOWN || v === GRP_COPY_FROM_UP;
 };
 /** Take: transition to whichever bank is not currently live. */
 // The device's own auto-take verbs (GCtku/GCtkd) do NOT animate on real
@@ -130,11 +139,43 @@ function animateTbar(g, to, ttime) {
   _tbarAnim[g] = setInterval(tick, 45);   // ~22 fps; final tick lands exactly on `to`
   tick();
 }
+// Midra's PRESET_UPDATE_MODE (CTpmu) must be OFF for the take verb to work.
+// Measured on a Pulse2 (2026-09-16): with it on, GCtak is accepted, latches at 1
+// and transitions nothing, GCtav sits at 0 and every preview edit keeps it
+// there; with it off, preview (ctx 1) edits stick just the same and GCtak puts
+// them on air. The mode was being switched on here on the belief that preview
+// edits needed it — they do not. Leave it off, and make sure of it before a
+// take, since the vendor client turns it on when it connects.
+function midraEditMode() {
+  if (isMidra() && store.byMnem.has('CTpmu') && store.val('CTpmu') !== 0) store.set('CTpmu', [], 0);
+}
+// A Midra take is the device's own GCtak, which runs each layer's programmed
+// transition. It is a level the device drops after the transition — but an
+// inert one (see above) leaves it latched at 1, and a 1 written over a 1 is
+// nothing — so it is always pulsed 0 then 1.
+function midraTake(screen) {
+  midraEditMode();
+  store.set('GCtak', [screen], 0);
+  store.set('GCtak', [screen], 1);
+}
+// A Midra cut runs the T-bar to its far end: GCtba is 0..10000 and either
+// end-to-end move puts the preview on air (the same two-ended bar as
+// LiveCore, on a different scale). The bar has to be seen to travel — a single
+// write of the far end is ignored, two writes 50 ms apart (the middle, then
+// the end) land every time. Proven on the Pulse2 in both directions.
+function midraCut(screen) {
+  midraEditMode();
+  const max = store.byMnem.get('GCtba')?.max ?? 10000;
+  const at = store.val('GCtba', screen) ?? 0;
+  const to = at >= max / 2 ? 0 : max;
+  store.set('GCtba', [screen], Math.round(max / 2));
+  setTimeout(() => store.set('GCtba', [screen], to), 50);
+}
 function doTake(screen, ttime) {
   CONFIDENCE.autoSnapshot('before take');            // opt-in undo point, no-op unless armed
   if (!hasBanks()) {                                   // Midra: one-way take per screen
     if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
-    store.set('GCtak', [screen], 1);
+    midraTake(screen);
     return;
   }
   const g = groupOf(screen), to = editCtx(screen);    // to = bank we're bringing live
@@ -143,7 +184,7 @@ function doTake(screen, ttime) {
 /** Cut: jump the bar straight to the target end. */
 function doCut(screen) {
   CONFIDENCE.autoSnapshot('before cut');
-  if (!hasBanks()) { store.set('GCtak', [screen], 1); return; }
+  if (!hasBanks()) { midraCut(screen); return; }
   const g = groupOf(screen), to = editCtx(screen);
   animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
 }
@@ -178,7 +219,7 @@ function activeGroups() {
   }
   return [...seen.entries()].sort((a, b) => a[0] - b[0]);
 }
-const groupLiveCtx = (g) => hasBanks() ? ((store.val('GCsta', g) === GRP_AT_UP || store.val('GCsta', g) === GRP_FROM_UP) ? 1 : 0) : 0;
+const groupLiveCtx = (g) => { if (!hasBanks()) return 0; const st = store.val('GCsta', g); return (st === GRP_AT_UP || st === GRP_FROM_UP || st === GRP_COPY_FROM_UP) ? 1 : 0; };
 const groupTransitioning = (g) => { const v = store.val('GCsta', g); return v === GRP_FROM_DOWN || v === GRP_FROM_UP; };
 function groupTake(g, ttime) {
   if (!hasBanks()) return;
@@ -207,7 +248,11 @@ class Store {
     this.byGroup = new Map();        // group -> [def]
     this.meta = null;
     this.connected = false;
-    this.log = [];                   // {dir, text}
+    this.log = [];                   // {dir, text} — a ring of the last 400
+    // Every NAK the device has sent, counted for as long as the page lives.
+    // The log above is a ring, so "did anything fail since I marked it" cannot
+    // be asked of it once it has wrapped; a capability probe asks this instead.
+    this.errCount = 0;
     this.listeners = new Set();
     this._pending = false;
     // Plan mode: while on, sets stage into planState instead of hitting the
@@ -345,11 +390,19 @@ class Store {
         this.pushLog('rx', `${m.m}${m.i.length ? ' ' + m.i.join(',') : ''} = ${m.v}`);
         break;
       case 'err':
+        this.errCount++;
         this.pushLog('er', `E${m.code}`);
         break;
-      case 'status':
+      case 'status': {
+        // A link that comes back after dropping — the bridge's watchdog gave up
+        // on a deaf session, or the unit rebooted — has a device whose state
+        // may have moved. Ask it who it is again and let the view re-read
+        // what it shows; the cache is refreshed rather than trusted.
+        const back = m.connected && !this.connected;
         this.connected = m.connected;
+        if (back && this.meta) setTimeout(() => onReady(), 300);
         break;
+      }
     }
     this.notify();
   }
@@ -963,13 +1016,13 @@ VIEWS.memories = (() => {
       store.get('PMssh', [slot, 0]); store.get('PMssv', [slot, 0]);
     }
     function enter() {
-      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      midraEditMode();
       store.scan('PMpst'); store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     }
     function save(slot) { store.set('GCsrq', [2, slot], 1); store.get('PMpst', [slot]); got.delete(slot); ensure(slot); store.notify(); }
     function reset(slot) { store.set('CTpmr', [slot], 1); store.get('PMpst', [slot]); got.delete(slot); if (sel === slot) sel = null; store.notify(); }
     function recall(slot) {                       // re-apply the stored preset to preview (ctx 1)
-      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      midraEditMode();
       for (let sc = 0; sc < screenCount(); sc++)
         for (let l = 0; l < layerSlots(); l++) {
           store.set('PRsih', [sc, 1, l], store.val('PMsih', slot, sc, l) || 0);
@@ -1012,8 +1065,9 @@ VIEWS.memories = (() => {
       const detail = sel != null ? el('div', { class: 'panel' },
         el('div', { class: 'row' }, el('h2', `Memory ${sel + 1}`), el('div', { class: 'spacer' }),
           isUsed ? el('button', { class: 'btn recall', onclick: () => recall(sel) }, 'Recall to preview') : null,
-          el('button', { class: 'btn save', onclick: () => save(sel) }, 'Save current program'),
-          isUsed ? el('button', { class: 'btn ghost', onclick: () => reset(sel) }, 'Erase') : null),
+          isUsed ? confirmBtn(`midra-save-${sel}`, 'Save current program', 'Tap again to overwrite', () => save(sel), 'btn save')
+                 : el('button', { class: 'btn save', onclick: () => save(sel) }, 'Save current program'),
+          isUsed ? confirmBtn(`midra-erase-${sel}`, 'Erase', 'Tap again to erase', () => reset(sel)) : null),
         isUsed ? el('div', { class: 'row', style: 'align-items:flex-start' }, thumb(sel))
           : el('div', { class: 'hint', text: 'Empty slot — “Save current program” stores the live layout here.' })) : null;
       return el('div', {}, detail, el('div', { class: 'panel' }, grid()));
@@ -1034,9 +1088,9 @@ VIEWS.memories = (() => {
     const ctxOf = (a) => a.role === 'pgm' ? liveCtx(a.screen) : editCtx(a.screen);
 
     function enter() {
-      // Midra protects the program preset; without update mode a write to the
-      // preview context silently fails to stick (the same reason Layers sets it).
-      if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);
+      // Midra: keep preset-update mode OFF — preview edits stick without it,
+      // and with it on the take verb is dead (see midraEditMode).
+      midraEditMode();
       for (const m of ['SCmly', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
       if (hasBanks()) store.scan('GCsta');
       LAYER_MEM.fetch(from.screen, ctxOf(from), from.layer);
@@ -1158,7 +1212,7 @@ VIEWS.memories = (() => {
           }),
           el('div', { class: 'spacer' }),
           el('button', { class: 'btn recall', onclick: () => recallTo(n, false) }, 'Apply to target'),
-          el('button', { class: 'btn ghost', onclick: () => { LAYER_MEM.erase(n); if (sel === n) sel = null; report = null; store.notify(); } }, 'Erase')),
+          confirmBtn(`layerbank-erase-${n}`, 'Erase', 'Tap again to erase', () => { LAYER_MEM.erase(n); if (sel === n) sel = null; report = null; store.notify(); })),
         el('div', { class: 'row' }, el('span', { class: 'hint', text:
           `${Object.keys(s.values).length} properties stored, ${kept} pass the current filter · captured `
           + `${new Date(s.saved).toLocaleString()} from ${screenLabel(s.from.screen)} layer ${s.from.layer + 1}`
@@ -1256,7 +1310,7 @@ VIEWS.memories = (() => {
       const cx = store.val('PMpoh', slot, l), cy = store.val('PMpov', slot, l);
       const alp = store.val('PMalp', slot, l);
       rows.push(el('tr', { class: src ? '' : 'dim' },
-        el('td', { text: 'L' + (l + 1) }),
+        el('td', { text: layerName(l) }),
         el('td', {}, src ? el('span', { class: 'swatch-dot', style: `background:${srcColor(src)}` }) : null, ' ' + sourceName(src)),
         el('td', { class: 'val', text: (w != null && h != null) ? `${w}×${h}` : '·' }),
         el('td', { class: 'val', text: (cx != null && cy != null) ? `${cx - B},${cy - B}` : '·' }),
@@ -1272,6 +1326,18 @@ VIEWS.memories = (() => {
   function slotTap(n) {
     selected = n;
     if (mode === 'inspect') { if (scope === 'screen') ensureContent(n); store.notify(); return; }
+    // Save mode onto a slot already in use overwrites it — a second tap on the
+    // same slot within three seconds confirms; a tap anywhere else disarms.
+    if (mode === 'save' && slotValid(n, scope === 'master')) {
+      const key = `memgrid-save-${scope}-${screen}-${n}`;
+      if (ARMED !== key) {
+        clearTimeout(ARMED_TIMER); ARMED = key;
+        ARMED_TIMER = setTimeout(() => { if (ARMED === key) { ARMED = null; store.notify(); } }, 3000);
+        flash(`Memory ${n + 1} is in use — tap it again to overwrite`);
+        return;
+      }
+      ARMED = null;
+    }
     if (scope === 'master') {
       store.set('PSmet', [], n);                       // target slot
       store.set('PSprf', [], prf());
@@ -1313,6 +1379,7 @@ VIEWS.memories = (() => {
       let cls = 'slot';
       if (valid) cls += ' valid';
       if (selected === i) cls += ' sel';
+      if (ARMED === `memgrid-save-${scope}-${screen}-${i}`) cls += ' armed-danger';
       g.append(el('button', {
         class: cls,
         title: `${isMaster ? 'Master memory' : 'Memory'} ${i + 1}${label ? ' — ' + label : ''}${valid ? '' : ' — empty'}`,
@@ -1384,7 +1451,7 @@ VIEWS.memories = (() => {
             }),
             el('div', { class: 'spacer' }),
             el('span', { class: 'hint', text: `${store.val('PMscw', selected)}×${store.val('PMsch', selected) || '·'} · ${store.val('PMmly', selected) ?? 0} layers` }),
-            el('button', { class: 'btn ghost', onclick: () => eraseSlot(selected) }, 'Erase')),
+            confirmBtn(`mem-erase-${screen}-${selected}`, 'Erase', 'Tap again to erase', () => eraseSlot(selected))),
           el('div', { class: 'row', style: 'align-items:flex-start;gap:16px' },
             memThumb(selected),
             memList(selected)))
@@ -1399,7 +1466,7 @@ VIEWS.memories = (() => {
             }),
             el('div', { class: 'spacer' }),
             el('span', { class: 'hint', text: 'recalls every enabled screen at once' }),
-            el('button', { class: 'btn ghost', onclick: () => eraseSlot(selected) }, 'Erase')))
+            confirmBtn(`master-erase-${selected}`, 'Erase', 'Tap again to erase', () => eraseSlot(selected))))
         : null,
       el('div', { class: 'panel' }, grid()));
   }
@@ -1497,8 +1564,10 @@ function inputHasSignal(i) {
   return !known;
 }
 
-// LiveCore layer sources (INPUTLAYER): 0 none, 1–24 live inputs, 25–32 large stills,
-// 33–40 reduced stills, 41 colour.
+// LiveCore layer sources (INPUTLAYER): 0 none, 1–24 live inputs, 25–32 the eight
+// loaded frames (the "large stills"), 33–40 the eight logos (the "reduced
+// stills"), 41 colour — named as the device's own RCS names them, Frame and
+// Logo, so an operator used to it finds the same words here.
 //
 // Midra's live-layer source list runs black, then one entry per input in order, then
 // colour last — recovered from the MIDRA firmware's own string table, where a Pulse2
@@ -1509,8 +1578,8 @@ function sourceName(n) {
   if (n === 0) return '— none —';
   if (isMidra()) return n >= srcMaxOf() ? 'Colour' : 'IN ' + n;
   if (n === 41) return 'Colour';
-  if (n >= 33 && n <= 40) return rstillLabel(n - 33) || 'R.Still ' + (n - 32);
-  if (n >= 25 && n <= 32) return stillLabel(n - 25) || 'Still ' + (n - 24);
+  if (n >= 33 && n <= 40) return rstillLabel(n - 33) || 'Logo ' + (n - 32);
+  if (n >= 25 && n <= 32) return stillLabel(n - 25) || 'Frame ' + (n - 24);
   return inputLabel(n - 1) || 'IN ' + n;
 }
 /**
@@ -1527,7 +1596,9 @@ function sourceAvailable(n) {
   // Colour is generated internally and is always available.
   if (isMidra()) {
     if (n >= srcMaxOf()) return true;
-    return store.val('INava', n - 1) !== 0 && inputHasSignal(n - 1);
+    if (n <= 8 && store.val('PSfrv', n - 1) === 1) return true;       // a loaded frame, on the frame layer
+    if (store.val('INava', n - 1) === 0) return n > availableInputs(); // no card: beyond the cards the device still accepts it (9, 10 on a Pulse2)
+    return inputHasSignal(n - 1);
   }
   if (store.meta?.platform !== 'livecore') return true;
   if (n === 41) return true;                                    // colour is always there
@@ -1568,6 +1639,29 @@ function enableSnapshots() {
 }
 
 /** What kind of thing a source number is, for grouping and colouring. */
+// The Midra's eight layer slots are, in the device's own LAYER enumeration:
+// the background frame, PiP 1–4, logo 1–2 and audio. SCmly says how many the
+// model fits (a Pulse2 answers 2: the frame layer and one PiP). LiveCore
+// layers are plain numbered layers.
+const MIDRA_LAYER_NAMES = ['Frame', 'PiP 1', 'PiP 2', 'PiP 3', 'PiP 4', 'Logo 1', 'Logo 2', 'Audio'];
+// GCqly's 27 built-in arrangements, in the device's own words (its LAYOUT
+// enumeration, 0..26). "Idle" is the resting value the trigger reads back as.
+const MIDRA_LAYOUTS = ['Idle', 'Reset', 'Full W1', 'Full W2', 'Full W3', 'Full W4', 'Splitted', 'Left', 'Right', 'Bottom',
+  '2 layers split H', '2 layers split V', '3 layers split H', '3 layers split V',
+  'Background live + PiP top left', 'Background live + PiP top right', 'Background live + PiP bottom left', 'Background live + PiP bottom right',
+  'Background frame + 2 PiP split H', 'Background frame + 2 PiP split V',
+  'Background frame + 3 PiP split H on left', 'Background frame + 3 PiP split H on right', 'Background frame + 3 PiP split V on top', 'Background frame + 3 PiP split H on bottom',
+  'Background frame + 3 PiP split H', 'Background frame + 3 PiP split diagonal', 'Reset with source'];
+const layerName = (l) => isMidra() ? (MIDRA_LAYER_NAMES[l] || 'L' + (l + 1)) : 'L' + (l + 1);
+// On a Midra the same INPUTLAYER number means a different thing per layer —
+// the enumeration literally reads "INPUT / FRAME n": on the background frame
+// layer 1–8 is the loaded frame of that number (a Pulse2 with frames 1 and 2
+// loaded accepts exactly 1 and 2 there, and 9, 10 and colour), on a PiP it is
+// the input. Name it for the layer it sits on.
+function sourceNameFor(n, l) {
+  if (isMidra() && l === 0 && n >= 1 && n < srcMaxOf()) return n <= 8 ? 'Frame ' + n : 'Src ' + n;
+  return sourceName(n);
+}
 function sourceKind(n) {
   if (!n) return 'none';
   if (store.meta?.platform !== 'livecore') return 'input';
@@ -1580,12 +1674,13 @@ function sourceKind(n) {
 function sourceSelect(mnem, idx, max) {
   if (max == null) max = srcMaxOf();
   const cur = store.val(mnem, ...idx);
+  const layer = mnem === 'PRinp' ? idx[idx.length - 1] : null;   // a Midra names a number by the layer it is on
   const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
   for (let i = 0; i <= max; i++) {
     // an unavailable source stalls any take that waits for it, so it is only listed
     // when it is the value already on the layer — where hiding it would be a lie
     if (!sourceAvailable(i) && i !== cur) continue;
-    const opt = el('option', { value: i, text: sourceName(i) + (sourceAvailable(i) ? '' : ' — not available') });
+    const opt = el('option', { value: i, text: (layer != null ? sourceNameFor(i, layer) : sourceName(i)) + (sourceAvailable(i) ? '' : ' — not available') });
     if (i === (cur ?? 0)) opt.selected = true;
     s.append(opt);
   }
@@ -1618,6 +1713,26 @@ function colorPicker(rM, gM, bM, idx) {
 }
 
 // a toggle button bound to a 0/1 variable
+// A destructive action behind a second tap: the first tap arms the button and
+// relabels it, the second within three seconds fires it, anything else
+// disarms. One key per action, so arming "erase 12" never fires "erase 13".
+// On a live show a single stray tap must not erase a memory.
+let ARMED = null, ARMED_TIMER = null;
+function confirmBtn(key, label, armedLabel, onConfirm, cls = 'btn ghost') {
+  const armed = ARMED === key;
+  return el('button', {
+    class: cls + (armed ? ' armed-danger' : ''),
+    title: armed ? 'Tap again to confirm' : `${label} — asks for a second tap`,
+    onclick: (e) => {
+      e.stopPropagation();
+      clearTimeout(ARMED_TIMER);
+      if (armed) { ARMED = null; onConfirm(); return; }
+      ARMED = key;
+      ARMED_TIMER = setTimeout(() => { if (ARMED === key) { ARMED = null; store.notify(); } }, 3000);
+      store.notify();
+    },
+  }, armed ? armedLabel : label);
+}
 function toggleBtn(label, mnem, idx, onClass = 'pgm') {
   const on = store.val(mnem, ...idx) === 1;
   return el('button', { class: 'btn ' + (on ? onClass : 'ghost'), onclick: () => store.set(mnem, idx, on ? 0 : 1) }, label);
@@ -1695,7 +1810,7 @@ VIEWS.cues = (() => {
   function hold() { clearFollow(); store.notify(); }
   function arm(i) { clearFollow(); recall(cues[i], false); store.notify(); }
   function addCue() {
-    const label = dLabel.trim() || (dScope === 'master' ? `Master ${dSlot}` : `Screen ${dScreen + 1} · ${dSlot}`);
+    const label = dLabel.trim() || (dScope === 'master' ? `Master ${dSlot + 1}` : `Screen ${dScreen + 1} · ${dSlot + 1}`);
     cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen, follow: dFollow, wait: dWait, notes: '' });
     dLabel = ''; persist(); store.notify();
   }
@@ -1780,7 +1895,7 @@ VIEWS.keys = (() => {
     take:   { label: 'Take', fields: ['screenAll'], desc: a => a.screen < 0 ? 'Take all screens' : `Take screen ${a.screen + 1}` },
     freeze: { label: 'Freeze input', fields: ['input', 'on'], desc: a => `${a.on ? 'Freeze' : 'Unfreeze'} IN ${a.input + 1}` },
     black:  { label: 'Output black', fields: ['output', 'on'], desc: a => `${a.on ? 'Black' : 'Unblack'} OUT ${a.output + 1}` },
-    ftb:    { label: 'Master fade', fields: ['screen', 'dir'], desc: a => `${a.dir === 1 ? 'Fade to black' : 'Fade up'} screen ${a.screen + 1}` },
+    ftb:    { label: 'Master fade', fields: ['screen', 'dir'], desc: a => `${a.dir === FADE_OUT ? 'Fade to black' : 'Fade up'} screen ${a.screen + 1}` },
   };
 
   function runAction(a) {
@@ -1796,7 +1911,7 @@ VIEWS.keys = (() => {
   const runKey = (k) => k.actions.forEach(runAction);
 
   // draft for the add-action form (per open key)
-  let dType = 'master', dSlot = 0, dScreen = 0, dInput = 0, dOutput = 0, dTake = true, dOn = true, dDir = 1;
+  let dType = 'master', dSlot = 0, dScreen = 0, dInput = 0, dOutput = 0, dTake = true, dOn = true, dDir = FADE_OUT;
   function addAction(k) {
     const a = { type: dType };
     if (dType === 'master') { a.slot = dSlot; a.take = dTake; }
@@ -1824,7 +1939,7 @@ VIEWS.keys = (() => {
       f('output') ? el('label', { class: 'field' }, 'Output', el('input', { type: 'number', min: 1, max: 8, value: dOutput + 1, style: 'width:70px', oninput: e => dOutput = Math.max(0, (+e.target.value || 1) - 1) })) : null,
       f('take') ? el('label', { class: 'field' }, 'Then take', checkbox(dTake, v => { dTake = v; store.notify(); })) : null,
       f('on') ? el('label', { class: 'field' }, 'On', checkbox(dOn, v => { dOn = v; store.notify(); })) : null,
-      f('dir') ? el('label', { class: 'field' }, 'Direction', el('select', { onchange: e => dDir = +e.target.value }, el('option', { value: 1, selected: dDir === 1 || undefined }, 'To black'), el('option', { value: 2, selected: dDir === 2 || undefined }, 'Up'))) : null,
+      f('dir') ? el('label', { class: 'field' }, 'Direction', el('select', { onchange: e => dDir = +e.target.value }, el('option', { value: FADE_OUT, selected: dDir === FADE_OUT || undefined }, 'To black'), el('option', { value: FADE_IN, selected: dDir === FADE_IN || undefined }, 'Up'))) : null,
       el('button', { class: 'btn', onclick: () => addAction(k) }, 'Add action'));
   }
 
@@ -2462,30 +2577,43 @@ VIEWS.live = (() => {
 
   function enter() {
     store.scan('SCmly');
-    for (let l = 0; l < layerSlots(); l++) { store.get('PRinp', [screen, 0, l]); if (hasPRlay()) store.get('PRlay', [screen, 0, l]); }
+    if (hasBanks()) store.scan('GCsta');
+    for (let c = 0; c < (store.byMnem.get('PRinp')?.dims?.[1] ?? 1); c++)
+      for (let l = 0; l < layerSlots(); l++) { store.get('PRinp', [screen, c, l]); if (hasPRlay()) store.get('PRlay', [screen, c, l]); }
     if (store.byMnem.has('GCtup')) store.get('GCtup', [screen]);
-    if (store.byMnem.has('MAfat')) { store.get('MAsna', [screen]); store.get('MAfat', []); }
+    if (store.byMnem.has('MAfat')) { store.get('MAsna', [screen]); store.get('MAnas', [screen]); store.get('MAfat', []); }
     if (store.byMnem.has('GCfsc')) store.get('GCfsc', [screen]);
     if (store.byMnem.has('GCfra')) store.get('GCfra', []);
   }
 
   function take() { doTake(screen, ttime); }
   function cut() { doCut(screen); }
-  // MAmfa (master fade auto): 1 = fade to black, 2 = fade up. Best-effort mapping.
-  function fadeToBlack() { store.set('MAmfa', [screen], 1); }
-  function fadeUp() { store.set('MAmfa', [screen], 2); }
+  // MAmfa (SCREEN_MASTER_FADE_AUTO) is the device's FADE_AUTO enum: 0 idle,
+  // 1 FADE IN (picture up), 2 FADE OUT (to black). Confirmed on a NeXtage 16:
+  // a 2 runs MAnas through TRANSITION_OUT to AT MIN, a 1 back through
+  // TRANSITION_IN to AT MAX. The status enum: 0 at max, 1 at min,
+  // 2 at consigne, 3 transition in, 4 transition out.
+  function fadeToBlack() { store.set('MAmfa', [screen], FADE_OUT); }
+  function fadeUp() { store.set('MAmfa', [screen], FADE_IN); }
+  function fadeState() {
+    const st = store.val('MAnas', screen);
+    return st == null ? '' : (ALPHA_STATUS[st] || `status ${st}`);
+  }
 
+  // The bank on air is the one GCsta names (LiveCore), not a fixed index —
+  // showing bank A here while B is live lied about what the audience sees.
   function layers() {
     const max = store.val('SCmly', screen) || 0;
     if (max === 0) return el('div', { class: 'empty-state', text: 'This screen has no layers. Configure it in Screens, or on the device, then layers appear here.' });
+    const c = liveCtx(screen);
     const wrap = el('div', { class: 'layers' });
     for (let l = 0; l < max; l++) {
-      const src = store.val('PRinp', screen, 0, l);
-      const on = layerShown(screen, 0, l);
+      const src = store.val('PRinp', screen, c, l);
+      const on = layerShown(screen, c, l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') },
-        el('span', { class: 'tag', text: 'L' + (l + 1) }),
-        el('span', { class: 'src', text: src != null ? (src === 0 ? '— none —' : 'IN ' + src) : '·' }),
-        hasPRlay() ? el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, 0, l], store.val('PRlay', screen, 0, l) === 1 ? 0 : 1) }, on ? 'Hide' : 'Show') : null));
+        el('span', { class: 'tag', text: layerName(l) }),
+        el('span', { class: 'src', text: sourceNameFor(src, l) }),
+        hasPRlay() ? el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, c, l], store.val('PRlay', screen, c, l) === 1 ? 0 : 1) }, on ? 'Hide' : 'Show') : null));
     }
     return wrap;
   }
@@ -2513,6 +2641,7 @@ VIEWS.live = (() => {
           el('h2', 'Master fade'),
           el('div', { class: 'row' },
             bind('Fade time', 'MAfat', [], 0, 100, 1, v => (v / 10).toFixed(1) + 's'),
+            el('span', { class: 'hint', text: fadeState() }),
             el('div', { class: 'spacer' }),
             el('button', { class: 'btn', onclick: fadeUp }, 'Fade Up'),
             el('button', { class: 'btn pgm', onclick: fadeToBlack }, 'Fade to Black')))
@@ -2524,7 +2653,7 @@ VIEWS.live = (() => {
             el('div', { class: 'spacer' }),
             store.byMnem.has('GCfra') ? toggleBtn('Freeze all screens', 'GCfra', [], 'pgm') : null))
         : null,
-      el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers`), layers()));
+      el('div', { class: 'panel' }, el('h2', `Screen ${screen + 1} layers · on air`), layers()));
   }
   return { enter, render };
 })();
@@ -2734,7 +2863,7 @@ VIEWS.layers = (() => {
   function layoutSelect() {
     const cur = store.val('GCqly', screen, ctxOf()), max = store.byMnem.get('GCqly')?.max ?? 26;
     const s = el('select', { onchange: (e) => { store.set('GCqly', [screen, ctxOf()], +e.target.value); setTimeout(() => { enter(); store.notify(); }, 350); } });
-    for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: 'Layout ' + (i + 1) }); if (i === cur) o.selected = true; s.append(o); }
+    for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: MIDRA_LAYOUTS[i] || 'Layout ' + (i + 1) }); if (i === cur) o.selected = true; s.append(o); }
     return s;
   }
 
@@ -2742,10 +2871,11 @@ VIEWS.layers = (() => {
     'PRbst', 'PRbcr', 'PRbcg', 'PRbcb', 'PRbsh', 'PRbsv', 'PRbal',
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
-    // Midra protects the program preset; edits must go to preview with
-    // preset-update-mode on. Enabling it here lets source/geometry edits stick,
-    // then a take commits them. (LiveCore edits apply directly — don't touch it.)
-    if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
+    // Midra protects the program preset: edits go to the preview context and a
+    // take commits them. Preset-update mode stays OFF — with it on the take
+    // verb is inert (see midraEditMode). LiveCore edits apply directly.
+    midraEditMode();
+    if (isMidra() && store.byMnem.has('PSfrv')) store.scan('PSfrv');
     if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctxOf()]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctxOf()]);
@@ -2798,7 +2928,7 @@ VIEWS.layers = (() => {
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l + 1}`,
         onpointerdown: (e) => dragMove(e, l, scale),
       },
-        el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }));
+        el('span', { class: 'lrect-tag', text: `${layerName(l)}${src ? ' · ' + sourceNameFor(src, l) : ''}` }));
       cv.append(box);
       if (l === sel) selectionChrome(cv, box, (e, c, b) => dragResize(e, l, scale, c, b));
     }
@@ -2863,8 +2993,8 @@ VIEWS.layers = (() => {
       const src = store.val('PRinp', screen, ctxOf(), l);
       const on = layerShown(screen, ctxOf(), l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
-        el('span', { class: 'tag', text: 'L' + (l + 1) }),
-        el('span', { class: 'src', text: sourceName(src) }),
+        el('span', { class: 'tag', text: layerName(l) }),
+        el('span', { class: 'src', text: sourceNameFor(src, l) }),
         hasPRlay() ? el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctxOf(), l], store.val('PRlay', screen, ctxOf(), l) === 1 ? 0 : 1); } }, on ? 'Hide' : 'Show') : null));
     }
     return wrap;
@@ -2932,7 +3062,7 @@ VIEWS.layers = (() => {
         el('div', {},
           el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
           el('div', { class: 'panel' }, el('h2', 'Background'), background()),
-          el('div', { class: 'panel' }, el('h2', `Layer ${sel + 1}`), editor()))));
+          el('div', { class: 'panel' }, el('h2', isMidra() ? layerName(sel) : `Layer ${sel + 1}`), editor()))));
   }
   return { enter, render, focus(s, r) { screen = s; if (r) role = r; sel = 0; } };
 })();
@@ -3031,105 +3161,120 @@ VIEWS.stage = (() => {
 // places them to scale and lets you drag one to reposition it, then commit the
 // arrangement with OSCREEN_OUT_GLOBAL_UPDATE.
 VIEWS.wall = (() => {
+  // The output→screen model, as the device spells it. OUTPUT_SCREEN (OS*) is
+  // indexed by OUTPUT: OSsou[o] is the screen output o carries, OSpoh/OSpov[o]
+  // the tile of that screen it shows (1-based), OSomo[o] whether it shows the
+  // program (0) or the preview (1). A screen's size in output tiles is
+  // SCsih×SCsiv[s]. Read off a NeXtage 16 where outputs 1 and 2 each carry
+  // screen 1 and 2 at tile 1,1 — an earlier reading of OSpoh as a per-screen
+  // position drew both screens on one tile and hid one behind the other.
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
   const active = () => Array.from({ length: screenCount() }, (_, s) => s).filter(s => (store.val('SCssh', s) || 0) > 0);
-  const posH = (s) => store.val('OSpoh', s) || 1;
-  const posV = (s) => store.val('OSpov', s) || 1;
   const sizeH = (s) => store.val('SCsih', s) || 1;
   const sizeV = (s) => store.val('SCsiv', s) || 1;
+  const outputs = () => Array.from({ length: outputCount() }, (_, o) => o).filter(o => store.val('OUava', o) !== 0);
+  const outScreen = (o) => store.val('OSsou', o);
+  const outTile = (o) => ({ h: store.val('OSpoh', o) || 1, v: store.val('OSpov', o) || 1 });
+  const outMode = (o) => store.val('OSomo', o) || 0;      // 0 program, 1 preview
+  const outputsOf = (s) => outputs().filter(o => outScreen(o) === s);
 
-  let sel = null, grab = null;
+  let sel = null;   // selected output, or null
 
   function enter() {
-    for (const m of ['SCssh', 'SCssv', 'SCmly', 'OSpoh', 'OSpov', 'SCsih', 'SCsiv', 'OSsou']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['SCssh', 'SCssv', 'SCmly', 'SCsih', 'SCsiv', 'OUava', 'OUena', 'OSsou', 'OSpoh', 'OSpov', 'OSomo', 'OSipo']) if (store.byMnem.has(m)) store.scan(m);
     for (let s = 0; s < screenCount(); s++) fetchLabel('LBScr', [s]);
+    for (let o = 0; o < outputCount(); o++) fetchLabel('LBOut', [o]);
   }
-
-  const gridDims = () => {
-    let w = 4, h = 3;
-    for (const s of active()) { w = Math.max(w, posH(s) + sizeH(s) - 1); h = Math.max(h, posV(s) + sizeV(s) - 1); }
-    return { w, h };
-  };
-
-  function onDown(e, s, tile) {
-    beginDrag(); sel = s;
-    grab = { x: e.clientX, y: e.clientY, poh: posH(s), pov: posV(s), tile };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    store.notify();
-  }
-  function onMove(e, s) {
-    if (!DRAG || sel !== s || !grab) return;
-    const dx = Math.round((e.clientX - grab.x) / grab.tile);
-    const dy = Math.round((e.clientY - grab.y) / grab.tile);
-    const nh = clamp(grab.poh + dx, 1, 16 - sizeH(s) + 1);
-    const nv = clamp(grab.pov + dy, 1, 16 - sizeV(s) + 1);
-    if (nh !== posH(s)) store.set('OSpoh', [s], nh);
-    if (nv !== posV(s)) store.set('OSpov', [s], nv);
-  }
-  function onUp() { endDrag(); grab = null; }
 
   const stepSize = (s, axis, d) => {
     const m = axis === 'h' ? 'SCsih' : 'SCsiv';
     const cur = axis === 'h' ? sizeH(s) : sizeV(s);
-    const pos = axis === 'h' ? posH(s) : posV(s);
-    store.set(m, [s], clamp(cur + d, 1, 16 - pos + 1));
+    store.set(m, [s], clamp(cur + d, 1, 16));
   };
+  function moveTo(o, h, v) {
+    if (h !== outTile(o).h) store.set('OSpoh', [o], h);
+    if (v !== outTile(o).v) store.set('OSpov', [o], v);
+  }
 
-  function screenRect(s, tile) {
-    const w = sizeH(s) * tile, h = sizeV(s) * tile;
-    const left = (posH(s) - 1) * tile, top = (posV(s) - 1) * tile;
-    const sw = store.val('SCssh', s) || 0, sh = store.val('SCssv', s) || 0;
-    return el('div', {
-      class: 'wall-screen' + (sel === s ? ' sel' : ''),
-      style: `left:${left}px;top:${top}px;width:${w}px;height:${h}px;background:${srcColor(s + 1)}`,
-      onpointerdown: e => onDown(e, s, tile),
-      onpointermove: e => onMove(e, s),
-      onpointerup: onUp, onpointercancel: onUp,
-      onclick: () => { sel = s; store.notify(); },
+  function chip(o) {
+    const on = store.val('OUena', o) === 1;
+    return el('button', {
+      class: 'wall-out' + (sel === o ? ' sel' : '') + (on ? '' : ' off') + (outMode(o) === 1 ? ' pvw' : ''),
+      title: `${outputLabel(o)} — ${outMode(o) === 1 ? 'preview' : 'program'}${on ? '' : ', not enabled'}. Click to select, then click a tile to move it.`,
+      onclick: (e) => { e.stopPropagation(); sel = sel === o ? null : o; store.notify(); },
     },
-      el('span', { class: 'wall-name', text: screenLabel(s) }),
-      el('span', { class: 'wall-dim', text: sw ? `${sw}×${sh}` : `${sizeH(s)}×${sizeV(s)} tiles` }));
+      el('span', { class: 'wall-out-name', text: outputLabel(o) }),
+      el('span', { class: 'wall-out-mode', text: outMode(o) === 1 ? 'PVW' : 'PGM' }));
+  }
+
+  function screenCard(s) {
+    const w = sizeH(s), h = sizeV(s);
+    const sw = store.val('SCssh', s) || 0, sh = store.val('SCssv', s) || 0;
+    const tile = Math.max(56, Math.min(150, Math.floor(600 / Math.max(w, 1))));
+    const grid = el('div', { class: 'wall-grid', style: `grid-template-columns:repeat(${w},${tile}px);grid-auto-rows:${Math.round(tile * 9 / 16)}px` });
+    for (let v = 1; v <= h; v++) for (let hh = 1; hh <= w; hh++) {
+      const here = outputsOf(s).filter(o => outTile(o).h === hh && outTile(o).v === v);
+      const canDrop = sel != null && outScreen(sel) === s;
+      grid.append(el('div', {
+        class: 'wall-tile' + (here.length ? '' : ' empty') + (canDrop ? ' drop' : ''),
+        title: canDrop ? `Move ${outputLabel(sel)} to tile ${hh},${v}` : `Tile ${hh},${v}`,
+        onclick: () => { if (canDrop) { moveTo(sel, hh, v); sel = null; store.notify(); } },
+      }, el('span', { class: 'wall-tile-n', text: `${hh},${v}` }), ...here.map(chip)));
+    }
+    const off = outputsOf(s).filter(o => outTile(o).h > w || outTile(o).v > h);
+    return el('div', { class: 'panel wall-screen-card' },
+      el('div', { class: 'row', style: 'align-items:center;flex-wrap:wrap' },
+        el('span', { class: 'wall-sel-name', text: screenLabel(s) }),
+        el('span', { class: 'hint', text: sw ? `${sw}×${sh}` : '' }),
+        el('div', { class: 'spacer' }),
+        el('label', { class: 'field' }, 'Tiles across',
+          el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', -1) }, '−'),
+          el('span', { class: 'wall-ro', text: w }),
+          el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', 1) }, '+')),
+        el('label', { class: 'field' }, 'down',
+          el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', -1) }, '−'),
+          el('span', { class: 'wall-ro', text: h }),
+          el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', 1) }, '+'))),
+      el('div', { class: 'wall-wrap' }, grid),
+      off.length ? el('div', { class: 'hint pad', text: `Outside the screen's tiles: ${off.map(o => `${outputLabel(o)} at ${outTile(o).h},${outTile(o).v}`).join(', ')} — select it and click a tile.` }) : null,
+      outputsOf(s).length ? null : el('div', { class: 'hint pad', text: 'No output carries this screen.' }));
   }
 
   function selPanel() {
-    if (sel == null) return el('div', { class: 'hint', text: 'Click a screen to select it, drag to reposition.' });
-    const s = sel;
+    if (sel == null) return el('div', { class: 'hint', text: 'Each screen is a grid of output tiles; the outputs carrying it sit on the tile they show. Click an output, then a tile, to move it. Apply commits the layout with a global output update — the outputs re-sync.' });
+    const o = sel, scr = outScreen(o);
     return el('div', { class: 'row', style: 'align-items:center;flex-wrap:wrap' },
-      el('span', { class: 'wall-sel-name', text: screenLabel(s) }),
-      el('label', { class: 'field' }, 'Pos',
-        el('span', { class: 'wall-ro', text: `${posH(s)},${posV(s)}` })),
-      el('label', { class: 'field' }, 'Width',
-        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', -1) }, '−'),
-        el('span', { class: 'wall-ro', text: sizeH(s) }),
-        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'h', 1) }, '+')),
-      el('label', { class: 'field' }, 'Height',
-        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', -1) }, '−'),
-        el('span', { class: 'wall-ro', text: sizeV(s) }),
-        el('button', { class: 'btn ghost', onclick: () => stepSize(s, 'v', 1) }, '+')));
+      el('span', { class: 'wall-sel-name', text: outputLabel(o) }),
+      el('label', { class: 'field' }, 'Carries',
+        el('select', { onchange: (e) => { store.set('OSsou', [o], +e.target.value); store.notify(); } },
+          ...Array.from({ length: screenCount() }, (_, s) => el('option', { value: s, selected: s === scr || undefined }, screenLabel(s))))),
+      store.byMnem.has('OSomo') ? el('label', { class: 'field' }, 'Shows',
+        el('select', { onchange: (e) => { store.set('OSomo', [o], +e.target.value); store.notify(); } },
+          el('option', { value: 0, selected: outMode(o) === 0 || undefined }, 'Program'),
+          el('option', { value: 1, selected: outMode(o) === 1 || undefined }, 'Preview'))) : null,
+      el('label', { class: 'field' }, 'Tile',
+        el('span', { class: 'wall-ro', text: `${outTile(o).h},${outTile(o).v}` })),
+      el('span', { class: 'hint', text: 'click a tile of its screen to move it' }),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn ghost', onclick: () => { sel = null; store.notify(); } }, 'Done'));
   }
 
   function render() {
     const screens = active();
-    const { w, h } = gridDims();
-    const CW = 720, tile = Math.floor(CW / w), CH = tile * h;
-    const canvas = el('div', { class: 'wall-canvas', style: `width:${w * tile}px;height:${CH}px;--tile:${tile}px` });
-    // grid lines
-    for (let x = 1; x < w; x++) canvas.append(el('div', { class: 'wall-gline v', style: `left:${x * tile}px` }));
-    for (let y = 1; y < h; y++) canvas.append(el('div', { class: 'wall-gline h', style: `top:${y * tile}px` }));
-    for (const s of screens) canvas.append(screenRect(s, tile));
-
-    return el('div', {},
+    const orphan = outputs().filter(o => !screens.includes(outScreen(o)));
+    return el('div', { onclick: () => { if (sel != null) { sel = null; store.notify(); } } },
       el('div', { class: 'view-head' }, el('h1', { text: 'Wall' }),
-        el('span', { class: 'hint', text: 'Where each screen sits in the output — drag to arrange, then apply' }),
+        el('span', { class: 'hint', text: 'Which output shows which tile of which screen — arrange, then apply' }),
         el('div', { class: 'spacer' }),
         el('button', { class: 'btn pgm', onclick: () => { if (store.byMnem.has('OSupd')) store.set('OSupd', [], 1); }, disabled: store.byMnem.has('OSupd') ? undefined : true }, 'Apply to device')),
       el('div', { class: 'panel' }, selPanel()),
+      screens.length
+        ? el('div', {}, ...screens.map(screenCard))
+        : el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'No active screens to map.' })),
+      orphan.length ? el('div', { class: 'panel' }, el('h2', 'Outputs on unused screens'),
+        el('div', { class: 'row', style: 'flex-wrap:wrap' }, ...orphan.map(o => el('div', { class: 'row', style: 'align-items:center;gap:6px' }, chip(o), el('span', { class: 'hint', text: `→ ${screenLabel(outScreen(o))}` }))))) : null,
       el('div', { class: 'panel' },
-        screens.length
-          ? el('div', { class: 'wall-wrap' }, canvas)
-          : el('div', { class: 'empty-state', text: 'No active screens to map.' })),
-      el('div', { class: 'panel' },
-        el('div', { class: 'hint', text: 'Positions are in output tiles (OSpoh/OSpov); size is SCsih/SCsiv. Apply commits the layout with a global output update.' })));
+        el('div', { class: 'hint', text: 'Per output: OSsou is the screen it carries, OSpoh/OSpov the tile, OSomo program or preview; SCsih/SCsiv is the screen’s size in tiles. Apply is OSupd.' })));
   }
   return { enter, render };
 })();
@@ -6778,7 +6923,16 @@ VIEWS.lppresets = (() => {
 VIEWS.screens = (() => {
   let sel = 0;
   function enter() {
-    for (const m of ['SCmly', 'OSsou', 'SCsih', 'SCsiv', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['SCmly', 'OSsou', 'OUava', 'SCsih', 'SCsiv', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
+    for (let o = 0; o < outputCount(); o++) fetchLabel('LBOut', [o]);
+  }
+  // OSsou is indexed by output and names the screen it carries — so the
+  // outputs feeding screen s are the ones that answer s, not entry s.
+  function outputsFeeding(s) {
+    if (!store.byMnem.has('OSsou')) return '·';
+    const o = [];
+    for (let i = 0; i < outputCount(); i++) if (store.val('OSsou', i) === s && store.val('OUava', i) !== 0) o.push(outputLabel(i));
+    return o.length ? o.join(' · ') : '—';
   }
   const screenPxOf = (s) => ({ w: store.val('SCssh', s) || 1920, h: store.val('SCssv', s) || 1080 });
 
@@ -6876,7 +7030,7 @@ VIEWS.screens = (() => {
       const a = WORK_AREA.get(i);
       rows.push(el('tr', { class: i === sel ? 'sel-row' : '', onclick: () => { sel = i; store.notify(); } },
         el('td', { text: 'Screen ' + (i + 1) }),
-        el('td', { class: 'val', text: fmt(store.val('OSsou', i)) }),
+        el('td', { class: 'val', text: outputsFeeding(i) }),
         el('td', { class: 'val', text: `${fmt(store.val('SCsih', i))}×${fmt(store.val('SCsiv', i))}` }),
         el('td', { class: 'val', text: fmt(max) }),
         el('td', { class: 'val', text: a ? `${a.w}×${a.h} @ ${a.x},${a.y}` : 'whole screen' }),
@@ -6902,15 +7056,19 @@ const temp = (v) => (v == null || v === 0 || v === 65535) ? '·' : (v / 100).toF
 
 // ---------- Tally (live on-air indicators) ----------
 VIEWS.tally = (() => {
-  const N = () => store.byMnem.get('TAopr')?.dims[0] || 42;   // sources: inputs, stills, generators
+  // TAopr/TAopw are indexed by SOURCE NUMBER — the same 0..41 space as a
+  // layer's PRinp: 0 none, 1–24 inputs, 25–32 stills, 33–40 reduced stills,
+  // 41 colour. Confirmed on a NeXtage 16 with inputs 1–4 on air: entries 1–4
+  // lit, not 0–3. Index 0 is "no source" and never lights.
+  const N = () => store.byMnem.get('TAopr')?.dims[0] || 42;
   const hasTally = () => store.byMnem.has('TAopr');
   function enter() { if (hasTally()) { store.scan('TAopr'); store.scan('TAopw'); } store.scan('INava'); }
-  function tile(i) {
-    const pgm = store.val('TAopr', i) === 1;
-    const pvw = store.val('TAopw', i) === 1;
-    const cls = 'tally-tile' + (pgm ? ' pgm' : pvw ? ' pvw' : '');
+  function tile(n) {
+    const pgm = store.val('TAopr', n) === 1;
+    const pvw = store.val('TAopw', n) === 1;
+    const cls = 'tally-tile' + (pgm ? ' pgm' : pvw ? ' pvw' : '') + (sourceAvailable(n) ? '' : ' dim');
     return el('div', { class: cls },
-      el('span', { class: 'tally-src', text: 'IN ' + (i + 1) }),
+      el('span', { class: 'tally-src', text: sourceName(n) }),
       el('span', { class: 'tally-state', text: pgm ? 'PGM' : pvw ? 'PVW' : '' }));
   }
   function render() {
@@ -6919,13 +7077,18 @@ VIEWS.tally = (() => {
         el('div', { class: 'view-head' }, el('h1', { text: 'Tally' })),
         el('div', { class: 'panel' }, el('div', { class: 'empty-state', text: 'This device does not report a tally bus.' })));
     const n = N();
-    const onPgm = Array.from({ length: n }, (_, i) => store.val('TAopr', i)).filter(v => v === 1).length;
-    const onPvw = Array.from({ length: n }, (_, i) => store.val('TAopw', i)).filter(v => v === 1).length;
+    const nums = Array.from({ length: n - 1 }, (_, i) => i + 1);
+    const onPgm = nums.filter(i => store.val('TAopr', i) === 1).length;
+    const onPvw = nums.filter(i => store.val('TAopw', i) === 1).length;
+    const inputs = nums.filter(i => sourceKind(i) === 'input');
+    const others = nums.filter(i => sourceKind(i) !== 'input');
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Tally' }),
         el('span', { class: 'hint', text: `${onPgm} on program · ${onPvw} on preview` })),
-      el('div', { class: 'panel' },
-        el('div', { class: 'tally-grid' }, ...Array.from({ length: n }, (_, i) => tile(i)))));
+      el('div', { class: 'panel' }, el('h2', 'Inputs'),
+        el('div', { class: 'tally-grid' }, ...inputs.map(tile))),
+      others.length ? el('div', { class: 'panel' }, el('h2', 'Stills and generators'),
+        el('div', { class: 'tally-grid' }, ...others.map(tile))) : null);
   }
   return { enter, render };
 })();
@@ -7433,10 +7596,10 @@ VIEWS.stills = (() => {
     function enter() {
       for (const m of ['PSfrv', 'PSfsh', 'PSfsv', 'PSsta', 'PSprg']) store.scan(m);
       if (logos === null) {   // one-shot capability probe
-        const mark = store.log.length;
+        const mark = store.errCount;
         store.get('PSlov', [0]);
         setTimeout(() => {
-          const failed = store.log.slice(mark).some(e => e.dir === 'er');
+          const failed = store.errCount > mark;
           logos = !failed;
           if (logos) for (const m of ['PSlov', 'PSlsh', 'PSlsv']) store.scan(m);
           store.notify();
@@ -7482,7 +7645,7 @@ VIEWS.stills = (() => {
     const detail = sel != null ? el('div', { class: 'row' },
       el('span', { class: 'hint', text: `Still ${sel + 1}: ${store.val('SLiwd', sel) ?? '·'}×${store.val('SLihe', sel) ?? '·'}` }),
       el('div', { class: 'spacer' }),
-      (store.val('Slval', sel) || 0) > 0 ? el('button', { class: 'btn', onclick: () => { store.set('SLera', [sel], 1); store.scan('Slval'); } }, 'Erase') : null) : null;
+      (store.val('Slval', sel) || 0) > 0 ? confirmBtn(`still-erase-${sel}`, 'Erase', 'Tap again to erase', () => { store.set('SLera', [sel], 1); store.scan('Slval'); }, 'btn') : null) : null;
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Stills' }), el('span', { class: 'hint', text: `${used} of ${N} slots used` })),
       detail ? el('div', { class: 'panel' }, detail) : null,
@@ -7508,7 +7671,21 @@ VIEWS.capture = (() => {
     for (const m of ['STcso', 'STcen', 'STcfe', 'STcpx', 'STcpy', 'STcwi', 'STche', 'STcdo', 'STctw', 'STcth'])
       store.get(m, []);
     for (const m of ['STsss', 'STsdo', 'STswi', 'STshe']) store.scan(m);
-    store.scan('INava');
+    store.scan('INava'); store.scan('SCmly');
+    for (let s = 0; s < screenCount(); s++) fetchLabel('LBScr', [s]);
+  }
+  // STcso is the device's STILLS_CAPTURE_SOURCE list — 0–23 inputs 1–24, 24–31
+  // screens 1–8 — not the layer source numbering (which starts at "none").
+  const capName = n => n < 24 ? (inputLabel(n) || 'IN ' + (n + 1)) : n < 32 ? screenLabel(n - 24) : 'Src ' + n;
+  function captureSourceSelect(max) {
+    const cur = store.val('STcso') ?? 0;
+    const s = el('select', { onchange: (e) => store.set('STcso', [], +e.target.value) });
+    for (let i = 0; i <= max; i++) {
+      if (i < 24 && store.val('INava', i) === 0 && i !== cur) continue;
+      if (i >= 24 && !(store.val('SCmly', i - 24) > 0) && i !== cur) continue;
+      const o = el('option', { value: i, text: capName(i) }); if (i === cur) o.selected = true; s.append(o);
+    }
+    return s;
   }
   // the source frame we're cropping out of; sim reports 0 with no signal, so fall back to 1080p
   function frame() {
@@ -7565,7 +7742,7 @@ VIEWS.capture = (() => {
       el('div', { class: 'split' },
         el('div', { class: 'panel' }, el('h2', 'Source & region'),
           el('div', { class: 'row' },
-            el('label', { class: 'field' }, 'Source', sourceSelect('STcso', [], srcMax)),
+            el('label', { class: 'field' }, 'Source', captureSourceSelect(srcMax)),
             el('label', { class: 'field' }, 'Area',
               el('div', { class: 'seg' },
                 el('button', { class: !region ? 'on take' : '', onclick: () => { store.set('STcfe', [], 0); store.notify(); } }, 'Full frame'),
@@ -7602,14 +7779,31 @@ VIEWS.multiview = (() => {
     for (const m of ['MLfen', 'MLfes', 'MLfso', 'MLupd', 'MOshs', 'MOsvs', 'MOava']) store.get(m, [out]);
     for (let w = 0; w < NW; w++)
       for (const m of ['MLcen', 'MLces', 'MLcso', 'MLcph', 'MLcpv', 'MLcsh', 'MLcsv']) store.get(m, [out, w]);
+    // for the source names: which inputs are fitted, which screens are in use, and their labels
+    for (const m of ['INava', 'SCmly', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
+    for (let s = 0; s < screenCount(); s++) fetchLabel('LBScr', [s]);
+    for (let i = 0; i < inputCount(); i++) if (store.val('INava', i) !== 0) fetchLabel('LBInp', [i, store.val('INplg', i) ?? 0]);
     for (let mem = 0; mem < 8; mem++) { store.get('MMouw', [mem]); store.get('MMouh', [mem]); }
   }
   const outSize = () => [store.val('MOshs', out) || 1920, store.val('MOsvs', out) || 1080];
-  const monName = n => n == null ? '·' : n === 0 ? '—' : 'Src ' + n;
+  // MONITORING_ELEMENT_SOURCES, the device's own list: 0–23 inputs 1–24 (there
+  // is no "none" — 0 is input 1), 24–31 frames, 32–39 logos, 40–47 each
+  // screen's program, 48–55 each screen's preview.
+  const monName = n => n == null ? '·'
+    : n < 24 ? (inputLabel(n) || 'IN ' + (n + 1))
+    : n < 32 ? (stillLabel(n - 24) || 'Frame ' + (n - 23))
+    : n < 40 ? (rstillLabel(n - 32) || 'Logo ' + (n - 31))
+    : n < 48 ? screenLabel(n - 40) + ' program'
+    : n < 56 ? screenLabel(n - 48) + ' preview'
+    : 'Src ' + n;
   function monSource(mnem, idx) {
     const cur = store.val(mnem, ...idx) ?? 0;
     const s = el('select', { onchange: (e) => { store.set(mnem, idx, +e.target.value); } });
-    for (let i = 0; i <= 55; i++) { const o = el('option', { value: i, text: monName(i) }); if (i === cur) o.selected = true; s.append(o); }
+    for (let i = 0; i <= 55; i++) {
+      if (i < 24 && store.val('INava', i) === 0 && i !== cur) continue;   // no card in that slot
+      if (i >= 40 && i < 56 && !(store.val('SCmly', i < 48 ? i - 40 : i - 48) > 0) && i !== cur) continue;   // screen not in use
+      const o = el('option', { value: i, text: monName(i) }); if (i === cur) o.selected = true; s.append(o);
+    }
     return s;
   }
   function rectPx(w) {
@@ -8059,7 +8253,9 @@ VIEWS.workspace = (() => {
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
 
   function enter() {
-    if (store.meta?.platform === 'midra') store.set('CTpmu', [], 1);
+    midraEditMode();
+    // a Midra's frame layer shows the loaded frames, so their validity is what makes a number usable there
+    if (isMidra()) { store.get('CTpmu', []); store.scan('GCtba'); store.scan('GCtav'); if (store.byMnem.has('PSfrv')) store.scan('PSfrv'); }
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
     // signal presence per input, so a source that cannot be placed reads as such
     if (store.byMnem.has('ISfwi')) store.scan('ISfwi');
@@ -8151,7 +8347,7 @@ VIEWS.workspace = (() => {
           if ((store.val('PRinp', s, c, l) || 0) !== src) {
             const why = src && src < srcMaxOf() && !inputHasSignal(src - 1)
               ? 'there is no signal on it' : 'the device refused it';
-            flash(`${sourceName(src)} did not go on L${l + 1} — ${why}`);
+            flash(`${sourceNameFor(src, l)} did not go on ${layerName(l)} — ${why}`);
           }
         }, 350);
       }, 350);
@@ -8355,8 +8551,8 @@ VIEWS.workspace = (() => {
   }
   function srcBadge(n, kind) {
     if (isMidra()) return n >= srcMaxOf() ? 'COL' : 'IN' + n;
-    if (kind === 'still') return 'ST' + (n - 24);
-    if (kind === 'rstill') return 'RS' + (n - 32);
+    if (kind === 'still') return 'FR' + (n - 24);
+    if (kind === 'rstill') return 'LG' + (n - 32);
     if (kind === 'colour') return '';
     return 'IN' + n;
   }
@@ -8395,7 +8591,8 @@ VIEWS.workspace = (() => {
       nums.push(srcMaxOf());                                    // colour
       return el('div', { class: 'panel ws-rail' }, el('h2', 'Sources'),
         el('div', { class: 'src-list' }, srcTile(0), ...nums.map(srcTile)),
-        el('div', { class: 'ws-rail-foot hint', text: armed != null ? `${sourceName(armed)} armed` : 'Drag onto a layer' }));
+        el('div', { class: 'ws-rail-foot hint', text: armed != null ? `${sourceName(armed)} armed` : 'Drag onto a layer' }),
+        el('div', { class: 'ws-rail-foot hint', text: 'On the Frame layer a number is the loaded frame of that number; on a PiP it is the input.' }));
     }
     const tab = (id, label) => el('button', { class: 'src-tab' + (srcTab === id ? ' on' : ''), onclick: () => { srcTab = id; store.notify(); } }, label);
     let items;
@@ -8459,7 +8656,7 @@ VIEWS.workspace = (() => {
           else dragMove(e, s, c, l, cv, sw, sh);
         },
       },
-        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}${missing ? ' ⚠' : ''}` }));
+        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `${layerName(l)}${src ? ' · ' + sourceNameFor(src, l) : ''}${missing ? ' ⚠' : ''}` }));
       asPct(box, r, sw, sh);
       cv.append(box);
       if (isSel) selectionChrome(cv, box, (e, cn, b) => dragResize(e, s, c, l, cv, sw, sh, cn, b));
@@ -8471,7 +8668,7 @@ VIEWS.workspace = (() => {
         role === 'pgm' ? el('span', { class: 'ws-onair', text: 'ON AIR' }) : null,
         broken.length ? el('button', {
           class: 'ws-warn',
-          title: `${broken.map(l => 'L' + (l + 1) + ' · ' + sourceName(store.val('PRinp', s, c, l))).join(', ')} — the source is not available, so a take will not land. Click to clear them.`,
+          title: `${broken.map(l => layerName(l) + ' · ' + sourceNameFor(store.val('PRinp', s, c, l), l)).join(', ')} — the source is not available, so a take will not land. Click to clear them.`,
           onclick: () => { broken.forEach(l => store.set('PRinp', [s, c, l], 0)); store.notify(); },
         }, `⚠ ${broken.length} unavailable`) : null,
         el('div', { class: 'spacer' }),
@@ -8488,14 +8685,14 @@ VIEWS.workspace = (() => {
       row.append(el('button', {
         class: 'ws-slot' + (isSel ? ' sel' : '') + (src ? ' filled' : ''),
         style: src ? `--c:${srcColor(src)}` : '',
-        title: src ? `L${l + 1} · ${sourceName(src)}` : `L${l + 1} — empty`,
+        title: src ? `${layerName(l)} · ${sourceNameFor(src, l)}` : `${layerName(l)} — empty`,
         ...dropTarget((e) => {
           const n = droppedSource(e);
           if (n == null || Number.isNaN(n)) return;
           assign(s, c, l, n);
         }),
         onclick: () => { if (armed != null) assign(s, c, l, armed); else select(s, c, l); },
-      }, `L${l + 1}`));
+      }, isMidra() ? layerName(l).replace('PiP ', 'P').replace('Frame', 'FR').replace('Logo ', 'LG') : `L${l + 1}`));
     }
     row.append(el('div', { class: 'spacer' }));
     for (const [k, label, t] of LAYOUTS)
@@ -8613,7 +8810,7 @@ VIEWS.workspace = (() => {
 
     return el('div', { class: 'panel ws-insp' },
       el('div', { class: 'insp-title' },
-        el('h2', `L${l + 1}`),
+        el('h2', layerName(l)),
         el('span', { class: 'ws-ctx-tag ' + role }, ctxName(s, c)),
         el('span', { class: 'hint', text: screenLabel(s) }),
         el('div', { class: 'spacer' }),
@@ -8835,8 +9032,10 @@ VIEWS.workspace = (() => {
       el('div', { class: 'spacer' }),
       valid ? el('button', { class: 'btn recall', onclick: () => isMaster ? loadMaster(i, false) : loadScreenMem(i, false) }, 'Load to preview') : null,
       valid ? el('button', { class: 'btn take', onclick: () => isMaster ? loadMaster(i, true) : loadScreenMem(i, true) }, 'Load + take') : null,
-      el('button', { class: 'btn save', onclick: () => isMaster ? saveMaster(i) : saveScreenMem(i) }, 'Save here'),
-      valid ? el('button', { class: 'btn ghost', onclick: () => eraseMem(i, isMaster) }, 'Erase') : null);
+      // saving over a memory that is in use is as final as erasing it
+      valid ? confirmBtn(`ws-save-${isMaster ? 'm' : 's'}-${i}`, 'Save here', 'Tap again to overwrite', () => isMaster ? saveMaster(i) : saveScreenMem(i), 'btn save')
+            : el('button', { class: 'btn save', onclick: () => isMaster ? saveMaster(i) : saveScreenMem(i) }, 'Save here'),
+      valid ? confirmBtn(`ws-erase-${isMaster ? 'm' : 's'}-${i}`, 'Erase', 'Tap again to erase', () => eraseMem(i, isMaster)) : null);
   }
 
   // Midra keeps eight presets in the unit itself (the RCS2's other 56 slots live on the
@@ -8873,11 +9072,10 @@ VIEWS.workspace = (() => {
         el('div', { class: 'spacer' }),
         used ? el('button', { class: 'btn recall', onclick: () => { ensureMidraSlot(memSel); setTimeout(() => recallMidra(memSel), 450); } }, 'Load to preview') : null,
         used ? el('button', { class: 'btn take', onclick: () => { ensureMidraSlot(memSel); setTimeout(() => { recallMidra(memSel); setTimeout(() => doTake(0, ttime), 300); }, 450); } }, 'Load + take') : null,
-        el('button', { class: 'btn save', onclick: () => saveMidra(memSel) }, 'Save here'),
-        used && store.byMnem.has('CTpmr') ? el('button', {
-          class: 'btn ghost',
-          onclick: () => { store.set('CTpmr', [memSel], 1); setTimeout(() => store.get('PMpst', [memSel]), 400); flash(`Erased preset ${memSel + 1}`); },
-        }, 'Erase') : null) : null);
+        used ? confirmBtn(`ws-midra-save-${memSel}`, 'Save here', 'Tap again to overwrite', () => saveMidra(memSel), 'btn save')
+             : el('button', { class: 'btn save', onclick: () => saveMidra(memSel) }, 'Save here'),
+        used && store.byMnem.has('CTpmr') ? confirmBtn(`ws-midra-erase-${memSel}`, 'Erase', 'Tap again to erase',
+          () => { store.set('CTpmr', [memSel], 1); setTimeout(() => store.get('PMpst', [memSel]), 400); flash(`Erased preset ${memSel + 1}`); }) : null) : null);
   }
   function saveMidra(i) {
     store.set('GCsrq', [2, i], 1);
@@ -8893,7 +9091,7 @@ VIEWS.workspace = (() => {
     }
   }
   function recallMidra(i) {
-    if (store.byMnem.has('CTpmu')) store.set('CTpmu', [], 1);   // let preview edits stick
+    midraEditMode();
     const c = 1;
     for (let s = 0; s < screenCount(); s++)
       for (let l = 0; l < layerSlots(); l++) {
@@ -8956,10 +9154,10 @@ VIEWS.audio = (() => {
   function enter() {
     for (const m of ['AUomv', 'AUoba', 'AUomu', 'AUoim', 'AUode', 'AUoci']) if (store.byMnem.has(m)) store.scan(m);
     if (inputs === null) {
-      const mark = store.log.length;
+      const mark = store.errCount;
       store.get('AUile', [0]);
       setTimeout(() => {
-        inputs = !store.log.slice(mark).some(e => e.dir === 'er');
+        inputs = store.errCount === mark;
         if (inputs) for (const m of ['AUaia', 'AUile', 'AUiba', 'AUiim', 'AUimu']) store.scan(m);
         store.notify();
       }, 400);

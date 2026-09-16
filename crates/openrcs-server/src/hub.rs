@@ -16,7 +16,7 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc, watch};
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant, MissedTickBehavior};
 
 /// A single value the device reported, keyed by mnemonic + index tuple.
 pub type Key = (String, Vec<i64>);
@@ -519,7 +519,7 @@ async fn device_loop(hub: Arc<Hub>, mut from_clients: mpsc::UnboundedReceiver<St
                     hub.connected.store(true, Ordering::Relaxed);
                     let _ = hub.events.send(DeviceEvent::Connected(true));
                     let link = match target.family.dialect() {
-                        None => pump(&hub, stream, &mut from_clients, &mut gen).await,
+                        None => pump(&hub, stream, &mut from_clients, &mut gen, target.family).await,
                         Some(dialect) => {
                             pump_awj(&hub, stream, &mut from_clients, &mut gen, dialect).await
                         }
@@ -541,15 +541,45 @@ async fn device_loop(hub: Arc<Hub>, mut from_clients: mpsc::UnboundedReceiver<St
     }
 }
 
+/// How long the device may say nothing before the link asks it something,
+/// and how long before an unanswered link is given up on.
+///
+/// A processor that has stopped answering looks exactly like one that has
+/// nothing to say: the socket stays open, nothing arrives, and the surface
+/// shows ONLINE. A Pulse2 did just that on the bench (2026-09-16) — its one
+/// control session went deaf while a fresh socket answered at once — so the
+/// link now proves itself. The identify special `?` is the probe: every
+/// mnemonic platform answers it (`DEV…`), it changes nothing, and the surface
+/// already understands the reply. Twenty seconds of silence through three
+/// probes drops the socket, which shows OFFLINE and reconnects.
+const LINK_PROBE_AFTER: Duration = Duration::from_secs(5);
+const LINK_DEAD_AFTER: Duration = Duration::from_secs(20);
+
+fn silent(for_how_long: Duration) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!("device silent for {} s, dropping the link", for_how_long.as_secs()),
+    )
+}
+
 async fn pump(
     hub: &Arc<Hub>,
     stream: TcpStream,
     from_clients: &mut mpsc::UnboundedReceiver<String>,
     gen: &mut watch::Receiver<u64>,
+    family: Family,
 ) -> std::io::Result<()> {
     let (mut rd, mut wr) = stream.into_split();
     let mut dec = Decoder::new();
     let mut buf = [0u8; 8192];
+    let probe = match family {
+        Family::Mnemonic(plat) => encode_get(plat, "?", &[]),
+        Family::Awj(_) => String::new(),
+    };
+    let mut last_rx = Instant::now();
+    let mut tick = tokio::time::interval(LINK_PROBE_AFTER);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    tick.tick().await; // the first tick fires at once; the link has just opened
     loop {
         tokio::select! {
             // retargeted: drop this link so the loop can pick up the new one
@@ -561,12 +591,23 @@ async fn pump(
                     None => return Ok(()),
                 }
             }
+            // the watchdog: a quiet link is asked to identify itself, a deaf one is dropped
+            _ = tick.tick() => {
+                let quiet = last_rx.elapsed();
+                if quiet >= LINK_DEAD_AFTER {
+                    return Err(silent(quiet));
+                }
+                if quiet >= LINK_PROBE_AFTER && !probe.is_empty() {
+                    wr.write_all(probe.as_bytes()).await?;
+                }
+            }
             // device -> browser
             n = rd.read(&mut buf) => {
                 let n = n?;
                 if n == 0 {
                     return Ok(()); // peer closed
                 }
+                last_rx = Instant::now();
                 for frame in dec.feed(&buf[..n]) {
                     match frame {
                         Frame::Value(r) => {
@@ -740,6 +781,18 @@ async fn pump_awj(
         wr.write_all(awj::encode_get(&path).as_bytes()).await?;
     }
 
+    // The same watchdog as the mnemonic link, probing with the model's own
+    // identity path — answered with a value on the right model and an E12 on
+    // the other, and either one proves the unit is listening.
+    let probe = awj::encode_get(&match dialect {
+        awj::Dialect::LivePremier => awj::paths::device_model(1),
+        awj::Dialect::Mng => awj::mng::device_model(),
+    });
+    let mut last_rx = Instant::now();
+    let mut tick = tokio::time::interval(LINK_PROBE_AFTER);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    tick.tick().await;
+
     loop {
         tokio::select! {
             _ = gen.changed() => return Ok(()),
@@ -749,11 +802,21 @@ async fn pump_awj(
                     None => return Ok(()),
                 }
             }
+            _ = tick.tick() => {
+                let quiet = last_rx.elapsed();
+                if quiet >= LINK_DEAD_AFTER {
+                    return Err(silent(quiet));
+                }
+                if quiet >= LINK_PROBE_AFTER {
+                    wr.write_all(probe.as_bytes()).await?;
+                }
+            }
             n = rd.read(&mut buf) => {
                 let n = n?;
                 if n == 0 {
                     return Ok(()); // peer closed
                 }
+                last_rx = Instant::now();
                 for frame in dec.feed(&buf[..n]) {
                     match frame {
                         awj::Frame::Value { path, value } => {

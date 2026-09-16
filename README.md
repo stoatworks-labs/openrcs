@@ -94,6 +94,18 @@ per-platform quirks are all confirmed on the wire. Per-variable ranges are still
 strong guidance rather than a guarantee, and a few behaviours depend on model,
 firmware or a live input signal.
 
+A bench session with both units the night before a show (2026-09-16) drove
+every operator action at the real hardware and corrected four things the
+simulators had hidden: the **master fade** direction (the device's FADE_AUTO
+enum is 1 = up, 2 = to black — it was sent the other way round), the **Midra
+take**, which the unit ignores while its preset-update mode is on (openrcs
+used to switch that mode on; it keeps it off now, and a Midra cut is the
+T-bar run end to end), the **tally**, which is indexed by source number rather
+than by input, and the **Wall**, which had read the output-to-screen map
+backwards. The bridge also gained a link watchdog: a processor that stops
+answering is dropped after 20 s and shows OFFLINE instead of ONLINE, and every
+memory erase or save-over asks for a second tap.
+
 Two things this release added are worth calling out for what is and is not proven.
 The Midra **video out** — its three plug modes, its screen sources, and its area of
 interest — is confirmed on a Pulse2, including watching the SDI plug move between
