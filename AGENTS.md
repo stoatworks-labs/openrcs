@@ -255,6 +255,11 @@ std binary and may use crates. Keep the split.
 
 ## The surface's own invariants
 
+- **A canvas draws the layers in the device's order, whatever is selected.**
+  The selection's outline and handles are `selectionChrome()`, an element of
+  its own above them all. Do not lift the selected `.lrect` with a z-index
+  again: a selected full-screen layer then takes every press meant for the
+  layers beneath it, and nothing but the selection can be dragged.
 - **Layer geometry has exactly two write points** — `setGeom`/`setGeomNow` in the
   Layers view and in Workspace. The working-area clamp lives there so that every
   path is covered by construction, including typed values and memory recalls that

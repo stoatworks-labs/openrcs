@@ -289,13 +289,25 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
   border: 1.5px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   display: flex; align-items: flex-start; cursor: move; user-select: none;
-  min-width: 8px; min-height: 8px;
+  min-width: 8px; min-height: 8px; touch-action: none;
 }
 .lrect.off { border-style: dashed; border-color: var(--faint); background: color-mix(in srgb, var(--faint) 10%, transparent); }
-.lrect.sel { border-color: #fff; box-shadow: 0 0 0 1px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent); z-index: 999 !important; }
+/* The selected layer keeps its place in the stack: the device draws the layers
+   in slot order and so does the canvas, whatever is selected. Lifting the
+   selection to the front used to put a full-screen L1 — the default selection —
+   over every other layer, so a press on any of them grabbed L1 instead. */
+.lrect.sel { border-color: #fff; }
 .lrect-tag { font-family: var(--mono); font-size: 11px; background: #000a; color: var(--text); padding: 1px 5px; border-radius: 0 0 3px 0; pointer-events: none; white-space: nowrap; }
-.handle { position: absolute; width: 12px; height: 12px; background: var(--accent); border: 1px solid #000; border-radius: 2px; }
-.lrect:not(.sel) .handle { display: none; }
+/* Selection chrome: the outline and corner handles of the selected rectangle,
+   in an element of its own above every layer (selectionChrome in app.js). Inert
+   to the pointer except for the handles, so a press inside it still reaches
+   whichever layer is really under the cursor. */
+.sel-chrome {
+  position: absolute; box-sizing: border-box; pointer-events: none; z-index: 999;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.handle { position: absolute; width: 12px; height: 12px; background: var(--accent); border: 1px solid #000; border-radius: 2px; pointer-events: auto; touch-action: none; }
 .handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
 .handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
 .handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
@@ -670,12 +682,16 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 /* ---- Connection (appliance setup) ----
    Sized for a finger on a 1080p touch panel, not a mouse: every target here is
    at least 44px. Nothing in this view is reachable by hover only. */
-.addr-display {
+/* A text field, so a keyboard types into it and the keypad appends to it;
+   `input.` outranks the generic input[type=text] sizing above. */
+input.addr-display {
+  display: block; width: 100%;
   font-family: var(--mono); font-size: 26px; letter-spacing: 1px;
   background: var(--bg); border: 1px solid var(--line-hi); border-radius: var(--r);
-  padding: 12px 14px; margin-bottom: 10px; min-height: 54px;
-  display: flex; align-items: center; color: var(--text);
+  padding: 12px 14px; margin-bottom: 10px; min-height: 54px; color: var(--text);
 }
+input.addr-display::placeholder { color: var(--faint); letter-spacing: 0; }
+input.addr-display:focus { border-color: var(--accent); outline: none; }
 .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .keypad .key {
   background: var(--raised); border: 1px solid var(--line-hi); border-radius: var(--r);
@@ -782,7 +798,7 @@ img.thumb { display: block; width: 96px; height: 54px; object-fit: cover; border
 .screen-canvas.bg-sel { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lrect-tag.bg-tag { position: absolute; left: 0; bottom: 0; border-radius: 0 3px 0 0; opacity: .8; }
 .lrect.top { border-color: var(--armed); }
-.lrect.top.sel { box-shadow: 0 0 0 1px var(--armed), 0 0 14px color-mix(in srgb, var(--armed) 60%, transparent); }
+.sel-chrome.top { box-shadow: 0 0 0 1px var(--armed), 0 0 14px color-mix(in srgb, var(--armed) 60%, transparent); }
 .slot.still { min-height: 58px; }
 .slot.still .lbl + .lbl { opacity: .7; }
 input.wide { flex: 1; min-width: 240px; }

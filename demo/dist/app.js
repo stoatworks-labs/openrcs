@@ -771,6 +771,32 @@ function workOverlay(s, sw, sh, withTag = true) {
   }, withTag ? el('span', { class: 'work-area-tag', text: `${a.w}×${a.h}` }) : null);
 }
 
+/**
+ * The selection's chrome — outline and corner handles — as an element of its
+ * own, appended to the canvas after the layers and drawn above them all.
+ *
+ * The layers themselves keep the order the device stacks them in. They used to
+ * lift the selected one to the front, which put a full-screen selection — L1,
+ * the default — over every other layer, so a press on any of them grabbed L1
+ * and nothing but the selected layer could be dragged; its corners still
+ * worked, which is why resizing seemed fine while moving did not. The chrome
+ * is inert to the pointer except for its handles, so a press inside it reaches
+ * whichever layer is really under the cursor, and it follows the box through a
+ * drag by watching the inline style every drag handler writes to.
+ *
+ * `onResize(e, corner, box)` receives the layer's own box, since the handle is
+ * no longer inside it.
+ */
+function selectionChrome(cv, box, onResize) {
+  const chrome = el('div', { class: 'sel-chrome' + (box.classList.contains('top') ? ' top' : '') },
+    ...(onResize ? ['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => onResize(e, c, box) })) : []));
+  const follow = () => { for (const k of ['left', 'top', 'width', 'height']) chrome.style[k] = box.style[k]; };
+  follow();
+  new MutationObserver(follow).observe(box, { attributes: true, attributeFilter: ['style'] });
+  cv.append(chrome);
+  return chrome;
+}
+
 // ---------- layer memories ----------
 // Neither platform has a device-side layer bank: the device stores whole screen
 // presets (PM*) and nothing smaller. Every per-layer property is separately
@@ -2772,10 +2798,9 @@ VIEWS.layers = (() => {
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l + 1}`,
         onpointerdown: (e) => dragMove(e, l, scale),
       },
-        el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(c =>
-          el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, l, scale, c) })));
+        el('span', { class: 'lrect-tag', text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}` }));
       cv.append(box);
+      if (l === sel) selectionChrome(cv, box, (e, c, b) => dragResize(e, l, scale, c, b));
     }
     return el('div', { class: 'canvas-wrap' }, cv);
   }
@@ -2795,10 +2820,9 @@ VIEWS.layers = (() => {
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
 
-  function dragResize(e, l, scale, corner) {
+  function dragResize(e, l, scale, corner, box) {
     e.preventDefault(); e.stopPropagation();
     beginDrag(); sel = l;
-    const box = e.currentTarget.parentNode;
     const sx = e.clientX, sy = e.clientY, r0 = rectPx(l);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
@@ -4046,10 +4070,10 @@ VIEWS.lpmultiview = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(n); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, n, scale, corner) {
+  function dragResize(e, n, scale, corner, box) {
     e.preventDefault(); e.stopPropagation();
     beginDrag(); sel = n;
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = rectPx(n);
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(n);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
       const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
@@ -4090,14 +4114,15 @@ VIEWS.lpmultiview = (() => {
       const r = rectPx(n);
       const m = /^INPUT_(\d+)$/.exec(String(src || ''));
       const shot = on && m ? mngSnapshotUrl('inputs', +m[1]) : null;
-      cv.append(el('div', {
+      const box = el('div', {
         class: 'lrect' + (n === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${n};` +
           (shot ? `background-image:url(${shot})` : on && src && src !== 'NONE' ? `background:color-mix(in srgb, ${sourceColor(src)} 45%, transparent)` : ''),
         onpointerdown: (e) => dragMove(e, n, scale),
       },
-        el('span', { class: 'lrect-tag', text: `W${n}${on && src && src !== 'NONE' ? ' · ' + sourceName(src) : on ? '' : ' · off'}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => dragResize(e, n, scale, k) }))));
+        el('span', { class: 'lrect-tag', text: `W${n}${on && src && src !== 'NONE' ? ' · ' + sourceName(src) : on ? '' : ' · off'}` }));
+      cv.append(box);
+      if (n === sel) selectionChrome(cv, box, (e, c, b) => dragResize(e, n, scale, c, b));
     }
     return el('div', { class: 'canvas-wrap' }, cv);
   }
@@ -5486,10 +5511,9 @@ const mngCanvas = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); readBack(c, l); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, c, l, scale, corner) {
+  function dragResize(e, c, l, scale, corner, box) {
     e.preventDefault(); e.stopPropagation();
     beginDrag();
-    const box = e.currentTarget.parentNode;
     const sx = e.clientX, sy = e.clientY, r0 = rect(c, l);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
@@ -5599,18 +5623,21 @@ const mngCanvas = (() => {
           (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
         onpointerdown: (e) => { e.currentTarget.parentNode.focus(); onSelect(l, false); dragMove(e, c, l, scale); },
       },
-        el('span', { class: 'lrect-tag', text: tags ? `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` : `L${l}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(k => el('div', { class: 'handle ' + k, onpointerdown: (e) => { onSelect(l, false); dragResize(e, c, l, scale, k); } })));
+        el('span', { class: 'lrect-tag', text: tags ? `L${l}${on ? ' · ' + mngInputs.name(src) : ''}${st && st !== 'OFF' && st !== 'OPEN' ? ' · ' + st.toLowerCase() : ''}` : `L${l}` }));
       cv.append(box);
+      if (l === sel) selectionChrome(cv, box, (e, k, b) => { onSelect(l, false); dragResize(e, c, l, scale, k, b); });
     }
     const tr = topRect(c);
     if (tr) {
       const shot = mngSnapshotUrl(`screens/${c.n}/top`, +tr.frame);
-      cv.append(el('div', {
+      const box = el('div', {
         class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
         style: `left:${tr.left * scale}px;top:${tr.top * scale}px;width:${tr.w * scale}px;height:${tr.h * scale}px;z-index:99;` + (shot ? `background-image:url(${shot})` : ''),
         onpointerdown: (e) => { onSelect('top', false); dragTop(e, c, scale); },
-      }, el('span', { class: 'lrect-tag', text: tags ? `top · frame ${tr.frame}` : 'top' })));
+      }, el('span', { class: 'lrect-tag', text: tags ? `top · frame ${tr.frame}` : 'top' }));
+      cv.append(box);
+      // the top frame has a position but no size, so an outline and no handles
+      if (sel === 'top') selectionChrome(cv, box, null);
     }
     return el('div', { class: 'canvas-wrap' }, cv);
   }
@@ -7610,9 +7637,9 @@ VIEWS.multiview = (() => {
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${w + 1}`,
         onpointerdown: (e) => dragMove(e, w, scale),
       },
-        el('span', { class: 'lrect-tag', text: `${w + 1}${src ? ' · ' + monName(src) : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => dragResize(e, w, scale, c) })));
+        el('span', { class: 'lrect-tag', text: `${w + 1}${src ? ' · ' + monName(src) : ''}` }));
       cv.append(box);
+      if (w === sel) selectionChrome(cv, box, (e, c, b) => dragResize(e, w, scale, c, b));
     }
     return el('div', { class: 'canvas-wrap' }, cv);
   }
@@ -7626,9 +7653,9 @@ VIEWS.multiview = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, w, scale, corner) {
+  function dragResize(e, w, scale, corner, box) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); sel = w;
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY, r0 = rectPx(w);
+    const sx = e.clientX, sy = e.clientY, r0 = rectPx(w);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
       const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
@@ -8247,9 +8274,9 @@ VIEWS.workspace = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, s, c, l, cv, sw, sh, corner) {
+  function dragResize(e, s, c, l, cv, sw, sh, corner, box) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); select(s, c, l);
-    const box = e.currentTarget.parentNode, sx = e.clientX, sy = e.clientY;
+    const sx = e.clientX, sy = e.clientY;
     const r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh), ar = r0.h ? r0.w / r0.h : 16 / 9;
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
@@ -8432,11 +8459,10 @@ VIEWS.workspace = (() => {
           else dragMove(e, s, c, l, cv, sw, sh);
         },
       },
-        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}${missing ? ' ⚠' : ''}` }),
-        ...['nw', 'ne', 'sw', 'se'].map(cn =>
-          el('div', { class: 'handle ' + cn, onpointerdown: (e) => dragResize(e, s, c, l, cv, sw, sh, cn) })));
+        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `L${l + 1}${src ? ' · ' + sourceName(src) : ''}${missing ? ' ⚠' : ''}` }));
       asPct(box, r, sw, sh);
       cv.append(box);
+      if (isSel) selectionChrome(cv, box, (e, cn, b) => dragResize(e, s, c, l, cv, sw, sh, cn, b));
     }
     const broken = assignedLayers(s, c).filter(l => !sourceAvailable(store.val('PRinp', s, c, l)));
     return el('div', { class: 'ws-ctx ws-ctx-' + role },
@@ -9430,8 +9456,8 @@ function plsPresetCanvas(p, width, opts = {}) {
       onpointerdown: opts.onMove ? (e) => opts.onMove(e, L.l, scale) : null,
       onclick: opts.onSelect ? () => opts.onSelect(L.l) : null,
     }, el('span', { class: 'lrect-tag', text: `${L.tag}${on ? ' · ' + plsSourceName(L.kind, src) : ''}` }));
-    if (opts.onResize) for (const c of ['nw', 'ne', 'sw', 'se']) box.append(el('div', { class: 'handle ' + c, onpointerdown: (e) => opts.onResize(e, L.l, scale, c) }));
     cv.append(box);
+    if (opts.sel === L.l) selectionChrome(cv, box, opts.onResize ? (e, c, b) => opts.onResize(e, L.l, scale, c, b) : null);
   });
   return cv;
 }
@@ -9542,10 +9568,9 @@ VIEWS.plslayers = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, l, scale, corner) {
+  function dragResize(e, l, scale, corner, box) {
     e.preventDefault(); e.stopPropagation();
     beginDrag(); sel = l;
-    const box = e.currentTarget.parentNode;
     const sx = e.clientX, sy = e.clientY, r0 = plsRect(preset, l);
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
@@ -10069,6 +10094,23 @@ VIEWS.connection = (() => {
   const tap = (ch) => { if (entry.length < 64) entry += ch; store.notify(); };
   const back = () => { entry = entry.slice(0, -1); store.notify(); };
   const clear = () => { entry = ''; store.notify(); };
+  const canConnect = () => entry.trim().length > 0 && !isDemo();
+  const connect = () => { if (canConnect()) store.setup(entry.trim(), plat); };
+
+  // The address is typed as readily as tapped: the display is a text field the
+  // keypad appends to, so a keyboard, a paste and a finger all land in the same
+  // buffer. Its id is what keeps focus and the caret across the re-render every
+  // device frame causes (see render()), and the tree is rebuilt only when the
+  // Connect button's state changes, not on every keystroke. Enter connects.
+  function addrField() {
+    return el('input', {
+      id: 'conn-addr', class: 'addr-display', type: 'text', value: entry,
+      placeholder: 'address', maxlength: 64,
+      autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false',
+      oninput: (e) => { const could = canConnect(); entry = e.target.value; if (canConnect() !== could) store.notify(); },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); connect(); } },
+    });
+  }
 
   function keypad() {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', ':'];
@@ -10137,7 +10179,6 @@ VIEWS.connection = (() => {
   function render() {
     if (!seeded) seed();
     if (entry === null) enter();
-    const canConnect = entry.trim().length > 0 && !isDemo();
     return el('div', {},
       el('div', { class: 'view-head' },
         el('h1', { text: 'Connection' }),
@@ -10164,9 +10205,9 @@ VIEWS.connection = (() => {
             : null)),
       el('div', { class: 'split' },
         el('div', { class: 'panel' }, el('h2', 'Address'),
-          el('div', { class: 'addr-display', text: entry || '—' }),
+          addrField(),
           keypad(),
-          el('div', { class: 'hint pad', text: 'The control port is added automatically. A hostname needs the bridge’s --device option.' })),
+          el('div', { class: 'hint pad', text: 'Type it, or tap it in. A hostname works too. The control port is added automatically.' })),
         el('div', { class: 'panel' }, el('h2', 'Platform'),
           platformPicker(),
           plat === 'midra4k' || plat === 'alta4k' || (isAwj() && awjDialect() === 'mng') ? el('label', { class: 'field' }, 'Thumbnails from (host:port)',
@@ -10178,8 +10219,8 @@ VIEWS.connection = (() => {
             ? el('div', { class: 'hint pad bad', text: `Rejected: ${store.setupError}` })
             : null,
           el('button', {
-            class: 'btn primary big', disabled: !canConnect,
-            onclick: () => store.setup(entry.trim(), plat),
+            class: 'btn primary big', disabled: !canConnect(),
+            onclick: connect,
           }, 'Connect'))));
   }
 

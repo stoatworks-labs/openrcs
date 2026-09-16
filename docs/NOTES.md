@@ -605,6 +605,34 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Layers grabbed through the selection, and a typed address — 2026-09-16
+
+**"Layers resize but won't drag."** Every canvas lifted the selected layer to
+the front (`.lrect.sel { z-index: 999 }`) so its corner handles were reachable.
+With L1 the default selection everywhere and usually the full-screen layer,
+that put L1 over every other layer on the canvas: a press on L2 grabbed L1 —
+visibly, or invisibly when L1 was an empty dashed slot — so nothing but the
+selected layer could ever be moved, while its corners still worked. Reproduced
+on the demo (Chromium and Safari, via safaridriver) and on the Midra 4K
+simulator's Layers and Show canvases; a selected layer's own body drag was
+never the problem. Fix: layers keep the order the device stacks them in, and
+the outline + handles are a separate `.sel-chrome` element appended after
+them (`selectionChrome()` in app.js), inert to the pointer except its handles,
+following the box through a drag with a MutationObserver on its inline style.
+`dragResize` in every canvas now takes the box as an argument rather than
+`e.currentTarget.parentNode`. A layer under a bigger one can no longer be
+moved by dragging its body — its handles and the arrow keys still reach it —
+which is how every other editor behaves. `.lrect` and `.handle` also gained
+`touch-action: none`, without which a finger drag became a scroll and a
+`pointercancel`.
+
+**The address field takes the keyboard.** `.addr-display` is now an
+`<input id="conn-addr">` the keypad appends to; `render()` keeps focus and
+caret by id across the per-frame rebuild, and typing only re-renders when the
+Connect button's state flips. Enter connects. A typed hostname works —
+`normalise_device` never required an IP and the hub connects through tokio's
+resolver — so the "needs --device" hint went.
+
 ## Pulse PLS300 — the generation before Midra, from its published guide, 2026-09-16
 
 Table started 2026-09-13 (the day the guide was found), landed with a surface

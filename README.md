@@ -262,8 +262,8 @@ the PLS300, 10606 for LivePremier, Midra 4K and Alta 4K) and it is filled in
 from `--platform`.
 
 `--device` is optional: without it the server starts unconfigured and the
-**Connection** view sets the processor from the UI — keypad or network scan —
-remembering it for next time. That makes the server usable on a machine with no
+**Connection** view sets the processor from the UI — typed, tapped in on a
+keypad, or picked from a network scan — remembering it for next time. That makes the server usable on a machine with no
 convenient command line, such as a dedicated control panel.
 
 `openrcs-server --version` (or `-V`) prints the version and, when the binary

@@ -24,9 +24,10 @@ in from the platform when you leave it off). The header shows the device model, 
 every view updates live as the device — or another operator — changes state.
 
 `--device` is optional. Started without one, the server comes up unconfigured
-and shows only the **Connection** view: enter the processor's address on the
-on-screen keypad, or press **Scan** to look for processors on the network, pick
-the platform and press **Connect**. The choice is written to a config file
+and shows only the **Connection** view: type the processor's address (or a
+hostname), tap it in on the on-screen keypad, or press **Scan** to look for
+processors on the network; then pick the platform and press **Connect** (or
+Enter). The choice is written to a config file
 (`~/.config/openrcs/config.json` by default, or `--config <file>`) and used on
 the next start, so this only has to be done once. Connection also retargets a
 running server — useful when one surface covers more than one processor.
