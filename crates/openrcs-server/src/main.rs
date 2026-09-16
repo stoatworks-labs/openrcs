@@ -169,10 +169,16 @@ fn parse_args() -> Config {
                     config_path = PathBuf::from(v);
                 }
             }
+            "-V" | "--version" => {
+                // stdout, not stderr: this is the one output a script captures.
+                println!("openrcs-server {}", version());
+                std::process::exit(0);
+            }
             "-h" | "--help" => {
                 eprintln!("openrcs-server [--device host:port] \
                            [--platform livecore|midra|pls300|livepremier|midra4k|alta4k] \
-                           [--listen host:port] [--web dir] [--config file] [--tailnet]");
+                           [--listen host:port] [--web dir] [--config file] [--tailnet] \
+                           [--version]");
                 eprintln!();
                 eprintln!("  --device is optional. Without it the server starts unconfigured");
                 eprintln!("  and takes its target from --config, or from the Setup view.");
@@ -181,12 +187,26 @@ fn parse_args() -> Config {
                 eprintln!("  rename THIS HOST on your tailnet. Only for a box the surface owns,");
                 eprintln!("  i.e. an appliance. Anyone who can reach the UI can use it, so do");
                 eprintln!("  not combine it with a --listen beyond loopback unless you mean to.");
+                eprintln!();
+                eprintln!("  --version (-V) prints the version and the commit it was built");
+                eprintln!("  from, then exits.");
                 std::process::exit(0);
             }
             other => eprintln!("ignoring unknown arg {other}"),
         }
     }
     Config { device, platform, listen, web_dir, config_path, tailnet }
+}
+
+/// The crate version, followed by the short commit sha when `build.rs` could
+/// find one — `0.7.0 (f219a9d)` from a checkout, plain `0.7.0` from a source
+/// tarball. Shared by `--version` and the startup banner so the two never
+/// disagree.
+fn version() -> String {
+    match option_env!("OPENRCS_GIT_SHA") {
+        Some(sha) => format!("{} ({sha})", env!("CARGO_PKG_VERSION")),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    }
 }
 
 fn default_config_path() -> PathBuf {
@@ -336,7 +356,7 @@ async fn main() {
         ))
         .with_state(app);
 
-    println!("openrcs-server");
+    println!("openrcs-server {}", version());
     match &target {
         Some(t) => println!("  device   {} ({})", t.addr, t.family.name()),
         None => println!("  device   unconfigured — set one in the Setup view"),
@@ -736,5 +756,27 @@ mod tests {
     fn a_missing_config_is_not_an_error() {
         let back = load_config(std::path::Path::new("/nonexistent/openrcs/config.json"));
         assert!(back.device.is_none());
+    }
+
+    #[test]
+    fn version_is_the_crate_version_plus_the_commit_when_there_is_one() {
+        // Built from a checkout: `0.7.0 (f219a9d)`. From a tarball, or with
+        // no git on the path, just `0.7.0` — never a placeholder in brackets.
+        let v = version();
+        let pkg = env!("CARGO_PKG_VERSION");
+        match v.strip_prefix(pkg) {
+            Some("") => {}
+            Some(rest) => {
+                let sha = rest
+                    .strip_prefix(" (")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or_else(|| panic!("odd version suffix {rest:?}"));
+                assert!(
+                    !sha.is_empty() && sha.chars().all(|c| c.is_ascii_hexdigit()),
+                    "not a short sha: {sha:?}"
+                );
+            }
+            None => panic!("version {v:?} does not start with {pkg}"),
+        }
     }
 }

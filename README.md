@@ -261,6 +261,11 @@ from `--platform`.
 remembering it for next time. That makes the server usable on a machine with no
 convenient command line, such as a dedicated control panel.
 
+`openrcs-server --version` (or `-V`) prints the version and, when the binary
+was built from a git checkout, the short commit it came from —
+`openrcs-server 0.7.0 (f219a9d)` — and exits. The same line opens the startup
+banner, so a running server says which build it is. `--help` lists the flags.
+
 ### Running it on a dedicated panel
 
 `--tailnet` adds one more view, and it is **off unless you ask for it**. It
