@@ -2,14 +2,15 @@
 
 <!-- Generated from docs/comparison.json by scripts/gen-comparison.py. Edit the JSON, not this file. -->
 
-Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.
+Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K, and the original RCS for the Pulse PLS300. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.
 
-This page describes **openrcs v0.7.0** as of 2026-09-15, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
+This page describes **openrcs v0.7.0** (`1b1bd72`) as of 2026-09-16, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
 
 - **Midra** (Pulse², Eikos², Saphyr, SmartMatriX², QuickMatriX, QuickVu) — RCS²: Pulse² user manual, RCS² chapters 6–7
 - **LiveCore** (Ascender, NeXtage, SmartMatriX Ultra) — Web RCS: LiveCore user manual, Web RCS chapter 7
 - **LivePremier** (Aquilon C / RS) — Web RCS: Aquilon User Manual v6.2, September 2026
 - **Midra 4K** (Pulse 4K, Eikos 4K, QuickMatrix 4K, QuickVu 4K) — Web RCS: Midra 4K User Manual V3.2, May 2026
+- **PLS300** (Pulse PLS300) — RCS: PLS300 user manual, RCS chapter 5 — openrcs’s column is from the Programmer’s Guide and a table-derived fixture, not a unit
 
 ## Standing
 
@@ -21,6 +22,7 @@ This page describes **openrcs v0.7.0** as of 2026-09-15, read from the views the
 | LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 2 | 6 | 2 | 45 | 3 |
 | Midra 4K | Web RCS | 28 | 18 | 3 | 5 | 4 |
+| PLS300 | RCS | 18 | 7 | 7 | 8 | 18 |
 
 **Full** — openrcs matches the stock tool. **Partial** — some of it. **Missing** — the stock tool has it, openrcs does not. **Beyond stock** — openrcs offers something the stock tool has no equivalent for; it does not mean the openrcs version wins on every axis. A dash means the platform has no such thing.
 
@@ -391,6 +393,98 @@ This page describes **openrcs v0.7.0** as of 2026-09-15, read from the views the
 | Every device variable, raw protocol | No | **Full** — Inspector: every property read so far, get/set any AWJ path as JSON, and the wire log |
 | Verified writes | No | **Partial** — every write reads its target back; recalls read the destination twice because the bookkeeping lands late; a master save is refused rather than allowed to overwrite bank slots |
 | Control-surface module | Yes — AMX / Crestron drivers, REST API, RC400T | **Missing** — not in the openrcs module |
+
+## PLS300 — against the RCS
+
+*Pulse PLS300.*
+
+### Access & deployment
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Control path | Yes — RCS desktop app (Windows only) over LAN or RS-232; LAN is off until enabled on the front panel | **Partial** — openrcs-server + browser; the 222-variable table from the published Programmer's Guide, driven only against a table-derived fixture — no PLS300 has answered yet |
+| Works without a discontinued runtime | No — a Windows-only RCS from the 2009–12 support site, gone from the current one | **Beyond stock** — one binary or the tray app, any current browser |
+| Login, HTTPS, session lock | No — none | **Missing** — none; loopback listen is the default |
+| Offline planning / simulator | No — none in the RCS; the Axion2 controller had an offline mode | **Beyond stock** — Plan mode stages a look with no device and pushes it on connect; browser demo against a fixture derived from the table |
+| Touch / front-of-house surface | No — none | **Partial** — Live’s TAKE, preset tiles and freeze buttons; no big-button Show page for this family |
+| Appliance use (no keyboard, no shell) | No — type the IP in a desktop app | **Beyond stock** — Connection view (keypad or network scan, remembered) and an opt-in Tailnet view; a scan tells a PLS300 from a Midra by its DEV code |
+
+### Live operation
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Take and Cut, per screen and all | Yes — TAKE and Stepback buttons, virtual T-bar | **Partial** — TAKE on the one screen; the unit has no cut verb — each layer runs its own opening and closing effect |
+| T-bar | Yes — virtual T-bar in the RCS | **Full** — NT, the unit’s 0.01 % T-bar, with its enable switch |
+| Step back | Yes — Stepback button | **Full** — the previous look copied to next and taken |
+| Preset toggle, auto-take, dynamic fit | Yes — Control menu: auto-take, preset toggle | **Full** — auto-take and preset toggle on Live; the unit has no dynamic fit |
+| Fade to black / master fade | Yes — [BLACK] clears a layer; output black in the Output menu | **Full** — output black for main and preview on Live; a layer goes black by clearing its source |
+| Freeze | Yes — Freeze button; freeze mode by input or all inputs | **Full** — per-input freeze and the all-inputs mode, on Live and Inputs |
+| Screen groups / destinations | — — one screen | — |
+| Sequencer / cue list | No — none in the RCS; the Axion2 controller had a sequence mode | **Missing** — Cues is built on the Midra/LiveCore memory verbs, not yet on the preset copy |
+| User keys / macros / quick presets | Yes — the six quadravision layouts on the front panel | **Partial** — the six quick layouts and one-tap preset recalls on Live; no macro keys |
+| Timers (clock, countdown, stopwatch) | — | — |
+| Input backup / failover | Yes — Frame Alert: a backup input shown when a source drops | **Full** — the backup input (FRAME_ALERT) and the signal-less-input lock, on Inputs |
+| Undo | Yes — Stepback | **Beyond stock** — Confidence in Shows: a cache-based undo ring, auto-snapshot before every take, revert through the show-restore path |
+
+### Composition
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Graphical layer editor | Yes — Image tab: a preview window with layer buttons, PIP size, position, zoom, border and transparency by value | **Full** — Layers: drag and resize on a to-scale canvas of the main output, for any of the seven presets |
+| All screens editable at once | — — one screen | — |
+| Layer properties | Yes — size, position, zoom, crop, border, transparency, opening and closing effects | **Full** — every PE_* leaf the guide lists: geometry, opacity, crop, border, both transitions with direction and duration, smooth move |
+| Layout presets | Yes — six quadravision layouts | **Full** — the six quick layouts plus Full and quarter snaps |
+| Snap, align, multi-select | No | **Partial** — snap presets; no multi-select or align |
+| Native background / background sets | Yes — background frame layer; background colour per output | **Full** — the frame layer, and the output background colour |
+| Input keying | Yes — luma and chroma key with DSK, colour grabber | **Full** — keying type, levels, tolerance, invert, DSK background and the grabber, per input |
+| Cut & Fill | — | — |
+| Perspective / 3D layers | — | — |
+| Working-area constraint | No | **Missing** — the working area is a Midra/LiveCore surface feature; not on this family |
+| Live thumbnails | No — none | **Missing** — none — the unit serves no HTTP |
+
+### Memories
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Screen memories | Yes — four user presets, saved from main or preview, loaded to preview | **Full** — the four presets and the previous look: recall, recall + take, save from current or next, inspect |
+| Master memories | — — one screen | — |
+| Layer memories | No | **Missing** — the browser layer bank is built on the Midra/LiveCore leaves |
+| Recall filters (categories) | No — whole presets only | **Missing** |
+| Labels, colours, inspect | No — numbered slots | **Beyond stock** — inspect what a slot holds, drawn to scale; the unit stores no labels |
+| Autoscale on recall | — | — |
+| Confidence screens and memories | — | — |
+| Aux screens and aux memories | — | — |
+
+### Setup
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Preconfig: outputs → screens, canvas | Yes — mixer or matrix mode from the front panel | **Missing** — the mode has no variable in the guide’s table; the surface draws the mixer layout and says so |
+| Output setup | Yes — analog / DVI type, format, rate, test patterns | **Full** — format, rate, analog and digital types, sync polarity, patterns, background colour, overscan, HDCP, frame lock |
+| Midra video out (the second output) | — | — |
+| Area of interest (output crop) | No | — |
+| Custom output formats | Yes — eight custom computer formats | **Partial** — selectable as Custom 1–8; their timings are not in the guide’s table |
+| Input setup | Yes — enable, type, autoset, picture, geometry, aspect | **Full** — enable, type, autoset, picture, geometry, phase, aspect, overscan, pulldown, crop, SD standard |
+| EDID | Yes — EDID format and rate per plug | **Full** — preferred format and rate on the four plugs, written to the input |
+| Stills / image library | Yes — six frames and six logos, recorded from an output | **Full** — Pictures: the twelve slots with their sizes; capture with region and keying; delete |
+| Multiviewer / monitoring | — — a preview output, no multiviewer | — |
+| Soft edge blending | — | — |
+| Audio | Yes — main level, delay, mute; per-input level and balance | **Full** — both outputs’ volume, mute, stereo and delay; the auxiliary; per-input level, balance and audio map; SDI de-embed picks |
+| GPIO and tally | — | — |
+| System, network, health, front panel | Yes — Control menu: LAN, lock, brightness, standby | **Full** — identity, versions, fitted options, network (read only), lock, brightness, T-bar enable, standby and the display device on RS-232 |
+| Firmware update | No — a separate updater application | — |
+| Backup / restore | No — no device export in the manual | **Beyond stock** — Shows: the writable state to a JSON file, diff-based restore that writes only what differs |
+| Multi-unit link | No — the Axion2, Orchestra and TRK-800 controllers drive several units | — |
+| LUTs, HDR, colour processing | — | — |
+| AVoIP and streaming | — | — |
+
+### Diagnostics and beyond
+
+| Feature | RCS | openrcs |
+|---|---|---|
+| Every device variable, raw protocol | No | **Beyond stock** — Inspector searches, reads and sets any of the 222 variables; Console shows the wire |
+| Verified writes | No | **Partial** — the unit answers every accepted command with the parameters it changed, so the cache is the readback; nothing re-reads on top of that |
+| Control-surface module | Yes — Crestron and AMX; the Bitfocus analogway-pls300 module (fire-and-forget, freezes the input after the one asked for) | **Missing** — companion-module-openrcs speaks the Midra/LiveCore verbs; no PLS300 actions yet |
 
 ---
 
