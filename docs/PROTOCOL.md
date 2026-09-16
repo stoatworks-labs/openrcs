@@ -213,6 +213,21 @@ speed, flying curve, native background and mask — 4095 for all of them.
 These names come from the enumerations in the device's own Web RCS rather than
 from guesswork; see the note on recovering them in the research repository.
 
+The output format and rate lists are recovered the same way, and are the lists the
+vendor's RCS shows. `ORX_WebRCS.swf` (v04.02.03, fetched from a NeXtage 16) declares
+`OUT_FORMAT` / `OUT_FORMAT_STATUS` (`OUfor` / `OUfst`) over `ENUM_OFORMAT_NAME` —
+`OFORMAT_NAME_SDTV_PAL` (0) to `OFORMAT_NAME_COMPUTER_4096_1080` (54), default
+`HDTV_1080P` (7) — and `OUT_PREVIEW_RATE` (`OUrat`) over `ENUM_OFIELDRATE_NAME` from
+`CUSTOM` (0) to `60HZ` (9) with `INTERNAL_RATE` (1) as the default; the enumeration goes
+on to 72 and 75 Hz, but those belong to the monitoring output. RCS2's `MDR_launcher.swf`
+declares the Midra `OUfor` over its own `ENUM_OFORMAT_NAME` (0…45, default
+`COMPUTER_1080P` = 28) and `OUrat` over `ENUM_OFIELDRATE_NAME` from `23_97HZ` (0) to
+`120HZ` (15), default `60HZ` (9). The labels themselves sit in one registry method in each
+file as `{label, data}` pairs (`findproperty ENUM_OFORMAT_NAME` … `initproperty`), which
+is where the UI's tables are copied from. **Index 0 is SDTV PAL on both platforms; there
+is no "auto" entry.** A NeXtage 16 reporting `OUfor=7` and a 1920×1080 raster on every
+output agrees with the list.
+
 ## Midra sources and the silent write
 
 A Midra's live-layer source list is contiguous: index 0 is black, then one entry per
@@ -265,17 +280,23 @@ capability flag per value, in the same order — `DFmvo` (recording), `DFmoa` (o
 `DFmob` (output 2) — and reports 0 for a mode the frame cannot offer. `DFvdo` says
 whether there is a video out at all and `DFvso` whether it exists only on the SDI plug.
 
-**The recording feed is standard definition, and that is a hard limit.** `VOfor` runs
-0…13 and every name in it is an SD format — `Auto, PAL, PAL 4/3, PAL 16/9, NTSC,
-NTSC 4/3, NTSC 16/9, PAL-M, PAL-N combi, NTSC 4.43, PAL 60, SECAM, 480i, 576i`. Writing
-14 is refused, with the readback holding at the last accepted value and no `E` code.
-Entering recording mode drops the raster to 720×576 and changes `VOkin` from 2 to 0.
-Consequently the area of interest, which exists only in that mode, cannot be had at HD.
+`VOfor` runs 0…13 — writing 14 is refused, with the readback holding at the last
+accepted value and no `E` code. RCS2 declares `VIDOUT_FORMAT` and `VIDOUT_FORMAT_STATUS`
+over its `ENUM_VIDEO_OUT_FORMAT`, from `VIDEO_OUT_FORMAT_SDTV_PAL` (0) to
+`VIDEO_OUT_FORMAT_EDTV_576P_16_9` (13) with PAL as the default: `SDTV PAL 4/3, SDTV NTSC
+4/3, EDTV 480P 4/3, EDTV 576P 4/3, HDTV 720P, HDTV 1035I, HDTV 1080I, HDTV 1080P, HDTV
+1080SF, DCDM 2048 X 1080, SDTV PAL 16/9, SDTV NTSC 16/9, EDTV 480P 16/9, EDTV 576P 16/9`.
+An earlier revision of this note read the list as SD-only (`Auto, PAL, PAL 4/3 …
+SECAM, 480i, 576i`); that was an input standards enumeration, not this one, and the
+"standard definition is a hard limit" conclusion drawn from it does not hold. What was
+seen on the Pulse2 is consistent with the real list: entering recording mode with
+`VOfor=0` gave a 720×576 raster (PAL 4/3) and `VOkin` went from 2 to 0. Whether the
+recording feed accepts one of the HD entries has not been tried.
 
-In the mirror modes `VOfst` reads on the **output** format enumeration rather than the
-video out's own 0…13 one, which is why `VOfor=0` sitting beside `VOfst=7` is not a
-contradiction. Changing `OUfor[0]` to 4 moved `VOfst` to 4 and the reported size to
-1280×720, tracking output 1 exactly.
+The first ten entries are the output format list's own first ten, which is why in the
+mirror modes `VOfst` reads as an **output** format index and `VOfor=0` sitting beside
+`VOfst=7` is not a contradiction. Changing `OUfor[0]` to 4 moved `VOfst` to 4 and the
+reported size to 1280×720, tracking output 1 exactly.
 
 `VOmod` (0…3) chooses which screen the recording feed is a view of — `Screen 1`,
 `Screen 2`, `Screen H-tiled`, `Screen V-tiled` — and 4 is refused, so the list is

@@ -2529,6 +2529,154 @@ function enumLabels(mnem, names) {
   return out;
 }
 const ASPECT_OVERRIDES = ['None', '1:1', 'Centred', 'Fullscreen', 'Cropped'];
+// Output formats and rates — the OUfor/OUfst and OUrat enumerations as the device's own
+// RCS lists them, so an operator sees the resolution and not an index. LiveCore from the
+// Web RCS a NeXtage serves (ORX_WebRCS.swf v04.02.03: ENUM_OFORMAT_NAME 0…54 and, for
+// OUT_PREVIEW_RATE, ENUM_OFIELDRATE_NAME 0…9 — the variable is declared CUSTOM…60HZ, so
+// 72/75 Hz belong to the monitoring output only), Midra from RCS2 (MDR_launcher.swf
+// v2.2.03: ENUM_OFORMAT_NAME 0…45, ENUM_OFIELDRATE_NAME 0…15). Index 0 is SDTV PAL on both
+// — neither list has an "auto" entry. The vendor's text, with its own aspect-ratio
+// inconsistencies (LiveCore calls 1680×1050 16:9, Midra 16:10), only retyped: "X" → "×",
+// "1080P" → "1080p". Recovery is described in docs/PROTOCOL.md.
+const LIVECORE_OUTPUT_FORMATS = [
+  'SDTV PAL',
+  'SDTV NTSC',
+  'EDTV 480p',
+  'EDTV 576p',
+  'HDTV 720p',
+  'HDTV 1035i',
+  'HDTV 1080i',
+  'HDTV 1080p',
+  'HDTV 1080sF',
+  'DCDM 2048×1080',
+  'Computer 640×480 (4:3 VGA)',
+  'Computer 800×600 (4:3 SVGA)',
+  'Computer 848×480 (16:9 WVGA)',
+  'Computer 1024×768 (4:3 XGA)',
+  'Computer 1152×864 (4:3)',
+  'Computer 1280×720 (16:9 720p)',
+  'Computer 1280×768 (15:9 WXGA)',
+  'Computer 1280×800 (16:10 WXGA2)',
+  'Computer 1280×960 (4:3)',
+  'Computer 1280×1024 (5:4 SXGA)',
+  'Computer 1360×768 (16:9)',
+  'Computer 1360×1024 (4:3)',
+  'Computer 1366×768 (16:9 SWXGAPB)',
+  'Computer 1366×800 (15:9 SWXGAP)',
+  'Computer 1400×1050 (4:3 SXGAP)',
+  'Computer 1440×900 (16:10 900p)',
+  'Computer 1440×960 (3:2)',
+  'Computer 1600×900 (16:9)',
+  'Computer 1600×1200 (4:3 UXGA)',
+  'Computer 1680×1050 (16:9 WSXGAP)',
+  'Computer 1920×1080 (16:9 1080p)',
+  'Computer 1920×1200 (16:10 WUXGA)',
+  'Computer 1920×1440 (4:3)',
+  'Computer 2048×1080 (2K)',
+  'Computer 2048×1152 (16:9)',
+  'Computer 2048×1536 (4:3 QXGA)',
+  'Computer 2560×1440 (16:9)',
+  'Computer 2560×1600 (16:10 WQXGA)',
+  'Computer custom 1',
+  'Computer custom 2',
+  'Computer custom 3',
+  'Computer custom 4',
+  'Computer custom 5',
+  'Computer custom 6',
+  'Computer custom 7',
+  'Computer custom 8',
+  'Computer custom 9',
+  'Computer custom 10',
+  'UHDTV 2160p (3840×2160)',
+  'Cinema 4K (4096×2160)',
+  'Computer 2560×1080 (21:9)',
+  'Computer 1920×2160 (UHDTV side by side)',
+  'Computer 2048×2160 (4K side by side)',
+  'Computer 3840×1080 (UHDTV top bottom)',
+  'Computer 4096×1080 (4K top bottom)',
+];
+const MIDRA_OUTPUT_FORMATS = [
+  'SDTV PAL',
+  'SDTV NTSC',
+  'EDTV 480p',
+  'EDTV 576p',
+  'HDTV 720p',
+  'HDTV 1035i',
+  'HDTV 1080i',
+  'HDTV 1080p',
+  'DCDM 2048×1080',
+  'Computer 640×480 (4:3 VGA)',
+  'Computer 800×600 (4:3 SVGA)',
+  'Computer 848×480 (16:9 WVGA)',
+  'Computer 1024×768 (4:3 XGA)',
+  'Computer 1152×864 (4:3)',
+  'Computer 1280×720 (16:9 720p)',
+  'Computer 1280×768 (15:9 WXGA)',
+  'Computer 1280×800 (16:10 WXGA2)',
+  'Computer 1280×960 (4:3)',
+  'Computer 1280×1024 (5:4 SXGA)',
+  'Computer 1360×768 (16:9)',
+  'Computer 1360×1024 (4:3)',
+  'Computer 1366×768 (16:9 SWXGAPB)',
+  'Computer 1366×800 (15:9 SWXGAP)',
+  'Computer 1400×1050 (4:3 SXGAP)',
+  'Computer 1440×900 (16:10 900p)',
+  'Computer 1600×900 (16:9)',
+  'Computer 1600×1200 (4:3 UXGA)',
+  'Computer 1680×1050 (16:10 WSXGAP)',
+  'Computer 1920×1080 (16:9 1080p)',
+  'Computer 1920×1200 (16:10 WUXGA)',
+  'Computer 1920×1440 (4:3)',
+  'Computer 2048×1080 (2K)',
+  'Computer 2048×1152 (16:9)',
+  'Computer 2048×1536 (4:3 QXGA)',
+  'Computer 2560×1440 (16:9)',
+  'Computer 2560×1600 (16:10 WQXGA)',
+  'Computer custom 1',
+  'Computer custom 2',
+  'Computer custom 3',
+  'Computer custom 4',
+  'Computer custom 5',
+  'Computer custom 6',
+  'Computer custom 7',
+  'Computer custom 8',
+  'Computer custom 9',
+  'Computer custom 10',
+];
+const LIVECORE_OUTPUT_RATES = [
+  'Custom',
+  'Internal rate',
+  '23.97 Hz',
+  '24 Hz',
+  '25 Hz',
+  '29.97 Hz',
+  '30 Hz',
+  '50 Hz',
+  '59.94 Hz',
+  '60 Hz',
+];
+const MIDRA_OUTPUT_RATES = [
+  '23.97 Hz',
+  '24 Hz',
+  '25 Hz',
+  '29.97 Hz',
+  '30 Hz',
+  '47.95 Hz',
+  '48 Hz',
+  '50 Hz',
+  '59.94 Hz',
+  '60 Hz',
+  '72 Hz',
+  '75 Hz',
+  '85 Hz',
+  '100 Hz',
+  '119.88 Hz',
+  '120 Hz',
+];
+const outputFormatNames = () => enumLabels('OUfor', isMidra() ? MIDRA_OUTPUT_FORMATS : LIVECORE_OUTPUT_FORMATS);
+const outputRateNames = () => enumLabels('OUrat', isMidra() ? MIDRA_OUTPUT_RATES : LIVECORE_OUTPUT_RATES);
+/** The name of an output format index, or the bare number when it is off the list. */
+function outputFormatName(v) { return v == null ? '·' : (outputFormatNames()[v] ?? String(v)); }
 const NATIVE_TRANSITIONS = ['Cut', 'Fade', 'Wipe'];
 const LAYER_STATUSES = ['Off', 'Open', 'Close', 'Cross', 'Flying', 'Flying depth', 'Slave', 'Mask'];
 
@@ -6846,11 +6994,13 @@ VIEWS.outputs = (() => {
       'OSaoi', 'OSocp', 'OSash', 'OSasv', 'OSaph', 'OSapv',
       'OSsmh', 'OSsmv', 'OSSsh', 'OSSsv', 'OSSph', 'OSSpv', 'OSsro']) if (store.byMnem.has(m)) store.scan(m);
   }
-  // set the output format (and, on Midra, fire the update trigger to apply it)
+  // set the output format (and, on Midra, fire the update trigger to apply it). The
+  // options are the device's own list — the device's max decides how many there are,
+  // and enumLabels pads with plain numbers if a firmware ever offers more than we name.
   function formatSelect() {
-    const cur = store.val('OUfor', sel) ?? 0, max = store.byMnem.get('OUfor')?.max ?? 54;
+    const cur = store.val('OUfor', sel) ?? 0;
     const s = el('select', { onchange: (e) => { store.set('OUfor', [sel], +e.target.value); if (store.byMnem.has('OUfru')) store.set('OUfru', [sel], 1); } });
-    for (let i = 0; i <= max; i++) { const o = el('option', { value: i, text: i === 0 ? 'Auto' : 'Format ' + i }); if (i === cur) o.selected = true; s.append(o); }
+    outputFormatNames().forEach((name, i) => { const o = el('option', { value: i, text: name }); if (i === cur) o.selected = true; s.append(o); });
     return s;
   }
   function row(i) {
@@ -6863,7 +7013,7 @@ VIEWS.outputs = (() => {
       el('td', { text: 'OUT ' + (i + 1) }),
       el('td', boolChip(avail ? 1 : 0, 'connected', 'no display')),
       el('td', boolChip(ena ? 1 : 0, 'live', 'off')),
-      el('td', { class: 'val', text: `fmt ${store.val('OUfst', i) ?? '·'}` }),
+      el('td', { class: 'val', text: outputFormatName(store.val('OUfst', i)) }),
       el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
       el('td',
         el('button', { class: 'btn ghost' + (used ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('OUuse', [i], used ? 0 : 1); } }, 'Use'),
@@ -6961,7 +7111,7 @@ VIEWS.outputs = (() => {
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
         el('label', { class: 'field' }, 'Format', formatSelect()),
-        store.byMnem.has('OUrat') ? bind('Rate', 'OUrat', i, 0, store.byMnem.get('OUrat').max) : null,
+        store.byMnem.has('OUrat') ? el('label', { class: 'field' }, 'Rate', enumSelect('OUrat', i, outputRateNames())) : null,
         toggleBtn('HDCP', 'OUhdc', i),
         toggleBtn('Black', 'OUbla', i, 'pgm')),
       el('div', { class: 'sub-head' }, 'Output processing'),
@@ -7012,8 +7162,13 @@ const VIDEO_OUT_SOURCES = ['Screen 1', 'Screen 2', 'Screen H-tiled', 'Screen V-t
 
 // VOfor VIDOUT_FORMAT 0..13 — the composite/SD half of the frame's format
 // table, which is exactly the range this variable allows.
-const VIDEO_OUT_FORMATS = ['Auto', 'PAL', 'PAL 4/3', 'PAL 16/9', 'NTSC', 'NTSC 4/3',
-  'NTSC 16/9', 'PAL-M', 'PAL-N combi', 'NTSC 4.43', 'PAL 60', 'SECAM', '480i', '576i'];
+// VOfor / VOfst 0..13 — RCS2's ENUM_VIDEO_OUT_FORMAT, which is what it declares VIDOUT_FORMAT
+// over (SDTV_PAL … EDTV_576P_16_9, default SDTV_PAL). The first ten entries are the output
+// format list's own first ten, which is why VOfst tracks OUfor[0] index for index in the
+// mirror modes. Not the SD-standards list this once carried: that was an input enumeration.
+const VIDEO_OUT_FORMATS = ['SDTV PAL 4/3', 'SDTV NTSC 4/3', 'EDTV 480p 4/3', 'EDTV 576p 4/3',
+  'HDTV 720p', 'HDTV 1035i', 'HDTV 1080i', 'HDTV 1080p', 'HDTV 1080sF', 'DCDM 2048×1080',
+  'SDTV PAL 16/9', 'SDTV NTSC 16/9', 'EDTV 480p 16/9', 'EDTV 576p 16/9'];
 
 // OUpat / VOpat 0..9.
 const TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
@@ -7178,7 +7333,8 @@ VIEWS.videoout = (() => {
         el('span', { class: 'hint', text: `${(w && h) ? `${w}×${h}` : '·'}${rate ? ` @ ${(rate / 1000).toFixed(2)} Hz` : ''}` })),
       el('div', { class: 'row' },
         el('label', { class: 'field' }, 'Format', sel),
-        store.byMnem.has('VOrat') ? bind('Rate', 'VOrat', [], 0, store.byMnem.get('VOrat').max) : null,
+        // VIDOUT_RATE is declared 23.97…60 Hz (the first ten Midra rates), default 50 Hz.
+        store.byMnem.has('VOrat') ? el('label', { class: 'field' }, 'Rate', enumSelect('VOrat', [], enumLabels('VOrat', MIDRA_OUTPUT_RATES.slice(0, 10)))) : null,
         store.byMnem.has('VOovc') ? toggleBtn('Overscan', 'VOovc', [], 'pgm') : null),
       el('div', { class: 'hint pad', text: 'Overscan compensation shrinks the picture slightly so a display that overscans still shows the edges.' }));
   }

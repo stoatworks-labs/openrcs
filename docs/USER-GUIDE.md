@@ -217,7 +217,7 @@ plug:
 
 | Mode | What the plug does |
 |---|---|
-| **Recording** | An independent feed with its own format and an area of interest. **Standard definition only** — 720×576 or 720×480, whatever the format list offers. |
+| **Recording** | An independent feed with its own format and an area of interest. The format list is the RCS's own — PAL and NTSC in 4/3 and 16/9, 480p/576p, 720p, 1080i/p/sF, 2K; a frame that has only been seen at PAL 4/3 (720×576) in this mode is the extent of what has been checked. |
 | **Mirror output 1** | The plug becomes an extra plug of output 1, carrying that output's full raster. HD if the output is HD. |
 | **Mirror output 2** | The same, for output 2. |
 
@@ -307,7 +307,10 @@ the device:
 - **Inputs** — every input with its availability, active plug, live signal status
   and detected size, plus freeze and black.
 - **Outputs** — the physical outputs, their connected displays, format, size,
-  HDCP and output processing (brightness, contrast, gamma, gain).
+  HDCP and output processing (brightness, contrast, gamma, gain). The format and
+  rate lists are the device's own, named as its RCS names them — *HDTV 1080p*,
+  *Computer 1920×1080 (16:9 1080p)*, *Internal rate* — and the table shows each
+  output's format the same way.
 - **Screens** — the output screens and their layer capacity.
 - **Stills** — the still/logo library as a grid (LiveCore), or the frame store
   (Midra), showing what's stored and its size.
