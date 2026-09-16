@@ -1,0 +1,6080 @@
+{
+ "protocol": "Analog Way PLS300 (Pulse) control protocol",
+ "source": "Programmer's Guide For PLS300 (Analog Way; device type 78), 51 pages, recovered from the ManualsLib text layer 2026-09-13",
+ "transport": {
+  "proto": "tcp",
+  "port": 10500,
+  "terminator": "",
+  "reply_terminator": "\r\n",
+  "error_frame": "E<code>; 10=invalid command, 11=index value out of range, 12=wrong index count",
+  "push": "after any accepted command the device sends the status of every parameter that changed",
+  "notes": [
+   "Commands need no terminator: the mnemonic itself ends the command.",
+   "Mnemonics are one or two letters and case-sensitive (NC and Nc are different variables).",
+   "LANENABLE (ne) defaults to 0 = RS232 only; LAN must be enabled on the front panel first.",
+   "LANPROTOCOL (nt) is exclusive: 0 = UDP, 1 = TCP (default), 2 = AMX.",
+   "RS232 is 9600 baud 8N1 by default (STANDBY group selects the rate)."
+  ]
+ },
+ "variables": [
+  {
+   "name": "DIESE",
+   "group": "GRP_SYSTEM",
+   "request": "#",
+   "answer": "#",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Request the retrieval of all the variables",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "READY",
+   "group": "GRP_SYSTEM",
+   "request": "*",
+   "answer": "*",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Ready Device Flag",
+   "values": [
+    "0= Initialization in progress",
+    "1 = Ready"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "DEV",
+   "group": "GRP_SYSTEM",
+   "request": "?",
+   "answer": "DEV",
+   "dims": [],
+   "min": 78,
+   "max": 78,
+   "default": 78,
+   "readOnly": true,
+   "description": "MMS device type",
+   "values": [
+    "78 = PLS-300"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "UPDATER",
+   "group": "GRP_CONTROLS",
+   "request": "yU",
+   "answer": "yU",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Device reboot for update",
+   "values": [
+    "1 then 254 => Reboot"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "FACTORYRESET",
+   "group": "GRP_CONTROLS",
+   "request": "YR",
+   "answer": "YR",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Apply factory settings to the device( except image settings )",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "POSMEMORYRESET",
+   "group": "GRP_CONTROLS",
+   "request": "YE",
+   "answer": "YE",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Erase stored image settings",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "CSTORE",
+   "group": "GRP_CONTROLS",
+   "request": "YS",
+   "answer": "YS",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "FLASH memory writing in progess. Do not power off",
+   "values": [
+    "0 = Free",
+    "1 = Flash writing in progress"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "LOCK",
+   "group": "GRP_CONTROLS",
+   "request": "YK",
+   "answer": "YK",
+   "dims": [],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": false,
+   "description": "Device locking",
+   "values": [
+    "0 = No lock",
+    "1 = Locked menu",
+    "2 = Locked front panel"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "LCDBRIGHTNESS",
+   "group": "GRP_CONTROLS",
+   "request": "YB",
+   "answer": "YB",
+   "dims": [],
+   "min": 1,
+   "max": 8,
+   "default": 8,
+   "readOnly": false,
+   "description": "Front panel display brightness",
+   "values": [
+    "1, ..., 8 = Brightness level, 12,5% step"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "KEYBRIGHTNESS",
+   "group": "GRP_CONTROLS",
+   "request": "Yb",
+   "answer": "Yb",
+   "dims": [],
+   "min": 10,
+   "max": 100,
+   "default": 100,
+   "readOnly": false,
+   "description": "Front panel keys brightness",
+   "values": [
+    "1, ..., 100 = Brightness level, 1% step"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "TBAR_ENABLE",
+   "group": "GRP_CONTROLS",
+   "request": "YD",
+   "answer": "YD",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Enable disable T-BAR",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "COPKIND",
+   "group": "GRP_CONTROLS",
+   "request": "CK",
+   "answer": "CK",
+   "dims": [],
+   "min": 0,
+   "max": 6,
+   "default": 0,
+   "readOnly": true,
+   "description": "Kind of slow in-progress operation",
+   "values": [
+    "0 = None",
+    "1 = Auto centering",
+    "2 = Auto setting",
+    "3 = StandBy",
+    "4 = Picture recording",
+    "5 = Reset to default factory setting",
+    "6 = Reset User settings"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "COPPROGRESS",
+   "group": "GRP_CONTROLS",
+   "request": "CP",
+   "answer": "CP",
+   "dims": [],
+   "min": 0,
+   "max": 100,
+   "default": 0,
+   "readOnly": true,
+   "description": "Progress percent of the slow operation",
+   "values": [
+    "Percent : 0 to 100%"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "AXION",
+   "group": "GRP_CONTROLS",
+   "request": "yA",
+   "answer": "yA",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Device is driven by Orchestra",
+   "values": [
+    "0 = Device is not driven by ORC- 50",
+    "1 = Device is driven by Orc-50"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "AUTO_LOCK",
+   "group": "GRP_CONTROLS",
+   "request": "YL",
+   "answer": "YL",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Forbide the use of a signal-less input",
+   "values": [
+    "0 = Signal less input can be selected",
+    "1 = Signal less input can not be selected"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "AUTO_TAKE",
+   "group": "GRP_CONTROLS",
+   "request": "YT",
+   "answer": "YT",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Automatic Take after an input change",
+   "values": [
+    "0 = AUTO-TAKE Disable",
+    "1 = AUTO-TAKE Enable"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "AUTO_STEPBACK",
+   "group": "GRP_CONTROLS",
+   "request": "Ys",
+   "answer": "Ys",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Automatic preset toggle after a TAKE",
+   "values": [
+    "0 = AUTO- PRESET-TOGGLE Disable",
+    "1 = AUTO- PRESET-TOGGLE Enable"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "FREEZE_MODE",
+   "group": "GRP_CONTROLS",
+   "request": "Ym",
+   "answer": "Ym",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Input freeze mode",
+   "values": [
+    "0 = Freeze by input",
+    "1 = Freeze all inputs"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 5
+  },
+  {
+   "name": "FRAME_ALERT",
+   "group": "GRP_CONTROLS",
+   "request": "Yf",
+   "answer": "Yf",
+   "dims": [],
+   "min": 0,
+   "max": 12,
+   "default": 0,
+   "readOnly": false,
+   "description": "Back-up input when an input loose its signal",
+   "values": [
+    "0 = No input",
+    "1 = Input1",
+    "2 = Input2",
+    "3 = Input3",
+    "4 = Input4",
+    "5 = Input5",
+    "6 = Input6",
+    "9 = Input9",
+    "10 = Input10",
+    "11 = Input11",
+    "12 = Input12"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "TRANSPARENT_BACKGROUND",
+   "group": "GRP_CONTROLS",
+   "request": "Yt",
+   "answer": "Yt",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Disable the the black fiilng of the bakgrounfd live layer",
+   "values": [
+    "0 = use BLACK_FILL",
+    "1 = Disable black filling only for background"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "BLACK_FILL",
+   "group": "GRP_CONTROLS",
+   "request": "bF",
+   "answer": "bF",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Fill PIP with black depending on the aspect ratio",
+   "values": [
+    "0 = Disable black filling",
+    "1 = Enable black filling"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "DISABLE_ID",
+   "group": "GRP_CONTROLS",
+   "request": "bI",
+   "answer": "bI",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Disable Frame and Ids on the preview output",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYSTATUS",
+   "group": "GRP_STANDBY",
+   "request": "wS",
+   "answer": "wS",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Standby mode",
+   "values": [
+    "0 = Normal mode",
+    "1 = Standby mode"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYREQUEST",
+   "group": "GRP_STANDBY",
+   "request": "wQ",
+   "answer": "wQ",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Request for standby or wake up",
+   "values": [
+    "0 = Wake up",
+    "1 = Standby"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYPROJ_ON",
+   "group": "GRP_STANDBY",
+   "request": "wN",
+   "answer": "wN",
+   "dims": [
+    50
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Message to wake-up an output display device ( 50 characters)",
+   "values": [],
+   "index1": [
+    "min = 0 max = 49"
+   ],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYPROJ_OFF",
+   "group": "GRP_STANDBY",
+   "request": "wF",
+   "answer": "wF",
+   "dims": [
+    50
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Message to send an output display device to sleep ( 50 characters)",
+   "values": [],
+   "index1": [
+    "min = 0 max = 49"
+   ],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYPROJ_RATE",
+   "group": "GRP_STANDBY",
+   "request": "wR",
+   "answer": "wR",
+   "dims": [],
+   "min": 0,
+   "max": 3,
+   "default": 2,
+   "readOnly": false,
+   "description": "Output display device UART speed",
+   "values": [
+    "0 = 1200bauds",
+    "1 = 2400bauds",
+    "2 = 9600bauds",
+    "3 = 19200bauds"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "STDBYPROJ_CTRL",
+   "group": "GRP_STANDBY",
+   "request": "wC",
+   "answer": "wC",
+   "dims": [],
+   "min": 0,
+   "max": 4,
+   "default": 0,
+   "readOnly": false,
+   "description": "",
+   "values": [
+    "0 = No request",
+    "1 = Wake up request",
+    "2 = Standby request",
+    "3 = Clear Wake up message",
+    "4 = Clear standby message"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "VERI1",
+   "group": "GRP_VERSION",
+   "request": "xi",
+   "answer": "xi",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Byte 0 and 1 of the device ID",
+   "values": [
+    "ex : AAAA"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "VERI2",
+   "group": "GRP_VERSION",
+   "request": "xj",
+   "answer": "xj",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Byte 2 and 3 of the device ID",
+   "values": [
+    "ex : AAAA"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "VERI3",
+   "group": "GRP_VERSION",
+   "request": "xk",
+   "answer": "xk",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Byte 4 and 5 of the device ID",
+   "values": [
+    "ex : AAAA"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "VERI4",
+   "group": "GRP_VERSION",
+   "request": "xl",
+   "answer": "xl",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Byte 6 and 7 of the device ID",
+   "values": [
+    "ex : AAAA"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 6
+  },
+  {
+   "name": "VERK",
+   "group": "GRP_VERSION",
+   "request": "xK",
+   "answer": "xK",
+   "dims": [
+    7
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": false,
+   "description": "Checksum/version of the programmable components",
+   "values": [],
+   "index1": [
+    "0 = Number of programmables components",
+    "1 = Main micro- controler",
+    "2 = Front panel micro-controler",
+    "3 = FPGA Caecina",
+    "4 = FPGA Fannia",
+    "5 = FPGA Thrasea",
+    "6 = Synchro CPLD"
+   ],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "VERV",
+   "group": "GRP_VERSION",
+   "request": "xV",
+   "answer": "xV",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 42,
+   "readOnly": true,
+   "description": "Variable set version",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "VERUPD",
+   "group": "GRP_VERSION",
+   "request": "xU",
+   "answer": "xU",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Updater version",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "OPT",
+   "group": "GRP_VERSION",
+   "request": "yo",
+   "answer": "yo",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Detected options",
+   "values": [
+    "bit 0 = Lan Module bit 1 = SDI In 1 board (SDI 1 and 2) bit 2 = Recording board bit 3 = CF Caecina bit 4 = CF Fannia bit 5 = CF Thrasea bit 6 = SDI In 2 board (SDI 3 and 4) bit 7 = Audio Evolution bit 8 = HDCP DVI In Evolution"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "REV",
+   "group": "GRP_VERSION",
+   "request": "xR",
+   "answer": "xR",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": true,
+   "description": "Moher board revision",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "IN_AUTOSET_ALL",
+   "group": "GRP_INPUT",
+   "request": "Ia",
+   "answer": "Ia",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Auto-setting request for all the inputs",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "IN_AUTOSET",
+   "group": "GRP_INPUT",
+   "request": "Ii",
+   "answer": "Ii",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Auto-setting request for the specified input",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 7
+  },
+  {
+   "name": "IN_USR_FORMAT",
+   "group": "GRP_INPUT",
+   "request": "iU",
+   "answer": "iU",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 42,
+   "default": 0,
+   "readOnly": false,
+   "description": "Format/standard of the input signal corrected by user",
+   "values": [
+    "0 = None",
+    "1 = Invalid",
+    "2 = Unknown",
+    "3 = SDTV NTSC",
+    "4 = SDTV PAL",
+    "5 = SDTV SECAM",
+    "6 = SDTV BW",
+    "7 = SDTV 480i",
+    "8 = SDTV 576i",
+    "9 = EDTV 480p",
+    "10 = EDTV 576p",
+    "11 = HDTV 720p",
+    "12 = HDTV 1035i",
+    "13 = HDTV 1080i",
+    "14 = HDTV 1080p",
+    "15 = HDTV 1080sF",
+    "16 = CPU VGA",
+    "17 = CPU 800x480",
+    "18 = CPU WVGA",
+    "19 = CPU SVGA",
+    "20 = CPU 1280x600",
+    "21 = CPU 720p RGB",
+    "22 = CPU XGA",
+    "23 = CPU WXGA",
+    "24 = CPU SWXGA",
+    "25 = CPU 800p RGB",
+    "26 = CPU SWXGA+",
+    "27 = CPU 1152x864",
+    "28 = CPU 900p RGB",
+    "29 = CPU 1600x900",
+    "30 = CPU 960p RGB",
+    "31 = CPU SXGA",
+    "32 = CPU 1360x1024",
+    "33 = CPU DILA4/3",
+    "34 = CPU SXGA+",
+    "35 = CPU WSXGA+",
+    "36 = CPU 1080p RGB",
+    "37 = CPU 2K",
+    "38 = CPU UXGA",
+    "39 = CPU WUXGA",
+    "40 = CPU 1920x1440",
+    "41 = CPU QXGA",
+    "42 = CPU 1366x768"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 8
+  },
+  {
+   "name": "IN_TYPE",
+   "group": "GRP_INPUT",
+   "request": "iK",
+   "answer": "iK",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 17,
+   "default": 13,
+   "readOnly": false,
+   "description": "Input signal type",
+   "values": [
+    "0 = SDTV Composite",
+    "1 = SDTV Y/C",
+    "2 = SDTV/EDTV/HDTV RGBS TTL/Analog",
+    "3 = SDTV/EDTV/HDTV RGB SOG",
+    "4 = SDTV/EDTV/HDTV YUV",
+    "5 = Computer SOG",
+    "6 = Computer H&V or Composite (TTL/Analog)",
+    "7 = Computer B&W",
+    "8 = DVI-D EDTV/HDTV RGB 16- 235",
+    "9 = DVI-D EDTV/HDTV YUV",
+    "10 = DVI-D Computer RGB 0-255",
+    "11 = DVI-D Computer RGB 16- 235",
+    "12 = SDI SDTV/HDTV",
+    "13 = Analog Computer, separated H&V synchro",
+    "14 = Analog Computer, composite TTL synchro",
+    "15 = Analog Computer, composite analog synchro",
+    "16 = Analog RGB video, composite TTL synchro",
+    "17 = Analog RGB video, composite analog synchro"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 9
+  },
+  {
+   "name": "IN_SYNC_LOAD",
+   "group": "GRP_INPUT",
+   "request": "il",
+   "answer": "il",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Analog H sync load",
+   "values": [
+    "0 = Hi-Z",
+    "1 = 75 ohm loaded"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 9
+  },
+  {
+   "name": "IN_USED",
+   "group": "GRP_INPUT",
+   "request": "iu",
+   "answer": "iu",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Input is enabled",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 10
+  },
+  {
+   "name": "IN_SD_STD",
+   "group": "GRP_INPUT",
+   "request": "iS",
+   "answer": "iS",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 7,
+   "default": 0,
+   "readOnly": false,
+   "description": "Decoded video standard",
+   "values": [
+    "0 = Auto",
+    "1 = NTSC (M,J)",
+    "2 = PAL (BDGHIN)",
+    "3 = PAL (M)",
+    "4 = PAL (N-Combination)",
+    "5 = NTSC 4.43",
+    "6 = SECAM",
+    "7 = PAL 60"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 10
+  },
+  {
+   "name": "IN_SD_STA",
+   "group": "GRP_INPUT",
+   "request": "iV",
+   "answer": "iV",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Video Signal stability",
+   "values": [
+    "0 = Stable Source ( DVD )",
+    "1 = VCR Source ( Video cassette recorder )"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 10
+  },
+  {
+   "name": "IN_SYNCHRONIZED",
+   "group": "GRP_INPUT",
+   "request": "iY",
+   "answer": "iY",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 0,
+   "readOnly": false,
+   "description": "VIS Synchronisation group",
+   "values": [
+    "0 = Does not belong to any VIS Group",
+    "1 = Groupe VIS 1 group for analog input",
+    "2 = Groupe VIS 2 group for analog input",
+    "3 = Groupe VIS 3 group for analog input"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 10
+  },
+  {
+   "name": "IN_HDCP_ENABLE",
+   "group": "GRP_INPUT",
+   "request": "iH",
+   "answer": "iH",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Enable/disable the HDCP support of a DVI input",
+   "values": [],
+   "index1": [
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 10
+  },
+  {
+   "name": "IN_HDCP_CABLE_LEN",
+   "group": "GRP_INPUT",
+   "request": "iC",
+   "answer": "iC",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": false,
+   "description": "Lenght of an DVI input cable",
+   "values": [
+    "0 = Less than 10 meter cable length",
+    "1 = 5 to 20 meters cable length",
+    "2 = More than 15 meters cable length"
+   ],
+   "index1": [
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 11
+  },
+  {
+   "name": "IN_KEYING_TYPE",
+   "group": "GRP_KEYING",
+   "request": "KT",
+   "answer": "KT",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 4,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying type",
+   "values": [
+    "0 = No keying",
+    "1 = Luma Key Keying",
+    "2 = ChromaKey Keying",
+    "3 = Luma Key Keying + DSK",
+    "4 = ChromaKey Keying + DSK"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 11
+  },
+  {
+   "name": "IN_KEYING_R_LEVEL",
+   "group": "GRP_KEYING",
+   "request": "KR",
+   "answer": "KR",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying level (Red )",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 11
+  },
+  {
+   "name": "IN_KEYING_G_LEVEL",
+   "group": "GRP_KEYING",
+   "request": "KG",
+   "answer": "KG",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": false,
+   "description": "Keying level (Green)",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 11
+  },
+  {
+   "name": "IN_KEYING_B_LEVEL",
+   "group": "GRP_KEYING",
+   "request": "KB",
+   "answer": "KB",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying level (Bule)",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 11
+  },
+  {
+   "name": "IN_KEYING_TOLER",
+   "group": "GRP_KEYING",
+   "request": "KH",
+   "answer": "KH",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 10,
+   "readOnly": false,
+   "description": "Keying Tolerance (for chroma and luma key)",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 12
+  },
+  {
+   "name": "IN_KEYING_LUMA_LOW_LEVEL",
+   "group": "GRP_KEYING",
+   "request": "KL",
+   "answer": "KL",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": false,
+   "description": "Minimum luma level",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 12
+  },
+  {
+   "name": "IN_KEYING_LUMA_HIGH_LEVEL",
+   "group": "GRP_KEYING",
+   "request": "KM",
+   "answer": "KM",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": false,
+   "description": "Maximum luma level",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 12
+  },
+  {
+   "name": "IN_KEYING_DSK_ALPHA",
+   "group": "GRP_KEYING",
+   "request": "KA",
+   "answer": "KA",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 64,
+   "readOnly": false,
+   "description": "Brightness of DSK background",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 12
+  },
+  {
+   "name": "IN_KEYING_INVERT",
+   "group": "GRP_KEYING",
+   "request": "KI",
+   "answer": "KI",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Invert keying area",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "IN_KEYING_GRAB_ENABLE",
+   "group": "GRP_KEYING",
+   "request": "Kg",
+   "answer": "Kg",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Enable/disable the keying color grabber mode",
+   "values": [
+    "0 = Disable the grabber",
+    "1 = Enable the grabber"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "IN_KEYING_GRAB_GET",
+   "group": "GRP_KEYING",
+   "request": "Kc",
+   "answer": "Kc",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Capture the coolor selected by the grabber and apply the settings",
+   "values": [
+    "Percent of OSCREEN_UTIL_H"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "IN_KEYING_GRAB_H",
+   "group": "GRP_KEYING",
+   "request": "Kh",
+   "answer": "Kh",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Horizontal position of the grabber",
+   "values": [
+    "Precent of OSCREEN_UTIL_V"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "IN_KEYING_GRAB_V",
+   "group": "GRP_KEYING",
+   "request": "Kv",
+   "answer": "Kv",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Vertical position of the grabber",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "SIG_HPOL",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sh",
+   "answer": "sh",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input H sync polarity",
+   "values": [
+    "0 = Negative Synchro",
+    "1 = Positive Synchro"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "SIG_VPOL",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sv",
+   "answer": "sv",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input V sync polarity",
+   "values": [
+    "0 = Negative Synchro",
+    "1 = Positive Synchro"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "SIG_SYNC_TYPE",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sK",
+   "answer": "sK",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input sync type",
+   "values": [
+    "0 = S\u00e9parated Synchros H&V",
+    "1 = Composite TTL Synchro",
+    "2 = Composite Analog Synchro",
+    "3 = Synchro on Green (SOG)"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 13
+  },
+  {
+   "name": "SIG_FREQ_FIELD",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sf",
+   "answer": "sf",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input frame frequency",
+   "values": [
+    "Unit = 1/100Hz"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 14
+  },
+  {
+   "name": "SIG_FREQ_LINE",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sl",
+   "answer": "sl",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input line frequency",
+   "values": [
+    "Unit = 1/100Hz"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 14
+  },
+  {
+   "name": "SIG_COMPLETE",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sc",
+   "answer": "sc",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input scan completed",
+   "values": [
+    "0 = scan in progress or failed",
+    "1 = scan completed"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 14
+  },
+  {
+   "name": "SIG_DETECTED_FORMAT",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sD",
+   "answer": "sD",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 42,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input detected format name",
+   "values": [
+    "0 = None",
+    "1 = Invalid",
+    "2 = Unknown",
+    "3 = SDTV NTSC",
+    "4 = SDTV PAL",
+    "5 = SDTV SECAM",
+    "6 = SDTV BW",
+    "7 = SDTV 480i",
+    "8 = SDTV 576i",
+    "9 = EDTV 480p",
+    "10 = EDTV 576p",
+    "11 = HDTV 720p",
+    "12 = HDTV 1035i",
+    "13 = HDTV 1080i",
+    "14 = HDTV 1080p",
+    "15 = HDTV 1080sF",
+    "16 = CPU VGA",
+    "17 = CPU 800x480",
+    "18 = CPU WVGA",
+    "19 = CPU SVGA",
+    "20 = CPU 1280x600",
+    "21 = CPU 720p RGB",
+    "22 = CPU XGA",
+    "23 = CPU WXGA",
+    "24 = CPU SWXGA",
+    "25 = CPU 800p RGB",
+    "26 = CPU SWXGA+",
+    "27 = CPU 1152x864",
+    "28 = CPU 900p RGB",
+    "29 = CPU 1600x900",
+    "30 = CPU 960p RGB",
+    "31 = CPU SXGA",
+    "32 = CPU 1360x1024",
+    "33 = CPU DILA4/3",
+    "34 = CPU SXGA+",
+    "35 = CPU WSXGA+",
+    "36 = CPU 1080p RGB",
+    "37 = CPU 2K",
+    "38 = CPU UXGA",
+    "39 = CPU WUXGA",
+    "40 = CPU 1920x1440",
+    "41 = CPU QXGA",
+    "42 = CPU 1366x768"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 15
+  },
+  {
+   "name": "SIG_CURRENT_FORMAT",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sF",
+   "answer": "sF",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 42,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input current format name",
+   "values": [
+    "0 = None",
+    "1 = Invalid",
+    "2 = Unknown",
+    "3 = SDTV NTSC",
+    "4 = SDTV PAL",
+    "5 = SDTV SECAM",
+    "6 = SDTV BW",
+    "7 = SDTV 480i",
+    "8 = SDTV 576i",
+    "9 = EDTV 480p",
+    "10 = EDTV 576p",
+    "11 = HDTV 720p",
+    "12 = HDTV 1035i",
+    "13 = HDTV 1080i",
+    "14 = HDTV 1080p",
+    "15 = HDTV 1080sF",
+    "16 = CPU VGA",
+    "17 = CPU 800x480",
+    "18 = CPU WVGA",
+    "19 = CPU SVGA",
+    "20 = CPU 1280x600",
+    "21 = CPU 720p RGB",
+    "22 = CPU XGA",
+    "23 = CPU WXGA",
+    "24 = CPU SWXGA",
+    "25 = CPU 800p RGB",
+    "26 = CPU SWXGA+",
+    "27 = CPU 1152x864",
+    "28 = CPU 900p RGB",
+    "29 = CPU 1600x900",
+    "30 = CPU 960p RGB",
+    "31 = CPU SXGA",
+    "32 = CPU 1360x1024",
+    "33 = CPU DILA4/3",
+    "34 = CPU SXGA+",
+    "35 = CPU WSXGA+",
+    "36 = CPU 1080p RGB",
+    "37 = CPU 2K",
+    "38 = CPU UXGA",
+    "39 = CPU WUXGA",
+    "40 = CPU 1920x1440",
+    "41 = CPU QXGA",
+    "42 = CPU 1366x768"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 16
+  },
+  {
+   "name": "SIG_FORMAT_LIST",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sL",
+   "answer": "sL",
+   "dims": [
+    12,
+    6
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": true,
+   "description": "Bit field of the fomats compatible with the detected format",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [
+    "0 = Bits 0 to 7 Slice",
+    "1 = Bits 8 to 15 Slice",
+    "2 = Bits 16 to 23 Slice",
+    "3 = Bits 24 to 31 Slice",
+    "4 = Bits 32 to 39 Slice",
+    "5 = Bits 40 to 47 Slice"
+   ],
+   "page": 17
+  },
+  {
+   "name": "SIG_SCANTYPE",
+   "group": "GRP_INPUT_STATUS",
+   "request": "ss",
+   "answer": "ss",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input scan type",
+   "values": [
+    "0 = Progressive",
+    "1 = Interleaved, Top field first",
+    "2 = Interleaved, Bottom field first",
+    "3 = Segmented frame"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 17
+  },
+  {
+   "name": "SIG_HTOTAL_THEORIC",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sH",
+   "answer": "sH",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Total number of pixels per line",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 17
+  },
+  {
+   "name": "SIG_HTOTAL_MAXI",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sM",
+   "answer": "sM",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Maximal number of pixels per input line",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 17
+  },
+  {
+   "name": "SIG_WIDTH",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sw",
+   "answer": "sw",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input displayed pixel count",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 18
+  },
+  {
+   "name": "SIG_HEIGHT",
+   "group": "GRP_INPUT_STATUS",
+   "request": "st",
+   "answer": "st",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input displayed line count",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 18
+  },
+  {
+   "name": "SIG_HDCP",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sn",
+   "answer": "sn",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Input HDCP status",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 18
+  },
+  {
+   "name": "SIG_MEM_SLOT",
+   "group": "GRP_INPUT_STATUS",
+   "request": "sS",
+   "answer": "sS",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": true,
+   "description": "Memory slot index",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 18
+  },
+  {
+   "name": "SET_HPOS",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SH",
+   "answer": "SH",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 2048,
+   "default": 1024,
+   "readOnly": false,
+   "description": "Input horizontal position",
+   "values": [
+    "1024 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 19
+  },
+  {
+   "name": "SET_VPOS",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SV",
+   "answer": "SV",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 2048,
+   "default": 1024,
+   "readOnly": false,
+   "description": "Input vertical position",
+   "values": [
+    "1024 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 19
+  },
+  {
+   "name": "SET_HSIZE",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sw",
+   "answer": "Sw",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 4096,
+   "default": 2048,
+   "readOnly": false,
+   "description": "Input horizontal size",
+   "values": [
+    "2048 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 19
+  },
+  {
+   "name": "SET_VSIZE",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sh",
+   "answer": "Sh",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 4096,
+   "default": 2048,
+   "readOnly": false,
+   "description": "Input vertical size",
+   "values": [
+    "2048 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 19
+  },
+  {
+   "name": "SET_BRIGHTNESS",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sg",
+   "answer": "Sg",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Input brightness",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 20
+  },
+  {
+   "name": "SET_CONTRAST",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sc",
+   "answer": "Sc",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Input Contrast",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 20
+  },
+  {
+   "name": "SET_COLOR",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sr",
+   "answer": "Sr",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Input color level",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 20
+  },
+  {
+   "name": "SET_HUE",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Su",
+   "answer": "Su",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Input hue (NTSC only)",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 20
+  },
+  {
+   "name": "SET_HTOTAL",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "ST",
+   "answer": "ST",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": false,
+   "description": "Input total pixel per line",
+   "values": [
+    "Unit = pixels."
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 21
+  },
+  {
+   "name": "SET_PHASE",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SS",
+   "answer": "SS",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 31,
+   "default": 16,
+   "readOnly": false,
+   "description": "Input Phase",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 21
+  },
+  {
+   "name": "SET_AUTOCAD",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sa",
+   "answer": "Sa",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Input autocentering reques",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 21
+  },
+  {
+   "name": "SET_USER_GAIN_R",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "sr",
+   "answer": "sr",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "ADC R channel adjustment (advanced setting)",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 21
+  },
+  {
+   "name": "SET_USER_GAIN_G",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "sg",
+   "answer": "sg",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "ADC G channel adjustment (advanced setting)",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 22
+  },
+  {
+   "name": "SET_USER_GAIN_B",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "sb",
+   "answer": "sb",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "ADC B channel adjustment (advanced setting)",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 22
+  },
+  {
+   "name": "SET_PULLDOWN_2_2",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sn",
+   "answer": "Sn",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Enable/disable the auto 2:2 pulldown",
+   "values": [
+    "0 = Disable automatic detection",
+    "1 = Enable automatic detection"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 22
+  },
+  {
+   "name": "SET_PULLDOWN_3_2",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sp",
+   "answer": "Sp",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Enable/disable the auto 3:2 pulldown",
+   "values": [
+    "0 = Disable automatic detection",
+    "1 = Enable automatic detection"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 22
+  },
+  {
+   "name": "SET_CROP_WIN_POS_H",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SI",
+   "answer": "SI",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Cropping window horizontal position",
+   "values": [
+    "Percent = 65535 = 100% : all cropping on the left"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 23
+  },
+  {
+   "name": "SET_CROP_WIN_POS_V",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SJ",
+   "answer": "SJ",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Cropping window vertical position",
+   "values": [
+    "Percent = 65535 = 100% : all cropping on the top"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 23
+  },
+  {
+   "name": "SET_CROP_WIN_SIZE_H",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SK",
+   "answer": "SK",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 58981,
+   "default": 0,
+   "readOnly": false,
+   "description": "Horizontal cropping",
+   "values": [
+    "Percent = 65535 = 100%"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 23
+  },
+  {
+   "name": "SET_CROP_WIN_SIZE_V",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SL",
+   "answer": "SL",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 58981,
+   "default": 0,
+   "readOnly": false,
+   "description": "Vertical cropping",
+   "values": [
+    "Percent = 65535 = 100%"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 23
+  },
+  {
+   "name": "SET_ASPECT_RATIO_IN",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "si",
+   "answer": "si",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 4,
+   "default": 0,
+   "readOnly": false,
+   "description": "Input image aspect ratio",
+   "values": [
+    "0 = 4/3 Fullscreen",
+    "1 = 4/3 with 16/9 content + black stripes",
+    "2 = 4/3 with 2.35 content + black stripes",
+    "3 = 4/3 with 16/9 content without black stripes",
+    "4 = 19/9 with 4/3 content + black stripes"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11"
+   ],
+   "index2": [],
+   "page": 24
+  },
+  {
+   "name": "SET_ASPECT_RATIO_OUT",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "so",
+   "answer": "so",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 1,
+   "readOnly": false,
+   "description": "Output image aspect ratio",
+   "values": [
+    "0 = Distorted, input aspect ratio not preserved",
+    "1 = Not distorted, black bands added",
+    "2 = Not distorted, no black bands added",
+    "3 = Not distorted and no scaling"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 24
+  },
+  {
+   "name": "SET_OVER_SCAN",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "sO",
+   "answer": "sO",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "input image Overscan/Underscan",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 24
+  },
+  {
+   "name": "SET_FORCE_4_3",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "SF",
+   "answer": "SF",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Force the aspect ratio of PAL/NTSC input to 4/3",
+   "values": [
+    "1 = forced"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 24
+  },
+  {
+   "name": "SET_RESET_SETTINGS",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Ss",
+   "answer": "Ss",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Current input default settings",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 25
+  },
+  {
+   "name": "SET_FREEZE",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sf",
+   "answer": "Sf",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Freeze of the input",
+   "values": [
+    "1 = Freeze"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 25
+  },
+  {
+   "name": "SET_MOTION_DETECT",
+   "group": "GRP_INPUT_SETTINGS",
+   "request": "Sm",
+   "answer": "Sm",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 15,
+   "default": 15,
+   "readOnly": false,
+   "description": "0 : max correction; 15 : min correction",
+   "values": [],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 25
+  },
+  {
+   "name": "PE_INPUTNUM",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "IN",
+   "answer": "IN",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 12,
+   "default": 0,
+   "readOnly": false,
+   "description": "Displayed input number or frame or logo number",
+   "values": [
+    "0 = No input",
+    "1 = Input1",
+    "2 = Input2",
+    "3 = Input3",
+    "4 = Input4",
+    "5 = Input5",
+    "6 = Input6",
+    "9 = Input9",
+    "10 = Input10",
+    "11 = Input11",
+    "12 = Input12"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 26
+  },
+  {
+   "name": "PE_SOURCENUM",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "IS",
+   "answer": "IS",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 64,
+   "default": 0,
+   "readOnly": false,
+   "description": "Source number",
+   "values": [
+    "Same Orc-50"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 26
+  },
+  {
+   "name": "PE_AUDIO_AUX_MUTE",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "Aa",
+   "answer": "Aa",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Auxiliary input mixing enable",
+   "values": [
+    "1 = Enable."
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 27
+  },
+  {
+   "name": "PE_SMOOTH_MOVE",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "ps",
+   "answer": "ps",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "\u00ab Smooth Move \u00bb activation",
+   "values": [
+    "1 = Enable."
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 27
+  },
+  {
+   "name": "PE_NEW_ID",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pN",
+   "answer": "pN",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Unique layer identifier number",
+   "values": [],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 28
+  },
+  {
+   "name": "PE_POS_H",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pH",
+   "answer": "pH",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Layer left H position on output screen",
+   "values": [
+    "Unit = pixels ( 32768 = screen left border )"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 28
+  },
+  {
+   "name": "PE_POS_V",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pV",
+   "answer": "pV",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Layer top V position on output screen",
+   "values": [
+    "Unit = pixels ( 32768 = screen top border )"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 29
+  },
+  {
+   "name": "PE_SIZE_H",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pW",
+   "answer": "pW",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 1600,
+   "readOnly": false,
+   "description": "Layer H size on output screen (without borders)",
+   "values": [
+    "Unit = pixels ( Max=16x2048 = 32768)"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 29
+  },
+  {
+   "name": "PE_SIZE_V",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pS",
+   "answer": "pS",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 1200,
+   "readOnly": false,
+   "description": "Layer V size on output screen (without borders)",
+   "values": [
+    "Unit = pixels (Max=16x2048 = 32768)"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 30
+  },
+  {
+   "name": "PE_CROP_WIN_POS_H",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "CH",
+   "answer": "CH",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Cropping window horizontal position",
+   "values": [
+    "Unit = percent ( 65535 = 100% = : all cropping on the left )"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 30
+  },
+  {
+   "name": "PE_CROP_WIN_POS_V",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "CV",
+   "answer": "CV",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Cropping window vertical position",
+   "values": [
+    "Unit = percent ( 65535 = 100% = : all cropping on the top )"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 31
+  },
+  {
+   "name": "PE_CROP_WIN_SIZE_H",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "CW",
+   "answer": "CW",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 58981,
+   "default": 0,
+   "readOnly": false,
+   "description": "Horizontal cropping",
+   "values": [
+    "Percent = 65535 = 100%"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 31
+  },
+  {
+   "name": "PE_CROP_WIN_SIZE_V",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "CS",
+   "answer": "CS",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 58981,
+   "default": 0,
+   "readOnly": false,
+   "description": "Vertical cropping",
+   "values": [
+    "Percent = 65535 = 100%"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 32
+  },
+  {
+   "name": "PE_ALPHA",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "pA",
+   "answer": "pA",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": false,
+   "description": "Layer transparency",
+   "values": [
+    "0 = 100% = transparent",
+    "255 = 0% = visible"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 32
+  },
+  {
+   "name": "PE_BORDER_STYLE",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "bS",
+   "answer": "bS",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Border style",
+   "values": [
+    "0 = No border",
+    "1 = Colored edge"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 33
+  },
+  {
+   "name": "PE_BORDER_COLOR",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "bC",
+   "answer": "bC",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 544,
+   "default": 33,
+   "readOnly": false,
+   "description": "Border color",
+   "values": [
+    "Color number"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 33
+  },
+  {
+   "name": "PE_BORDER_ALPHA",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "bA",
+   "answer": "bA",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": false,
+   "description": "Border transparency",
+   "values": [
+    "0 = 100% = transparent",
+    "255 = 0% = visible"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 34
+  },
+  {
+   "name": "PE_BORDER_SIZE_H",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "bH",
+   "answer": "bH",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 127,
+   "default": 10,
+   "readOnly": false,
+   "description": "Border H size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 34
+  },
+  {
+   "name": "PE_BORDER_SIZE_V",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "bV",
+   "answer": "bV",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 127,
+   "default": 10,
+   "readOnly": false,
+   "description": "Border V size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 35
+  },
+  {
+   "name": "PE_OPENING_TRANSITION",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "oT",
+   "answer": "oT",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 4,
+   "default": 2,
+   "readOnly": false,
+   "description": "Layer opening transition type",
+   "values": [
+    "0 = Cut",
+    "1 = CleanCut",
+    "2 = Fade",
+    "3 = Slide (associ\u00e9e \u00e0 1 trajectoire)",
+    "4 = Wipe (associ\u00e9e \u00e0 1 trajectoire)"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 35
+  },
+  {
+   "name": "PE_OPENING_TRANSITION_WAY",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "oW",
+   "answer": "oW",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 10,
+   "default": 0,
+   "readOnly": false,
+   "description": "Layer opening transition direction",
+   "values": [
+    "0 = Left to right",
+    "1 = Right to left",
+    "2 = Bottom to top",
+    "3 = Top to bottom",
+    "4 = Vertical from/to center",
+    "5 = Horizontal from/to center",
+    "6 = H&V rom/to center",
+    "7 = From SW to NE",
+    "8 = From SE to NW",
+    "9 = From NW to SE",
+    "10 = From NE to SW"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 36
+  },
+  {
+   "name": "PE_OPENING_DURATION",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "oD",
+   "answer": "oD",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 10,
+   "readOnly": false,
+   "description": "Layer opening transition duration",
+   "values": [
+    "Unit = 1/10s"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 36
+  },
+  {
+   "name": "PE_CLOSING_TRANSITION",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "cT",
+   "answer": "cT",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 4,
+   "default": 2,
+   "readOnly": false,
+   "description": "Layer closing transition type",
+   "values": [
+    "0 = Cut",
+    "1 = CleanCut",
+    "2 = Fade",
+    "3 = Slide (associ\u00e9e \u00e0 1 trajectoire)",
+    "4 = Wipe (associ\u00e9e \u00e0 1 trajectoire)"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 37
+  },
+  {
+   "name": "PE_CLOSING_TRANSITION_WAY",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "cW",
+   "answer": "cW",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 10,
+   "default": 0,
+   "readOnly": false,
+   "description": "Layer closing transition direction",
+   "values": [
+    "0 = Left to right",
+    "1 = Right to left",
+    "2 = Bottom to top",
+    "3 = Top to bottom",
+    "4 = Vertical from/to center",
+    "5 = Horizontal from/to center",
+    "6 = H&V rom/to center",
+    "7 = From SW to NE",
+    "8 = From SE to NW",
+    "9 = From NW to SE",
+    "10 = From NE to SW"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 37
+  },
+  {
+   "name": "PE_CLOSING_DURATION",
+   "group": "GRP_PRESET_ELEMENT",
+   "request": "cD",
+   "answer": "cD",
+   "dims": [
+    7,
+    10
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 10,
+   "readOnly": false,
+   "description": "Layer closing transition duration",
+   "values": [
+    "Unit = 1/10s"
+   ],
+   "index1": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index2": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "page": 38
+  },
+  {
+   "name": "TAKE",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "TK",
+   "answer": "TK",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "TAKE, Next preset becomes Current",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "TAKEAVA",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "TA",
+   "answer": "TA",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": true,
+   "description": "Available TAKE flag",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "TAKEINFO",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "TI",
+   "answer": "TI",
+   "dims": [],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": true,
+   "description": "TAKE information",
+   "values": [
+    "0 = 1 shot TAKE",
+    "1 = 2 shot TAKE",
+    "2 = Sequenced TAKE"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "TBAR",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "NT",
+   "answer": "NT",
+   "dims": [],
+   "min": 0,
+   "max": 10000,
+   "default": 0,
+   "readOnly": false,
+   "description": "TBAR value",
+   "values": [
+    "Unit = 0,01%"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "COPY_FROM",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "Nf",
+   "answer": "Nf",
+   "dims": [],
+   "min": 0,
+   "max": 6,
+   "default": 0,
+   "readOnly": false,
+   "description": "Source for preset copy",
+   "values": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "COPY_TO",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "Nt",
+   "answer": "Nt",
+   "dims": [],
+   "min": 0,
+   "max": 6,
+   "default": 0,
+   "readOnly": false,
+   "description": "Destination for preset copy",
+   "values": [
+    "0 = Current preset",
+    "1 = Next preset",
+    "2 = Previous preset",
+    "3 = Memory Preset 1",
+    "4 = Memory Preset 2",
+    "5 = Memory Preset 3",
+    "6 = Memory Preset 4"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "COPY_CTRL",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "Nc",
+   "answer": "Nc",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Preset copy control",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 38
+  },
+  {
+   "name": "PREVIEWED_LAYER",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "NC",
+   "answer": "NC",
+   "dims": [],
+   "min": 0,
+   "max": 7,
+   "default": 2,
+   "readOnly": false,
+   "description": "Previewed layed (layer that is visible on preview screen)",
+   "values": [
+    "0 = Background Frame for output 1",
+    "1 = Background Frame for output 2 in matrix mode",
+    "2 = Background Layer for output 1",
+    "3 = Pip 1 Layer for output1 Background Layer for output 2 in matrix mode",
+    "6 = Logo 1",
+    "7 = Logo 2",
+    "8 = Audio Output 1",
+    "9 = Audio Output 2"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 39
+  },
+  {
+   "name": "SET_QUAD_LAYOUT",
+   "group": "GRP_PRESET_CONTROL",
+   "request": "NQ",
+   "answer": "NQ",
+   "dims": [],
+   "min": 13,
+   "max": 19,
+   "default": 0,
+   "readOnly": false,
+   "description": "Quadravision Layout request (auto-reset)",
+   "values": [
+    "13 = Reset of layer properties",
+    "14 = Background Live + Top Left PiP",
+    "15 = Background Live + Top Right PiP",
+    "16 = Background Live + Bottom Left PiP",
+    "17 = Background Live + Bottom Right PiP",
+    "18 = Background Frame + 2 Left Right PiPs",
+    "19 = Background Frame + 2 Top Bottom PiPs"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 39
+  },
+  {
+   "name": "R_FLICK",
+   "group": "GRP_SETTINGS",
+   "request": "Rf",
+   "answer": "Rf",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 7,
+   "default": 2,
+   "readOnly": false,
+   "description": "Anti-flicker level",
+   "values": [
+    "0 = No antif-flicker"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 39
+  },
+  {
+   "name": "R_GAMMA",
+   "group": "GRP_SETTINGS",
+   "request": "Rg",
+   "answer": "Rg",
+   "dims": [
+    2
+   ],
+   "min": 5,
+   "max": 40,
+   "default": 10,
+   "readOnly": false,
+   "description": "Gamma correction level",
+   "values": [
+    "Unit = 1/10"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 39
+  },
+  {
+   "name": "R_SHARPNESS",
+   "group": "GRP_SETTINGS",
+   "request": "Rs",
+   "answer": "Rs",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Sharpness correction Level",
+   "values": [
+    "128 = neutral"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 39
+  },
+  {
+   "name": "OFORMAT",
+   "group": "GRP_OUTPUT",
+   "request": "OF",
+   "answer": "OF",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 37,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output format",
+   "values": [
+    "0 = PAL",
+    "1 = NTSC",
+    "2 = 480p",
+    "3 = 576p",
+    "4 = SMPTE296M",
+    "5 = SMPTE260M",
+    "6 = SMPTE274M",
+    "7 = SMPTE274M",
+    "8 = SMPTE274M",
+    "9 = 640 x 480 4/3",
+    "10 = 848 x 480 16/9",
+    "11 = 800 x 600 4/3",
+    "12 = 1024 x 768 4/3",
+    "13 = 1360 x 768 16/9",
+    "14 = 1280 x 800 16/9",
+    "15 = 1280 x 1024 5/4",
+    "16 = 1400 x 1050 5/3",
+    "17 = 1680 x 1050 16/9",
+    "18 = 1600 x 1200 4/3",
+    "19 = 1920 x 1200 16/9",
+    "20 = 2048 x 1080",
+    "21 = 1280 x 720 16/9",
+    "22 = 1920 x 1080 16/9",
+    "23 = 1920 x 1080 16/9 (HD)",
+    "24 = 1920 x 1080 16/9 (SHARP)",
+    "25 = 1920 x 1080 16/9 (SHARP 2)",
+    "26 = 1440 x 900 16/10",
+    "27 = 1280 x 768 15/9",
+    "28 = 1366 x 800 15/9",
+    "29 = 1366 x 768 16/9",
+    "30 = Computer Custom 1",
+    "31 = Computer Custom 2",
+    "32 = Computer Custom 3",
+    "33 = Computer Custom 4",
+    "34 = Computer Custom 5",
+    "35 = Computer Custom 6",
+    "36 = Computer Custom 7",
+    "37 = Computer Custom 8"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 40
+  },
+  {
+   "name": "ORATE",
+   "group": "GRP_OUTPUT",
+   "request": "OR",
+   "answer": "OR",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 12,
+   "default": 8,
+   "readOnly": false,
+   "description": "Output rate",
+   "values": [
+    "0 = Custom Field Rate",
+    "1 = 23,97 Hz",
+    "2 = 24 Hz",
+    "3 = 25 Hz",
+    "4 = 29,97 Hz",
+    "5 = 30 Hz",
+    "6 = 50 Hz",
+    "7 = 59,94 Hz",
+    "8 = 60 Hz",
+    "9 = 72 Hz",
+    "10 = 75 Hz",
+    "11 = 85 Hz",
+    "12 = 100 Hz"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 41
+  },
+  {
+   "name": "OSIGTYPEANALOG",
+   "group": "GRP_OUTPUT",
+   "request": "OA",
+   "answer": "OA",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 0,
+   "readOnly": false,
+   "description": "Analog output type",
+   "values": [
+    "0 = RGBs",
+    "1 = RGsB (SOG)",
+    "2 = RGB H&V",
+    "3 = YUV"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 41
+  },
+  {
+   "name": "OSIGTYPEDIGITAL",
+   "group": "GRP_OUTPUT",
+   "request": "OD",
+   "answer": "OD",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": false,
+   "description": "Digital output type",
+   "values": [
+    "0 = RGB 0-255 ( full scale )",
+    "1 = RGB 16-235 ( reduced scale )",
+    "2 = YUV"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 41
+  },
+  {
+   "name": "OSYNCPOL",
+   "group": "GRP_OUTPUT",
+   "request": "OS",
+   "answer": "OS",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 3,
+   "default": 0,
+   "readOnly": false,
+   "description": "Analog output sync polarity",
+   "values": [
+    "0 = negative H&V synchro",
+    "1 = Synchros H n\u00e9gative et V positive",
+    "2 = Synchros H positive et V n\u00e9gative",
+    "3 = Synchros H et V positives"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 41
+  },
+  {
+   "name": "OBACKCOLORPREDEF",
+   "group": "GRP_OUTPUT",
+   "request": "OC",
+   "answer": "OC",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 32,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output background pre-defined color",
+   "values": [
+    "0 = Black",
+    "1 = Navy blue",
+    "2 = Blue",
+    "3 = Green Blue",
+    "4 = Water Blue",
+    "5 = Turquoise blue",
+    "6 = Dark green",
+    "7 = Green",
+    "8 = Lime",
+    "9 = Light green",
+    "10 = Dark red",
+    "11 = Red",
+    "12 = Tomato red",
+    "13 = Bordeaux",
+    "14 = Brown",
+    "15 = Chocolate",
+    "16 = Orange",
+    "17 = Gold",
+    "18 = Yellow",
+    "19 = Indigo blue",
+    "20 = Purple",
+    "21 = Light red",
+    "22 = Fuchsia",
+    "23 = Salmon",
+    "24 = Rose",
+    "25 = Olive reen",
+    "26 = Grey",
+    "27 = Silver",
+    "28 = Lavender blue",
+    "29 = Beige",
+    "30 = Azur",
+    "31 = White",
+    "32 = Custom"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 42
+  },
+  {
+   "name": "OBACKCOLORHUE",
+   "group": "GRP_OUTPUT",
+   "request": "OG",
+   "answer": "OG",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 240,
+   "default": 160,
+   "readOnly": false,
+   "description": "Output background hue",
+   "values": [],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 42
+  },
+  {
+   "name": "OBACKCOLORSAT",
+   "group": "GRP_OUTPUT",
+   "request": "OJ",
+   "answer": "OJ",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 240,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output background saturation",
+   "values": [],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 42
+  },
+  {
+   "name": "OBACKCOLORLUMA",
+   "group": "GRP_OUTPUT",
+   "request": "OI",
+   "answer": "OI",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 240,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output background brightness",
+   "values": [],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 42
+  },
+  {
+   "name": "OPATTERN",
+   "group": "GRP_OUTPUT",
+   "request": "OP",
+   "answer": "OP",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 8,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output test pattern",
+   "values": [
+    "0 = No pattern",
+    "1 = Vertical Grey Scale",
+    "2 = Horizontal Grey Scale",
+    "3 = Vertical Color Bar",
+    "4 = Horizontal Color Bar",
+    "5 = Grid",
+    "6 = SMPTE",
+    "7 = Burst",
+    "8 = Centering"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OBLACK",
+   "group": "GRP_OUTPUT",
+   "request": "OB",
+   "answer": "OB",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output black control",
+   "values": [
+    "0 = Normal output",
+    "1 = Black output"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OUTIL_H",
+   "group": "GRP_OUTPUT",
+   "request": "OH",
+   "answer": "OH",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 1600,
+   "readOnly": true,
+   "description": "Output H size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OUTIL_V",
+   "group": "GRP_OUTPUT",
+   "request": "OV",
+   "answer": "OV",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 1200,
+   "readOnly": true,
+   "description": "Output V size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OFIELDRATE",
+   "group": "GRP_OUTPUT",
+   "request": "OT",
+   "answer": "OT",
+   "dims": [
+    2
+   ],
+   "min": 100,
+   "max": 10000,
+   "default": 6000,
+   "readOnly": true,
+   "description": "Output frame frequency",
+   "values": [
+    "Unit = 1/100Hz"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OIMAGE_OVERSCAN",
+   "group": "GRP_OUTPUT",
+   "request": "OO",
+   "answer": "OO",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Image Overscan / Underscan",
+   "values": [],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OSETDETECTHDCP",
+   "group": "GRP_OUTPUT",
+   "request": "Oh",
+   "answer": "Oh",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 4,
+   "default": 1,
+   "readOnly": false,
+   "description": "Enable/disable the Output HDCP detection",
+   "values": [
+    "0 = Disable HDCP detection",
+    "1 = Automatic HDCP detection",
+    "2 = HDCP Configuration 1",
+    "3 = HDCP Configuration 2",
+    "4 = HDCP Configuration 3"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OISHDCP",
+   "group": "GRP_OUTPUT",
+   "request": "On",
+   "answer": "On",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Output HDCP status",
+   "values": [],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "OSYNCOUTPUT",
+   "group": "GRP_OUTPUT",
+   "request": "Om",
+   "answer": "Om",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Output 2 copies the format and rate of output 1",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "REFREQUEST",
+   "group": "GRP_REFERENCE",
+   "request": "Xr",
+   "answer": "Xr",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 15,
+   "default": 0,
+   "readOnly": false,
+   "description": "Framelock source requested by user",
+   "values": [
+    "0 = Analog input 1 as reference",
+    "1 = Analog input 2 as reference",
+    "2 = Analog input 3 as reference",
+    "3 = Analog input 4 as reference",
+    "4 = Analog input 5 as reference",
+    "5 = Analog input 6 as reference",
+    "8 = DVI 1 input as reference",
+    "9 = DVI 2 input as reference",
+    "10 = SDI 1 input as reference",
+    "11 = SDI 2 input as reference",
+    "14 = Back End 1 as reference",
+    "15 = Back End 2 as reference"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 43
+  },
+  {
+   "name": "REFCURRENTREQUEST",
+   "group": "GRP_REFERENCE",
+   "request": "Xe",
+   "answer": "Xe",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 15,
+   "default": 0,
+   "readOnly": false,
+   "description": "Current Frame Lock source",
+   "values": [
+    "0 = Analog input 1 as reference",
+    "1 = Analog input 2 as reference",
+    "2 = Analog input 3 as reference",
+    "3 = Analog input 4 as reference",
+    "4 = Analog input 5 as reference",
+    "5 = Analog input 6 as reference",
+    "8 = DVI 1 input as reference",
+    "9 = DVI 2 input as reference",
+    "10 = SDI 1 input as reference",
+    "11 = SDI 2 input as reference",
+    "14 = Back End 1 as reference",
+    "15 = Back End 2 as reference"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "REFMODE",
+   "group": "GRP_REFERENCE",
+   "request": "Xm",
+   "answer": "Xm",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 5,
+   "default": 0,
+   "readOnly": false,
+   "description": "Follow mode requested by user",
+   "values": [
+    "0 = Internal",
+    "1 = Follow x1/2",
+    "2 = Follow x1",
+    "3 = Follow x2",
+    "4 = Follow x3",
+    "5 = Asynchronous Follow"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "REFCURRENTMODE",
+   "group": "GRP_REFERENCE",
+   "request": "Xc",
+   "answer": "Xc",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 5,
+   "default": 0,
+   "readOnly": false,
+   "description": "Current follow mode",
+   "values": [
+    "0 = Internal",
+    "1 = Follow x1/2",
+    "2 = Follow x1",
+    "3 = Follow x2",
+    "4 = Follow x3",
+    "5 = Asynchronous Follow"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "REFFREQ",
+   "group": "GRP_REFERENCE",
+   "request": "Xt",
+   "answer": "Xt",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 0,
+   "readOnly": true,
+   "description": "Frame rate of the reference signal",
+   "values": [
+    "Unit = 1/100Hz"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "REFLOCKSTATUS",
+   "group": "GRP_REFERENCE",
+   "request": "Xl",
+   "answer": "Xl",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": true,
+   "description": "Framelock locked status",
+   "values": [
+    "1 = locked"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "PMODE",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PM",
+   "answer": "PM",
+   "dims": [],
+   "min": 0,
+   "max": 5,
+   "default": 0,
+   "readOnly": false,
+   "description": "Picture mode",
+   "values": [
+    "0 = Normal mode",
+    "1 = Memory recall of logos and frames",
+    "2 = Logo recording mode",
+    "3 = Animated logo recording mode",
+    "4 = Frame recording mode",
+    "5 = Deleting picture mode"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "PEXECUTE",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PG",
+   "answer": "PG",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Picture control",
+   "values": [
+    "If PMODE = Savexxx => Store the PCAPTURE_INDEX image If PMODE = Erasexxx => Delete the PCAPTURE_INDEX image",
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 44
+  },
+  {
+   "name": "PSTATUS",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PE",
+   "answer": "PE",
+   "dims": [],
+   "min": 0,
+   "max": 5,
+   "default": 0,
+   "readOnly": true,
+   "description": "Picture management status",
+   "values": [
+    "0 = Free",
+    "1 = Recalling picture",
+    "2 = Storing picture",
+    "3 = Picture format not compliant with current output format",
+    "4 = Deleting a picture",
+    "5 = Flash access error"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PFRAMES_VALID",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PF",
+   "answer": "PF",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 0,
+   "readOnly": true,
+   "description": "Frames validity (bitfield : bit0 = Frame1)",
+   "values": [
+    "0 = No image",
+    "1 = Image is valid"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PLOGOS_VALID",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PZ",
+   "answer": "PZ",
+   "dims": [],
+   "min": 0,
+   "max": 511,
+   "default": 0,
+   "readOnly": true,
+   "description": "Logos validity (bitfield : bit0 = Logo1)",
+   "values": [
+    "0 = No image",
+    "1 = Image is valid"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_ORIGIN",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PS",
+   "answer": "PS",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Select the output that will be used for capture",
+   "values": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_LEFT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PL",
+   "answer": "PL",
+   "dims": [],
+   "min": 32768,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Picture capture H position",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_TOP",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PT",
+   "answer": "PT",
+   "dims": [],
+   "min": 32768,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Picture capture V position",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_WIDTH",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PW",
+   "answer": "PW",
+   "dims": [],
+   "min": 0,
+   "max": 32767,
+   "default": 400,
+   "readOnly": false,
+   "description": "Picture capture H size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_HEIGHT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PH",
+   "answer": "PH",
+   "dims": [],
+   "min": 0,
+   "max": 32767,
+   "default": 300,
+   "readOnly": false,
+   "description": "Picture capture V size",
+   "values": [
+    "Unit = pixels"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_TYPE",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PB",
+   "answer": "PB",
+   "dims": [],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": false,
+   "description": "Picture Keying Type",
+   "values": [
+    "0 = No keying",
+    "1 = Luma Key Keying",
+    "2 = ChromaKey Keying",
+    "3 = Luma Key Keying + DSK",
+    "4 = ChromaKey Keying + DSK"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_R_LEVEL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PC",
+   "answer": "PC",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Picture Keying Level (Red or Tint)",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_G_LEVEL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PD",
+   "answer": "PD",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Picture Keying Level (Green)",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_B_LEVEL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PJ",
+   "answer": "PJ",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 128,
+   "readOnly": false,
+   "description": "Picture Keying Level (Blue)",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_TOLER",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PK",
+   "answer": "PK",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 10,
+   "readOnly": false,
+   "description": "Keing Tolerance",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_LUMA_LOW_LEVEL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PP",
+   "answer": "PP",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 64,
+   "readOnly": false,
+   "description": "Minimum Luma Level",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_LUMA_HIGH_LEVEL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PY",
+   "answer": "PY",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 192,
+   "readOnly": false,
+   "description": "Maximum Luma Level",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_INVERT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PO",
+   "answer": "PO",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying Invert",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_GRAB_ENABLE",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PQ",
+   "answer": "PQ",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying Grabber Activate",
+   "values": [
+    "0 = Disable the grabber",
+    "1 = Enable the grabber"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_GRAB_GET",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PR",
+   "answer": "PR",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Keying update (capture and apply new value)",
+   "values": [
+    "Percent of OSCREEN_UTIL_H"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_GRAB_H",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PU",
+   "answer": "PU",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Keying grabber position H",
+   "values": [
+    "Percent of OSCREEN_UTIL_V"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_KEYING_GRAB_V",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PV",
+   "answer": "PV",
+   "dims": [],
+   "min": 0,
+   "max": 65535,
+   "default": 32768,
+   "readOnly": false,
+   "description": "Keying grabber position V",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_BACK_COLOR",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pc",
+   "answer": "Pc",
+   "dims": [],
+   "min": 0,
+   "max": 7,
+   "default": 0,
+   "readOnly": false,
+   "description": "Cutout color for picture capture",
+   "values": [
+    "0 to 7"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_CAPTURE_TIME",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pt",
+   "answer": "Pt",
+   "dims": [],
+   "min": 0,
+   "max": 100,
+   "default": 0,
+   "readOnly": false,
+   "description": "Capture time for an animated logo",
+   "values": [
+    "0 = 0s",
+    "100 = 10s"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_MAX_FRAME",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pm",
+   "answer": "Pm",
+   "dims": [],
+   "min": 1,
+   "max": 255,
+   "default": 80,
+   "readOnly": true,
+   "description": "Maximal number of frames of an animated logo",
+   "values": [
+    "1 \u00e0 255"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_FRAME_COUNT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PN",
+   "answer": "PN",
+   "dims": [],
+   "min": 1,
+   "max": 255,
+   "default": 1,
+   "readOnly": false,
+   "description": "Number of frames of an animated logo",
+   "values": [],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_REFRESH_INTERVAL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PI",
+   "answer": "PI",
+   "dims": [],
+   "min": 1,
+   "max": 10000,
+   "default": 56,
+   "readOnly": false,
+   "description": "Time between 2 frames of an animated logo",
+   "values": [
+    "Unit = 1ms"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 45
+  },
+  {
+   "name": "PCAPTURE_INDEX",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "PX",
+   "answer": "PX",
+   "dims": [],
+   "min": 0,
+   "max": 14,
+   "default": 0,
+   "readOnly": false,
+   "description": "ID of the picture to capture",
+   "values": [
+    "0 = No Picture",
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 46
+  },
+  {
+   "name": "PSTATUS_WIDTH",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pw",
+   "answer": "Pw",
+   "dims": [
+    15
+   ],
+   "min": 0,
+   "max": 32767,
+   "default": 0,
+   "readOnly": true,
+   "description": "Picture H size",
+   "values": [],
+   "index1": [
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index2": [],
+   "page": 46
+  },
+  {
+   "name": "PSTATUS_HEIGHT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Ph",
+   "answer": "Ph",
+   "dims": [
+    15
+   ],
+   "min": 0,
+   "max": 32767,
+   "default": 0,
+   "readOnly": true,
+   "description": "Picture V size",
+   "values": [],
+   "index1": [
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index2": [],
+   "page": 46
+  },
+  {
+   "name": "PSTATUS_STYLE",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Ps",
+   "answer": "Ps",
+   "dims": [
+    15
+   ],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": true,
+   "description": "Logo style",
+   "values": [
+    "0 = Normal logo",
+    "2 = Frame"
+   ],
+   "index1": [
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "PSTATUS_FRAME_COUNT",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pn",
+   "answer": "Pn",
+   "dims": [
+    15
+   ],
+   "min": 1,
+   "max": 255,
+   "default": 1,
+   "readOnly": true,
+   "description": "Number of frames of an animated logo",
+   "values": [],
+   "index1": [
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "PSTATUS_REFRESH_INTERVAL",
+   "group": "GRP_LOGOS_FRAMES",
+   "request": "Pi",
+   "answer": "Pi",
+   "dims": [
+    15
+   ],
+   "min": 1,
+   "max": 10000,
+   "default": 56,
+   "readOnly": false,
+   "description": "Time between 2 frames of an animated logo",
+   "values": [
+    "Unit = 1ms"
+   ],
+   "index1": [
+    "1 = Logo 1",
+    "2 = Logo 2",
+    "3 = Logo 3",
+    "4 = Logo 4",
+    "5 = Logo 5",
+    "6 = Logo 6",
+    "9 = Frame 1",
+    "10 = Frame 2",
+    "11 = Frame 3",
+    "12 = Frame 4",
+    "13 = Frame 5",
+    "14 = Frame 6"
+   ],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "LANENABLE",
+   "group": "GRP_LAN",
+   "request": "ne",
+   "answer": "ne",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "LAN enable",
+   "values": [
+    "0 = Enable RS232 ( disable LAN )",
+    "1 = Enable LAN ( disable RS232 )"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "LANRESET",
+   "group": "GRP_LAN",
+   "request": "nr",
+   "answer": "nr",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "LAN factory parameters reset",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "LANSTORE",
+   "group": "GRP_LAN",
+   "request": "ns",
+   "answer": "ns",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "LAN parameters update",
+   "values": [
+    "Auto reset"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 47
+  },
+  {
+   "name": "LANIP",
+   "group": "GRP_LAN",
+   "request": "nw",
+   "answer": "nw",
+   "dims": [
+    3,
+    4
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 192,
+   "readOnly": false,
+   "description": "LAN devices addresses",
+   "values": [
+    "IP : 0 to 255"
+   ],
+   "index1": [
+    "0 = Device",
+    "1 = Remote",
+    "2 = Gateway"
+   ],
+   "index2": [
+    "0 = IP address high byte",
+    "1 = IP address mid high byte",
+    "2 = IP address mid low high byte",
+    "3 = IP address low byte"
+   ],
+   "page": 48
+  },
+  {
+   "name": "LANPORT",
+   "group": "GRP_LAN",
+   "request": "np",
+   "answer": "np",
+   "dims": [
+    3
+   ],
+   "min": 0,
+   "max": 65535,
+   "default": 10500,
+   "readOnly": false,
+   "description": "LAN port numbers",
+   "values": [
+    "Local port : 10000 \u00e0 10999 Remote port : 0 \u00e0 65500"
+   ],
+   "index1": [
+    "0 = Device",
+    "1 = Remote",
+    "2 = Gateway"
+   ],
+   "index2": [],
+   "page": 48
+  },
+  {
+   "name": "LANNETMASK",
+   "group": "GRP_LAN",
+   "request": "nk",
+   "answer": "nk",
+   "dims": [],
+   "min": 0,
+   "max": 24,
+   "default": 8,
+   "readOnly": false,
+   "description": "LAN netmask",
+   "values": [
+    "Number of 0bits from the right"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 48
+  },
+  {
+   "name": "LANPROTOCOL",
+   "group": "GRP_LAN",
+   "request": "nt",
+   "answer": "nt",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "LAN protocol",
+   "values": [
+    "0 = UDP Protocol",
+    "1 = TCP protocol",
+    "2 = AMX Protocol"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 48
+  },
+  {
+   "name": "EDID_FORMAT",
+   "group": "GRP_EDID",
+   "request": "EF",
+   "answer": "EF",
+   "dims": [
+    5
+   ],
+   "min": 0,
+   "max": 21,
+   "default": 0,
+   "readOnly": false,
+   "description": "EDID preferred format",
+   "values": [
+    "0 = VGA",
+    "1 = 800x480",
+    "2 = WVGA",
+    "3 = SVGA",
+    "4 = 720pRGB",
+    "5 = XGA",
+    "6 = WXGA",
+    "7 = SWXGA",
+    "8 = 800pRGB",
+    "9 = 1152x864",
+    "10 = 900pRGB",
+    "11 = 1600x900",
+    "12 = 960pRGB",
+    "13 = SXGA",
+    "14 = 1360x1024",
+    "15 = SXGA+",
+    "16 = WSXGA+",
+    "17 = 1080pRGB",
+    "18 = 2K",
+    "19 = UXGA",
+    "20 = WUXGA",
+    "21 = Custom"
+   ],
+   "index1": [
+    "0 = Analog input 1",
+    "1 = Analog input 2",
+    "3 = DVI-D input 1",
+    "4 = DVI-D input 2"
+   ],
+   "index2": [],
+   "page": 48
+  },
+  {
+   "name": "EDID_RATE",
+   "group": "GRP_EDID",
+   "request": "ER",
+   "answer": "ER",
+   "dims": [
+    5
+   ],
+   "min": 0,
+   "max": 5,
+   "default": 0,
+   "readOnly": false,
+   "description": "EDID preferred frame frequency",
+   "values": [
+    "0 = 50 Hz",
+    "1 = 60 Hz",
+    "2 = 72 Hz",
+    "3 = 75 Hz",
+    "4 = 85 Hz",
+    "5 = Custom"
+   ],
+   "index1": [
+    "0 = Analog input 1",
+    "1 = Analog input 2",
+    "3 = DVI-D input 1",
+    "4 = DVI-D input 2"
+   ],
+   "index2": [],
+   "page": 48
+  },
+  {
+   "name": "EDID_REQUEST",
+   "group": "GRP_EDID",
+   "request": "ES",
+   "answer": "ES",
+   "dims": [
+    5
+   ],
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "readOnly": false,
+   "description": "Request for an EDID",
+   "values": [
+    "0 = EDID is ready",
+    "1 = EDID saving",
+    "2 = EDID reading"
+   ],
+   "index1": [
+    "0 = Analog input 1",
+    "1 = Analog input 2",
+    "3 = DVI-D input 1",
+    "4 = DVI-D input 2"
+   ],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_INPUT_MODE",
+   "group": "GRP_AUDIO",
+   "request": "Af",
+   "answer": "Af",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Audio mode",
+   "values": [
+    "0 = Free choice of audio input",
+    "1 = Audio input follow the top layers"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_INPUT_MAP",
+   "group": "GRP_AUDIO",
+   "request": "Ai",
+   "answer": "Ai",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 12,
+   "default": 1,
+   "readOnly": false,
+   "description": "Audio input map",
+   "values": [
+    "0 = No input",
+    "1 = Input1",
+    "2 = Input2",
+    "3 = Input3",
+    "4 = Input4",
+    "5 = Input5",
+    "6 = Input6",
+    "9 = Input9",
+    "10 = Input10",
+    "11 = Input11",
+    "12 = Input12"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_LEVEL",
+   "group": "GRP_AUDIO",
+   "request": "AL",
+   "answer": "AL",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 45,
+   "readOnly": false,
+   "description": "Audio input level",
+   "values": [
+    "Linear scale, init value is 0 dB"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_AUX_LEVEL",
+   "group": "GRP_AUDIO",
+   "request": "Al",
+   "answer": "Al",
+   "dims": [],
+   "min": 0,
+   "max": 255,
+   "default": 45,
+   "readOnly": false,
+   "description": "Audio auxiliary input level",
+   "values": [
+    "Linear scale, init value is 0 dB"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_BALANCE",
+   "group": "GRP_AUDIO",
+   "request": "Ab",
+   "answer": "Ab",
+   "dims": [
+    12
+   ],
+   "min": 0,
+   "max": 90,
+   "default": 45,
+   "readOnly": false,
+   "description": "Audio input balance",
+   "values": [
+    "0 = max to the left, 45 = centered,",
+    "90 = max to the right"
+   ],
+   "index1": [
+    "0 = Input1",
+    "1 = Input2",
+    "2 = Input3",
+    "3 = Input4",
+    "4 = Input5",
+    "5 = Input6",
+    "8 = Input9",
+    "9 = Input10",
+    "10 = Input11",
+    "11 = Input12"
+   ],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_AUX_BALANCE",
+   "group": "GRP_AUDIO",
+   "request": "AB",
+   "answer": "AB",
+   "dims": [],
+   "min": 0,
+   "max": 90,
+   "default": 45,
+   "readOnly": false,
+   "description": "Audio auxiliary input balance",
+   "values": [
+    "0 = max to the left, 45 = centered,",
+    "90 = max to the right"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_MUTE",
+   "group": "GRP_AUDIO",
+   "request": "Au",
+   "answer": "Au",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "readOnly": false,
+   "description": "Audio output Mute control",
+   "values": [
+    "1 = Mute."
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 49
+  },
+  {
+   "name": "AUDIO_MASTER_VOLUME",
+   "group": "GRP_AUDIO",
+   "request": "AV",
+   "answer": "AV",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 255,
+   "default": 255,
+   "readOnly": false,
+   "description": "Output Master volume",
+   "values": [
+    "0 = mute, 32 = -18dB , 255 = 0dB"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_MODE",
+   "group": "GRP_AUDIO",
+   "request": "Am",
+   "answer": "Am",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Audio stero mode",
+   "values": [
+    "0 = mono",
+    "1 = Stereo"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_DELAY",
+   "group": "GRP_AUDIO",
+   "request": "AD",
+   "answer": "AD",
+   "dims": [
+    2
+   ],
+   "min": 0,
+   "max": 80,
+   "default": 0,
+   "readOnly": false,
+   "description": "Delay between audio and video",
+   "values": [
+    "0 = no delay 500ms = max delay"
+   ],
+   "index1": [
+    "0 = Main output",
+    "1 = Preview output"
+   ],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_AUTO_DELAY",
+   "group": "GRP_AUDIO",
+   "request": "Ae",
+   "answer": "Ae",
+   "dims": [],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": false,
+   "description": "Automatic audio delay",
+   "values": [
+    "0 = r\u00e9glage manuel du Delay, 1 = reglage automatique du delay"
+   ],
+   "index1": [],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_SDI_CHAN_LEFT",
+   "group": "GRP_AUDIO",
+   "request": "Ac",
+   "answer": "Ac",
+   "dims": [
+    14
+   ],
+   "min": 0,
+   "max": 15,
+   "default": 0,
+   "readOnly": false,
+   "description": "ID of the Sdi channel to desembed for left channel",
+   "values": [
+    "0 = Group A \u2013 Channel 1",
+    "1 = Group A \u2013 Channel 2",
+    "2 = Group A \u2013 Channel 3",
+    "3 = Group A \u2013 Channel 4",
+    "4 = Group B \u2013 Channel 1",
+    "5 = Group B \u2013 Channel 2",
+    "6 = Group B \u2013 Channel 3",
+    "7 = Group B \u2013 Channel 4",
+    "8 = Group C \u2013 Channel 1",
+    "9 = Group C \u2013 Channel 2",
+    "10 = Group C \u2013 Channel 3",
+    "11 = Group C \u2013 Channel 4",
+    "12 = Group D \u2013 Channel 1",
+    "13 = Group D \u2013 Channel 2",
+    "14 = Group D \u2013 Channel 3",
+    "15 = Group D \u2013 Channel 4"
+   ],
+   "index1": [
+    "10 = Channel 11 \u2013 SDI 1",
+    "11 = Channel 11 \u2013 SDI 2",
+    "12 = Channel 11 \u2013 SDI 3",
+    "13 = Channel 12 \u2013 SDI 4"
+   ],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_SDI_CHAN_RIGHT",
+   "group": "GRP_AUDIO",
+   "request": "AC",
+   "answer": "AC",
+   "dims": [
+    14
+   ],
+   "min": 0,
+   "max": 15,
+   "default": 1,
+   "readOnly": false,
+   "description": "ID of the Sdi channel to desembed for right channel",
+   "values": [
+    "0 = Group A \u2013 Channel 1",
+    "1 = Group A \u2013 Channel 2",
+    "2 = Group A \u2013 Channel 3",
+    "3 = Group A \u2013 Channel 4",
+    "4 = Group B \u2013 Channel 1",
+    "5 = Group B \u2013 Channel 2",
+    "6 = Group B \u2013 Channel 3",
+    "7 = Group B \u2013 Channel 4",
+    "8 = Group C \u2013 Channel 1",
+    "9 = Group C \u2013 Channel 2",
+    "10 = Group C \u2013 Channel 3",
+    "11 = Group C \u2013 Channel 4",
+    "12 = Group D \u2013 Channel 1",
+    "13 = Group D \u2013 Channel 2",
+    "14 = Group D \u2013 Channel 3",
+    "15 = Group D \u2013 Channel 4"
+   ],
+   "index1": [
+    "10 = Channel 11 \u2013 SDI 1",
+    "11 = Channel 11 \u2013 SDI 2",
+    "12 = Channel 11 \u2013 SDI 3",
+    "13 = Channel 12 \u2013 SDI 4"
+   ],
+   "index2": [],
+   "page": 50
+  },
+  {
+   "name": "AUDIO_DESEMBEND_LOCKED",
+   "group": "GRP_AUDIO",
+   "request": "As",
+   "answer": "As",
+   "dims": [
+    14
+   ],
+   "min": 0,
+   "max": 1,
+   "default": 1,
+   "readOnly": true,
+   "description": "Information of audio channel presence for SDI inputs",
+   "values": [
+    "1 : Locked"
+   ],
+   "index1": [
+    "10 = Channel 11 \u2013 SDI 1",
+    "11 = Channel 11 \u2013 SDI 2",
+    "12 = Channel 11 \u2013 SDI 3",
+    "13 = Channel 12 \u2013 SDI 4"
+   ],
+   "index2": [],
+   "page": 51
+  }
+ ]
+}

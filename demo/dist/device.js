@@ -193,6 +193,52 @@
       // A still capture on real hardware writes a file and reports done; with
       // no video path here the only honest thing is to report it finished.
       if (m === 'STcen' && v === 1) return this._put('STcdo', [], 1);
+
+      if (this.meta.platform === 'pls300') return this._actPls(m, idx, v);
+    }
+
+    // ---- PLS300: the same two behaviours, on its [preset, layer] grid ----
+    //
+    // The guide describes these; no unit has been watched doing them. TAKE
+    // makes the next preset current (and the old current the previous one);
+    // COPY_CTRL copies preset COPY_FROM onto COPY_TO, which is how a recall or
+    // a save is spelled. Triggers the guide marks "auto reset" fall back to 0.
+
+    static PLS_AUTO_RESET = new Set(['TK', 'Nc', 'Ia', 'Ii', 'Sa', 'Ss', 'YR', 'YE', 'nr', 'ns', 'PG', 'Kc', 'PR']);
+
+    _plsPresetVars() {
+      if (this._pv) return this._pv;
+      const out = [];
+      for (const [m, d] of this.defs) if (!d.ro && d.dims.length === 2 && d.dims[0] === 7 && d.dims[1] === 10) out.push(m);
+      return (this._pv = out);
+    }
+
+    _plsCopy(from, to) {
+      for (const m of this._plsPresetVars()) for (let l = 0; l < 10; l++) this._put(m, [to, l], this._val(m, [from, l]));
+    }
+
+    _actPls(m, idx, v) {
+      if (m === 'TK' && v === 1) { this._plsCopy(0, 2); this._plsCopy(1, 0); }
+      if (m === 'Nc' && v === 1) this._plsCopy(this._val('Nf', []), this._val('Nt', []));
+      // A picture record or delete lands in the validity bitfields: logos
+      // 1–6 are bits 0–5 of PZ, frames (pictures 9–14) bits 0–5 of PF.
+      if (m === 'PG' && v === 1) {
+        const px = this._val('PX', []), mode = this._val('PM', []);
+        if (px >= 1) {
+          const frame = px >= 9, bit = 1 << ((frame ? px - 9 : px - 1) & 31);
+          const field = frame ? 'PF' : 'PZ';
+          const was = this._val(field, []);
+          if (mode === 2 || mode === 3 || mode === 4) {
+            this._put(field, [], was | bit);
+            this._put('Pw', [px], this._val('PW', [])); this._put('Ph', [px], this._val('PH', []));
+            this._put('Pn', [px], mode === 3 ? this._val('PN', []) : 1);
+          } else if (mode === 5) {
+            this._put(field, [], was & ~bit);
+          }
+        }
+      }
+      if (m === 'wQ') this._put('wS', [], v);
+      if (DemoDevice.PLS_AUTO_RESET.has(m) && v !== 0) this._put(m, idx, 0);
     }
 
     /** Every per-layer and per-background variable, taken from the table
@@ -284,6 +330,14 @@
 
   // The seam app.js looks for. Returning a factory (rather than an instance)
   // keeps the app's reconnect path working: it just builds another one.
-  const url = (document.currentScript && document.currentScript.dataset.fixtures) || './fixtures.json';
+  //
+  // `?device=<name>` picks `fixtures-<name>.json` instead of the recorded
+  // LiveCore session — the PLS300 surface has only a table-derived fixture
+  // (see the README), and this is how it is looked at.
+  const stamped = (document.currentScript && document.currentScript.dataset.fixtures) || './fixtures.json';
+  const pick = new URLSearchParams(location.search).get('device');
+  const url = pick && /^[a-z0-9]+$/i.test(pick)
+    ? stamped.replace(/fixtures\.json/, `fixtures-${pick.toLowerCase()}.json`)
+    : stamped;
   globalThis.OPENRCS_DEMO_DEVICE = () => new DemoDevice(url);
 })();

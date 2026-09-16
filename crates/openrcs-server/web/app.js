@@ -56,6 +56,7 @@ function deviceModel() {
   const pdev = store.val('PDEV');
   if (pdev != null) return MODELS[pdev] || `device ${pdev}`;
   const dev = store.val('DEV');
+  if (dev != null && isPls()) return PLS_MODELS[dev] || `PLS device ${dev}`;
   if (dev != null) return MIDRA_MODELS[dev] || `Midra device ${dev}`;
   return '—';
 }
@@ -482,7 +483,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
 window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
-const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'lpshow', 'lpcues', 'lpplan', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
+const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'lpshow', 'lpcues', 'lpplan', 'plslive', 'plslayers', 'plsmemories', 'plsinputs', 'plsoutputs', 'plsaudio', 'plspictures', 'plssystem', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
@@ -502,14 +503,14 @@ window.addEventListener('hashchange', () => {
 function onReady() {
   if (!isAwj()) {
     store.get('?');          // DEV
-    store.get('!');          // DEV_PLATFORM -> PDEV
+    if (!isPls()) store.get('!');   // DEV_PLATFORM -> PDEV; the PLS300 has no such special
   }
   VIEWS[effectiveView()].enter?.();
 }
 
 // How a platform name is shown: the series for an AWJ pick, the family
 // otherwise.
-const platformName = (plat) => AWJ_PLATFORMS[plat] || String(plat || '').toUpperCase();
+const platformName = (plat) => AWJ_PLATFORMS[plat] || (plat === 'pls300' ? 'PLS300' : String(plat || '').toUpperCase());
 
 function header() {
   // Before a processor is chosen there is no model and no platform. Showing the
@@ -543,6 +544,8 @@ function header() {
 }
 
 const NAV = [
+  { section: 'PLS300' },
+  ['plslive', 'Live'], ['plslayers', 'Layers'], ['plsmemories', 'Memories'], ['plsinputs', 'Inputs'], ['plsoutputs', 'Outputs'], ['plsaudio', 'Audio'], ['plspictures', 'Pictures'], ['plssystem', 'System'],
   { section: () => awjSeriesName() },
   ['lpshow', 'Show'], ['lpscreens', 'Screens'], ['lplayers', 'Layers'], ['lppresets', 'Presets'], ['lpcues', 'Cues'], ['lpmultiview', 'Multiviewer'], ['lpaudio', 'Audio'],
   ['lpinputs', 'Inputs'], ['lpoutputs', 'Outputs'], ['lpstills', 'Stills'], ['lpsetup', 'Setup'], ['lpsystem', 'System'], ['lpplan', 'Plan'], ['lpinspector', 'Inspector'],
@@ -584,6 +587,9 @@ const VIEW_REQUIRES = {
   lpsetup: () => awjDialect() === 'mng',
   lpshow: () => awjDialect() === 'mng',
 };
+// What a PLS300 keeps of the Midra/LiveCore surface: the tools that read the
+// variable table rather than name a variable.
+const PLS_SHARED_VIEWS = new Set(['shows', 'plan', 'inspector', 'console']);
 const viewSupported = (id) => {
   // Not a capability of the processor like the rest of this table — it is a
   // property of the machine the bridge runs on, and it is off unless that
@@ -592,11 +598,18 @@ const viewSupported = (id) => {
   // need to do before it can reach any processor at all.
   if (id === 'tailnet') return store.tailnetEnabled;
   if (!store.configured) return id === 'connection';
-  // The two families share the shell — header, nav, Connection — and nothing
+  // The families share the shell — header, nav, Connection — and nothing
   // else. A view built on the mnemonic variable table has nothing to render on
-  // a processor that has no such table, so each family sees only its own.
-  const lp = id.startsWith('lp');
-  if (isAwj() !== lp) return isAwj() ? id === 'connection' : !lp;
+  // a processor that has no such table, so each family sees only its own. The
+  // PLS300 is a third surface on the mnemonic table: its own views, plus the
+  // table-driven tools that work on any mnemonic platform.
+  const kind = id.startsWith('lp') ? 'awj' : id.startsWith('pls') ? 'pls' : 'mnem';
+  const fam = isAwj() ? 'awj' : isPls() ? 'pls' : 'mnem';
+  if (kind !== fam) {
+    if (id === 'connection') return true;
+    if (fam === 'pls' && kind === 'mnem') return PLS_SHARED_VIEWS.has(id);
+    return false;
+  }
   const req = VIEW_REQUIRES[id];
   if (!req || !store.meta) return true;
   return typeof req === 'function' ? req() : store.byMnem.has(req);
@@ -608,7 +621,7 @@ const effectiveView = () => {
   // A hash, a bookmark or a retarget can leave the surface on a view this
   // family does not have. Fall back to its first rather than to a blank frame.
   if (store.configured && !viewSupported(currentView)) {
-    return isAwj() ? 'lpscreens' : 'stage';
+    return isAwj() ? 'lpscreens' : isPls() ? 'plslive' : 'stage';
   }
   if (store.configured) return currentView;
   // Unconfigured, so everything else is an empty shell — except Tailnet, which
@@ -1860,13 +1873,13 @@ const SHOW_SCOPES = [
     groups: ['PRESET_MEMORIES', 'MASTER_PRESET_MEMORIES', 'CONFIDENCE_MEMORIES', 'MONITORING_LAYOUT_MEMORIES', 'GRP_PRESET_MEMORY'] },
   { id: 'inputs', label: 'Input setup',
     hint: 'Per-input settings and plug configuration.',
-    groups: ['INPUT', 'INPUT_SETTINGS', 'INPUT_SETTINGS_MEMORIES', 'GRP_INPUT', 'GRP_INPUT_SETTINGS', 'GRP_INPUT_SETTINGS_MEMORIES', 'GRP_INPUT_KEYING'] },
+    groups: ['INPUT', 'INPUT_SETTINGS', 'INPUT_SETTINGS_MEMORIES', 'GRP_INPUT', 'GRP_INPUT_SETTINGS', 'GRP_INPUT_SETTINGS_MEMORIES', 'GRP_INPUT_KEYING', 'GRP_KEYING', 'GRP_EDID'] },
   { id: 'outputs', label: 'Outputs & screens',
     hint: 'Output format and processing, screen composition and soft-edge blends.',
-    groups: ['OUTPUT', 'OUTPUT_SCREEN', 'OUTPUT_CONTROL', 'OUTPUT_AOI_SIZE', 'SCREEN', 'SCREEN_MIRROR', 'SOFTEDGE', 'MONITORING_LAYOUT', 'MONITORING__OUTPUTS', 'MONITORING_SCREEN', 'GRP_OUTPUT', 'GRP_VIDEO_OUT', 'GRP_SCREEN', 'GRP_SCREEN_CONFIG', 'GRP_SOFTEDGE', 'GRP_OUTPUT_FORMAT'] },
+    groups: ['OUTPUT', 'OUTPUT_SCREEN', 'OUTPUT_CONTROL', 'OUTPUT_AOI_SIZE', 'SCREEN', 'SCREEN_MIRROR', 'SOFTEDGE', 'MONITORING_LAYOUT', 'MONITORING__OUTPUTS', 'MONITORING_SCREEN', 'GRP_OUTPUT', 'GRP_VIDEO_OUT', 'GRP_SCREEN', 'GRP_SCREEN_CONFIG', 'GRP_SOFTEDGE', 'GRP_OUTPUT_FORMAT', 'GRP_SETTINGS', 'GRP_REFERENCE'] },
   { id: 'audio', label: 'Audio',
     hint: 'Audio input and output routing and levels.',
-    groups: ['GRP_AUDIO_INPUT', 'GRP_AUDIO_OUTPUT'] },
+    groups: ['GRP_AUDIO_INPUT', 'GRP_AUDIO_OUTPUT', 'GRP_AUDIO'] },
 ];
 
 // A variable is capturable within a scope when the device has it, it's writable,
@@ -9108,9 +9121,774 @@ VIEWS.tailnet = (() => {
 // keypad rather than in a text field, and the scan list is the path anyone will
 // actually use. On a desktop the same view is just a nicer way to retarget than
 // restarting the bridge with different arguments.
+// ================= Pulse PLS300 =================
+// The generation before Midra, on the same port with the same framing and
+// one- or two-letter mnemonics. One screen, two outputs (main and preview),
+// ten inputs numbered 1–6 and 9–12, and a preset grid: every PE_* variable is
+// indexed [preset, layer], the presets being 0 = current (on air), 1 = next
+// (preview), 2 = previous and 3–6 = the four user presets. A TAKE makes next
+// current. Everything below is spelled from the published Programmer's Guide
+// and has been driven only against a table-derived fixture — no PLS300 has
+// answered openrcs yet. See docs/NOTES.md before trusting any of it live.
+const isPls = () => store.meta?.platform === 'pls300';
+const PLS_MODELS = { 78: 'PLS300' };
+const PLS = { CUR: 0, NEXT: 1, PREV: 2, MEM: 3 };     // preset slots on index 1
+const PLS_PRESET_NAMES = ['Current', 'Next', 'Previous', 'Preset 1', 'Preset 2', 'Preset 3', 'Preset 4'];
+// Layer slots on index 2, mixer mode. Slots 4 and 5 are unassigned on this
+// model and 8 and 9 carry the two audio outputs, so none of those is drawn.
+// Matrix mode re-labels slot 1 and 3 as output 2's frame and live layer; the
+// table carries no variable that says which mode the unit is in, so the
+// surface draws the mixer layout and says so.
+const PLS_LAYERS = [
+  { l: 0, tag: 'FRAME', name: 'Background frame', kind: 'frame' },
+  { l: 2, tag: 'BG', name: 'Background live', kind: 'live' },
+  { l: 3, tag: 'PIP', name: 'PiP 1', kind: 'live' },
+  { l: 6, tag: 'LOGO 1', name: 'Logo 1', kind: 'logo' },
+  { l: 7, tag: 'LOGO 2', name: 'Logo 2', kind: 'logo' },
+];
+const plsLayer = (l) => PLS_LAYERS.find(x => x.l === l);
+// The twelve-wide input tables have no input 7 or 8: the unit has ten.
+const PLS_INPUT_SLOTS = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11];
+const plsInputNo = (slot) => slot + 1;      // what the operator sees, and IN's value
+const PLS_POS_BIAS = 32768;                  // pH/pV: 32768 = the output's left/top edge
+// The guide's own value tables, as [value, label] pairs because several skip
+// numbers. Labels are the guide's words with its typos and French corrected.
+const PLS_ENUMS = {
+  iK: [[0, 'SDTV composite'], [1, 'SDTV Y/C'], [2, 'RGBS TTL/analog'], [3, 'RGB SOG'], [4, 'YUV'], [5, 'Computer SOG'], [6, 'Computer H&V or composite'], [7, 'Computer B&W'], [8, 'DVI-D video RGB 16–235'], [9, 'DVI-D video YUV'], [10, 'DVI-D computer RGB 0–255'], [11, 'DVI-D computer RGB 16–235'], [12, 'SDI'], [13, 'Analog computer, H&V'], [14, 'Analog computer, composite TTL'], [15, 'Analog computer, composite analog'], [16, 'Analog RGB video, composite TTL'], [17, 'Analog RGB video, composite analog']],
+  sF: [[0, 'None'], [1, 'Invalid'], [2, 'Unknown'], [3, 'NTSC'], [4, 'PAL'], [5, 'SECAM'], [6, 'B&W'], [7, '480i'], [8, '576i'], [9, '480p'], [10, '576p'], [11, '720p'], [12, '1035i'], [13, '1080i'], [14, '1080p'], [15, '1080sF'], [16, 'VGA'], [17, '800×480'], [18, 'WVGA'], [19, 'SVGA'], [20, '1280×600'], [21, '720p RGB'], [22, 'XGA'], [23, 'WXGA'], [24, 'SWXGA'], [25, '800p RGB'], [26, 'SWXGA+'], [27, '1152×864'], [28, '900p RGB'], [29, '1600×900'], [30, '960p RGB'], [31, 'SXGA'], [32, '1360×1024'], [33, 'D-ILA 4:3'], [34, 'SXGA+'], [35, 'WSXGA+'], [36, '1080p RGB'], [37, '2K'], [38, 'UXGA'], [39, 'WUXGA'], [40, '1920×1440'], [41, 'QXGA'], [42, '1366×768']],
+  OF: [[0, 'PAL'], [1, 'NTSC'], [2, '480p'], [3, '576p'], [4, '720p (SMPTE 296M)'], [5, '1035i (SMPTE 260M)'], [6, '1080i (SMPTE 274M)'], [7, '1080p (SMPTE 274M)'], [8, '1080sF (SMPTE 274M)'], [9, '640×480'], [10, '848×480'], [11, '800×600'], [12, '1024×768'], [13, '1360×768'], [14, '1280×800'], [15, '1280×1024'], [16, '1400×1050'], [17, '1680×1050'], [18, '1600×1200'], [19, '1920×1200'], [20, '2048×1080'], [21, '1280×720'], [22, '1920×1080'], [23, '1920×1080 HD'], [24, '1920×1080 B'], [25, '1920×1080 C'], [26, '1440×900'], [27, '1280×768'], [28, '1366×800'], [29, '1366×768'], [30, 'Custom 1'], [31, 'Custom 2'], [32, 'Custom 3'], [33, 'Custom 4'], [34, 'Custom 5'], [35, 'Custom 6'], [36, 'Custom 7'], [37, 'Custom 8']],
+  OR: [[0, 'Custom'], [1, '23.97 Hz'], [2, '24 Hz'], [3, '25 Hz'], [4, '29.97 Hz'], [5, '30 Hz'], [6, '50 Hz'], [7, '59.94 Hz'], [8, '60 Hz'], [9, '72 Hz'], [10, '75 Hz'], [11, '85 Hz'], [12, '100 Hz']],
+  OC: [[0, 'Black'], [1, 'Navy blue'], [2, 'Blue'], [3, 'Green blue'], [4, 'Water blue'], [5, 'Turquoise'], [6, 'Dark green'], [7, 'Green'], [8, 'Lime'], [9, 'Light green'], [10, 'Dark red'], [11, 'Red'], [12, 'Tomato'], [13, 'Bordeaux'], [14, 'Brown'], [15, 'Chocolate'], [16, 'Orange'], [17, 'Gold'], [18, 'Yellow'], [19, 'Indigo'], [20, 'Purple'], [21, 'Light red'], [22, 'Fuchsia'], [23, 'Salmon'], [24, 'Rose'], [25, 'Olive green'], [26, 'Grey'], [27, 'Silver'], [28, 'Lavender'], [29, 'Beige'], [30, 'Azure'], [31, 'White'], [32, 'Custom (HSL below)']],
+  OP: [[0, 'No pattern'], [1, 'Vertical grey scale'], [2, 'Horizontal grey scale'], [3, 'Vertical colour bars'], [4, 'Horizontal colour bars'], [5, 'Grid'], [6, 'SMPTE'], [7, 'Burst'], [8, 'Centering']],
+  OA: [[0, 'RGBs'], [1, 'RGsB (SOG)'], [2, 'RGB H&V'], [3, 'YUV']],
+  OD: [[0, 'RGB 0–255 (full)'], [1, 'RGB 16–235 (reduced)'], [2, 'YUV']],
+  OS: [[0, 'H− V−'], [1, 'H− V+'], [2, 'H+ V−'], [3, 'H+ V+']],
+  oT: [[0, 'Cut'], [1, 'Clean cut'], [2, 'Fade'], [3, 'Slide'], [4, 'Wipe']],
+  oW: [[0, 'Left → right'], [1, 'Right → left'], [2, 'Bottom → top'], [3, 'Top → bottom'], [4, 'Vertical from/to centre'], [5, 'Horizontal from/to centre'], [6, 'Both from/to centre'], [7, 'SW → NE'], [8, 'SE → NW'], [9, 'NW → SE'], [10, 'NE → SW']],
+  EF: [[0, 'VGA'], [1, '800×480'], [2, 'WVGA'], [3, 'SVGA'], [4, '720p RGB'], [5, 'XGA'], [6, 'WXGA'], [7, 'SWXGA'], [8, '800p RGB'], [9, '1152×864'], [10, '900p RGB'], [11, '1600×900'], [12, '960p RGB'], [13, 'SXGA'], [14, '1360×1024'], [15, 'SXGA+'], [16, 'WSXGA+'], [17, '1080p RGB'], [18, '2K'], [19, 'UXGA'], [20, 'WUXGA'], [21, 'Custom']],
+  ER: [[0, '50 Hz'], [1, '60 Hz'], [2, '72 Hz'], [3, '75 Hz'], [4, '85 Hz'], [5, 'Custom']],
+  KT: [[0, 'No keying'], [1, 'Luma key'], [2, 'Chroma key'], [3, 'Luma key + DSK'], [4, 'Chroma key + DSK']],
+  PM: [[0, 'Normal'], [1, 'Recall'], [2, 'Record logo'], [3, 'Record animated logo'], [4, 'Record frame'], [5, 'Delete']],
+  PE: [[0, 'Free'], [1, 'Recalling'], [2, 'Storing'], [3, 'Format not compliant with the output'], [4, 'Deleting'], [5, 'Flash access error']],
+  PX: [[0, 'None'], [1, 'Logo 1'], [2, 'Logo 2'], [3, 'Logo 3'], [4, 'Logo 4'], [5, 'Logo 5'], [6, 'Logo 6'], [9, 'Frame 1'], [10, 'Frame 2'], [11, 'Frame 3'], [12, 'Frame 4'], [13, 'Frame 5'], [14, 'Frame 6']],
+  Xr: [[0, 'Analog input 1'], [1, 'Analog input 2'], [2, 'Analog input 3'], [3, 'Analog input 4'], [4, 'Analog input 5'], [5, 'Analog input 6'], [8, 'DVI input 1'], [9, 'DVI input 2'], [10, 'SDI input 1'], [11, 'SDI input 2'], [14, 'Back end 1'], [15, 'Back end 2']],
+  Xm: [[0, 'Internal'], [1, 'Follow ×½'], [2, 'Follow ×1'], [3, 'Follow ×2'], [4, 'Follow ×3'], [5, 'Asynchronous follow']],
+  si: [[0, '4:3 full screen'], [1, '4:3 carrying 16:9, letterboxed'], [2, '4:3 carrying 2.35, letterboxed'], [3, '4:3 carrying 16:9, no bars'], [4, '16:9 carrying 4:3, pillarboxed']],
+  so: [[0, 'Stretch to fit'], [1, 'Keep aspect, add bars'], [2, 'Keep aspect, crop'], [3, 'Keep aspect, no scaling']],
+  iS: [[0, 'Auto'], [1, 'NTSC (M, J)'], [2, 'PAL (B, D, G, H, I, N)'], [3, 'PAL (M)'], [4, 'PAL (N combination)'], [5, 'NTSC 4.43'], [6, 'SECAM'], [7, 'PAL 60']],
+  CK: [[0, 'None'], [1, 'Auto centering'], [2, 'Auto setting'], [3, 'Standby'], [4, 'Picture recording'], [5, 'Factory reset'], [6, 'User settings reset']],
+  TI: [[0, 'One-shot take'], [1, 'Two-shot take'], [2, 'Sequenced take']],
+  NQ: [[14, 'Live + PiP top left'], [15, 'Live + PiP top right'], [16, 'Live + PiP bottom left'], [17, 'Live + PiP bottom right'], [18, 'Frame + 2 PiPs side by side'], [19, 'Frame + 2 PiPs stacked']],
+  bS: [[0, 'None'], [1, 'Coloured edge']],
+  wR: [[0, '1200 baud'], [1, '2400 baud'], [2, '9600 baud'], [3, '19200 baud']],
+  nt: [[0, 'UDP'], [1, 'TCP'], [2, 'AMX']],
+  YK: [[0, 'Unlocked'], [1, 'Menu locked'], [2, 'Front panel locked']],
+};
+const plsEnumLabel = (m, v) => v == null ? '·' : (PLS_ENUMS[m]?.find(([n]) => n === v)?.[1] ?? String(v));
+// A <select> over one of the gapped enums above.
+function plsEnumSelect(mnem, idx, pairs = PLS_ENUMS[mnem]) {
+  const cur = store.val(mnem, ...idx);
+  const s = el('select', { onchange: (e) => store.set(mnem, idx, +e.target.value) });
+  for (const [v, label] of pairs) {
+    const opt = el('option', { value: v, text: label });
+    if (v === cur) opt.selected = true;
+    s.append(opt);
+  }
+  // A value the table names nowhere is still shown rather than snapped to the
+  // first option, which would write a different one back on the next change.
+  if (cur != null && !pairs.some(([v]) => v === cur)) s.append(el('option', { value: cur, text: String(cur), selected: true }));
+  return s;
+}
+const plsKv = (label, value) => el('div', { class: 'kv' }, el('span', { class: 'k', text: label }), typeof value === 'string' ? el('span', { class: 'v val', text: value }) : value);
+const plsHz = (v) => v == null || v === 0 ? '·' : (v / 100).toFixed(2) + ' Hz';
+const plsInputHasSignal = (slot) => store.val('sc', slot) === 1 && (store.val('sF', slot) ?? 0) > 2;
+// The choices for a layer's IN, by what the slot carries: an input number for
+// a live layer, a frame or logo number otherwise (their validity bitfields
+// PF / PZ say which exist).
+function plsSourceOptions(kind, cur) {
+  const out = [[0, '— none —']];
+  if (kind === 'live') {
+    for (const slot of PLS_INPUT_SLOTS) {
+      const n = plsInputNo(slot);
+      const off = store.val('iu', slot) === 0;
+      out.push([n, `IN ${n}` + (off ? ' — disabled' : plsInputHasSignal(slot) ? '' : ' — no signal')]);
+    }
+  } else {
+    const bits = store.val(kind === 'frame' ? 'PF' : 'PZ') ?? 0;
+    for (let n = 1; n <= 6; n++) out.push([n, `${kind === 'frame' ? 'Frame' : 'Logo'} ${n}` + (flagOn(bits, n - 1) ? '' : ' — empty')]);
+  }
+  if (cur != null && !out.some(([v]) => v === cur)) out.push([cur, String(cur)]);
+  return out;
+}
+function plsSourceName(kind, v) {
+  if (v == null) return '·';
+  if (v === 0) return '— none —';
+  return kind === 'live' ? `IN ${v}` : `${kind === 'frame' ? 'Frame' : 'Logo'} ${v}`;
+}
+// Every writable per-layer variable, off the table: the PE_* group is exactly
+// the [7, 10] grid, so a preset copy or a fixture covers a newly added leaf
+// without a list to maintain.
+function plsPresetVars() {
+  const out = [];
+  for (const [m, def] of store.byMnem) if (def.group === 'GRP_PRESET_ELEMENT' && !def.ro) out.push(m);
+  return out;
+}
+function plsFetchPreset(p) { for (const m of plsPresetVars()) for (const { l } of PLS_LAYERS) store.get(m, [p, l]); }
+// Preset copy is the unit's memory verb: COPY_FROM, COPY_TO, then COPY_CTRL
+// fires it. Recall is a copy into next; save is a copy out of current or next.
+function plsCopy(from, to) { store.set('Nf', [], from); store.set('Nt', [], to); store.set('Nc', [], 1); }
+function plsTake() { CONFIDENCE.autoSnapshot('before take'); store.set('TK', [], 1); }
+// Position and size, in output pixels, of one layer of one preset.
+function plsRect(p, l) {
+  return {
+    left: (store.val('pH', p, l) ?? PLS_POS_BIAS) - PLS_POS_BIAS,
+    top: (store.val('pV', p, l) ?? PLS_POS_BIAS) - PLS_POS_BIAS,
+    w: store.val('pW', p, l) ?? 0,
+    h: store.val('pS', p, l) ?? 0,
+  };
+}
+function plsSetRect(p, l, r) {
+  throttledSet('pH', [p, l], Math.round(r.left + PLS_POS_BIAS));
+  throttledSet('pV', [p, l], Math.round(r.top + PLS_POS_BIAS));
+  throttledSet('pW', [p, l], Math.max(0, Math.round(r.w)));
+  throttledSet('pS', [p, l], Math.max(0, Math.round(r.h)));
+}
+const plsOutputPx = (o = 0) => ({ w: store.val('OH', o) || 1600, h: store.val('OV', o) || 1200 });
+
+// A preview of one preset: the layer rectangles over the main output, to scale.
+function plsPresetCanvas(p, width, opts = {}) {
+  const s = plsOutputPx(0);
+  const scale = width / s.w, height = Math.round(s.h * scale);
+  const cv = el('div', { class: 'screen-canvas', style: `width:${width}px;height:${height}px` });
+  PLS_LAYERS.forEach((L, z) => {
+    const src = store.val('IN', p, L.l);
+    const on = (src ?? 0) > 0;
+    if (!on && opts.sel !== L.l) return;
+    const r = plsRect(p, L.l);
+    const box = el('div', {
+      class: 'lrect' + (opts.sel === L.l ? ' sel' : '') + (on ? '' : ' off'),
+      style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${z + 1}`,
+      onpointerdown: opts.onMove ? (e) => opts.onMove(e, L.l, scale) : null,
+      onclick: opts.onSelect ? () => opts.onSelect(L.l) : null,
+    }, el('span', { class: 'lrect-tag', text: `${L.tag}${on ? ' · ' + plsSourceName(L.kind, src) : ''}` }));
+    if (opts.onResize) for (const c of ['nw', 'ne', 'sw', 'se']) box.append(el('div', { class: 'handle ' + c, onpointerdown: (e) => opts.onResize(e, L.l, scale, c) }));
+    cv.append(box);
+  });
+  return cv;
+}
+
+// ---------- PLS300 Live ----------
+VIEWS.plslive = (() => {
+  function enter() {
+    for (const m of ['TA', 'TI', 'NT', 'NC', 'YT', 'Ys', 'YD', 'Ym', 'OB', 'PF', 'PZ', 'OH', 'OV']) store.scan(m);
+    for (const m of ['IN', 'pH', 'pV', 'pW', 'pS']) for (const p of [PLS.CUR, PLS.NEXT]) for (const { l } of PLS_LAYERS) store.get(m, [p, l]);
+    for (const m of ['Sf', 'iu', 'sc', 'sF']) store.scan(m);
+  }
+  function layerRow(L) {
+    const cur = store.val('IN', PLS.CUR, L.l), next = store.val('IN', PLS.NEXT, L.l);
+    return el('div', { class: 'layer' + ((next ?? 0) > 0 ? ' on' : '') },
+      el('span', { class: 'tag', text: L.tag }),
+      el('div', { class: 'row' },
+        el('span', { class: 'src', title: 'On air now', text: plsSourceName(L.kind, cur) }),
+        el('span', { class: 'hint', text: '→' }),
+        plsEnumSelect('IN', [PLS.NEXT, L.l], plsSourceOptions(L.kind, next))),
+      el('span', { class: 'hint', text: L.name }));
+  }
+  function presets() {
+    return el('div', { class: 'mem-grid' }, ...[0, 1, 2, 3].map(n => {
+      const p = PLS.MEM + n;
+      const used = PLS_LAYERS.some(L => (store.val('IN', p, L.l) ?? 0) > 0);
+      return el('button', { class: 'slot' + (used ? ' valid' : ''), title: 'Recall into Next', onclick: () => plsCopy(p, PLS.NEXT) },
+        el('span', { class: 'num', text: String(n + 1) }), el('span', { class: 'lbl', text: used ? 'recall' : 'empty' }));
+    }));
+  }
+  function render() {
+    const ready = store.val('TA');
+    const tbar = store.val('NT');
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Live' }),
+        el('span', { class: 'hint', text: 'Next → Current. From the Programmer’s Guide; not yet driven against a PLS300.' })),
+      el('div', { class: 'split-wide' },
+        el('div', {},
+          el('div', { class: 'panel' },
+            el('div', { class: 'row' }, el('h2', 'Take'), el('div', { class: 'spacer' }),
+              boolChip(ready, 'take ready', 'take busy'),
+              el('span', { class: 'hint', text: plsEnumLabel('TI', store.val('TI')) })),
+            el('div', { class: 'takebar' },
+              el('div', { class: 'tbar' },
+                el('label', { class: 'field slider' },
+                  el('span', {}, 'T-bar', el('b', { class: 'sv', text: tbar == null ? '·' : (tbar / 100).toFixed(0) + '%' })),
+                  el('input', { type: 'range', min: 0, max: 10000, step: 50, value: tbar ?? 0, disabled: store.val('YD') === 0,
+                    onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+                    oninput: (e) => { throttledSet('NT', [], +e.target.value); e.target.parentNode.querySelector('.sv').textContent = (e.target.value / 100).toFixed(0) + '%'; } }))),
+              el('button', { class: 'btn pgm take-btn', onclick: plsTake }, 'TAKE')),
+            el('div', { class: 'row', style: 'margin-top:10px' },
+              // The RCS's Stepback: the look before the last take, back on air.
+              // The unit keeps it as preset 2, so this is a copy into next and a take.
+              el('button', { class: 'btn ghost', onclick: () => { plsCopy(PLS.PREV, PLS.NEXT); plsTake(); } }, 'Step back'),
+              toggleBtn('Auto-take on source change', 'YT', []),
+              toggleBtn('Preset toggle after take', 'Ys', []),
+              toggleBtn('T-bar enabled', 'YD', [], 'pvw'))),
+          el('div', { class: 'panel' },
+            el('div', { class: 'row' }, el('h2', 'Layers'), el('div', { class: 'spacer' }),
+              el('span', { class: 'hint', text: 'current → next' })),
+            el('div', { class: 'layers' }, ...PLS_LAYERS.map(layerRow)),
+            el('div', { class: 'row', style: 'margin-top:10px' },
+              el('span', { class: 'hint', text: 'Quick layout:' }),
+              ...PLS_ENUMS.NQ.map(([v, label]) => el('button', { class: 'btn ghost', onclick: () => store.set('NQ', [], v) }, label)))),
+          el('div', { class: 'panel' },
+            el('h2', 'Preview output shows'),
+            el('div', { class: 'seg' }, ...PLS_LAYERS.map(L => el('button', { class: store.val('NC') === L.l ? 'on recall' : '', onclick: () => store.set('NC', [], L.l) }, L.name))),
+            el('div', { class: 'hint pad', text: 'PREVIEWED_LAYER: the preview output carries one layer of the next preset at a time.' }))),
+        el('div', {},
+          el('div', { class: 'panel' }, el('h2', 'Next preset'),
+            el('div', { class: 'canvas-wrap' }, plsPresetCanvas(PLS.NEXT, 340)),
+            el('div', { class: 'hint pad', text: 'Main output, to scale. Edit geometry in Layers.' })),
+          el('div', { class: 'panel' }, el('h2', 'User presets'), presets(),
+            el('div', { class: 'hint pad', text: 'Tap to recall into Next, then TAKE. Save and inspect them in Memories.' })),
+          el('div', { class: 'panel' }, el('h2', 'Freeze'),
+            el('div', { class: 'seg' },
+              el('button', { class: store.val('Ym') === 0 ? 'on recall' : '', onclick: () => store.set('Ym', [], 0) }, 'By input'),
+              el('button', { class: store.val('Ym') === 1 ? 'on take' : '', onclick: () => store.set('Ym', [], 1) }, 'All inputs')),
+            el('div', { class: 'row', style: 'margin-top:8px' },
+              ...PLS_INPUT_SLOTS.map(slot => el('button', {
+                class: 'btn ghost' + (store.val('Sf', slot) === 1 ? ' pgm' : ''),
+                onclick: () => store.set('Sf', [slot], store.val('Sf', slot) === 1 ? 0 : 1),
+              }, String(plsInputNo(slot)))))),
+          el('div', { class: 'panel' }, el('h2', 'Output black'),
+            el('div', { class: 'row' }, toggleBtn('Main', 'OB', [0]), toggleBtn('Preview', 'OB', [1]))))));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Layers ----------
+VIEWS.plslayers = (() => {
+  let preset = PLS.NEXT;
+  let sel = 3;                                   // the PiP, the layer that moves
+  function enter() {
+    store.scan('OH'); store.scan('OV'); store.scan('PF'); store.scan('PZ');
+    for (const m of ['iu', 'sc', 'sF']) store.scan(m);
+    plsFetchPreset(preset);
+  }
+  function dragMove(e, l, scale) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget;
+    const sx = e.clientX, sy = e.clientY, r0 = plsRect(preset, l);
+    const move = (ev) => {
+      const r = { ...r0, left: r0.left + (ev.clientX - sx) / scale, top: r0.top + (ev.clientY - sy) / scale };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      plsSetRect(preset, l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function dragResize(e, l, scale, corner) {
+    e.preventDefault(); e.stopPropagation();
+    beginDrag(); sel = l;
+    const box = e.currentTarget.parentNode;
+    const sx = e.clientX, sy = e.clientY, r0 = plsRect(preset, l);
+    const west = corner.includes('w'), north = corner.includes('n');
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+      let left = r0.left, right = r0.left + r0.w, top = r0.top, bot = r0.top + r0.h;
+      if (west) left = Math.min(right - 16, r0.left + dx); else right = Math.max(left + 16, right + dx);
+      if (north) top = Math.min(bot - 16, r0.top + dy); else bot = Math.max(top + 16, bot + dy);
+      const r = { left, top, w: right - left, h: bot - top };
+      box.style.left = r.left * scale + 'px'; box.style.top = r.top * scale + 'px';
+      box.style.width = r.w * scale + 'px'; box.style.height = r.h * scale + 'px';
+      plsSetRect(preset, l, r);
+    };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }
+  function fill() { const s = plsOutputPx(0); plsSetRect(preset, sel, { left: 0, top: 0, w: s.w, h: s.h }); store.notify(); }
+  function quad(ix) {
+    const s = plsOutputPx(0), w = s.w / 2, h = s.h / 2;
+    plsSetRect(preset, sel, { left: (ix % 2) * w, top: (ix < 2 ? 0 : 1) * h, w, h }); store.notify();
+  }
+  function stack() {
+    return el('div', { class: 'layers' }, ...[...PLS_LAYERS].reverse().map(L => {
+      const src = store.val('IN', preset, L.l);
+      return el('div', { class: 'layer' + ((src ?? 0) > 0 ? ' on' : '') + (sel === L.l ? ' sel' : ''), onclick: () => { sel = L.l; store.notify(); } },
+        el('span', { class: 'tag', text: L.tag }),
+        el('span', { class: 'src', text: plsSourceName(L.kind, src) }),
+        el('span', { class: 'hint', text: L.name }));
+    }));
+  }
+  function editor() {
+    const L = plsLayer(sel), i = [preset, sel];
+    const s = plsOutputPx(0);
+    return el('div', { class: 'editor' },
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Source', plsEnumSelect('IN', i, plsSourceOptions(L.kind, store.val('IN', ...i)))),
+        el('label', { class: 'field' }, 'Smooth move', checkbox(store.val('ps', ...i) === 1, v => store.set('ps', i, v ? 1 : 0)))),
+      el('div', { class: 'row' },
+        el('span', { class: 'hint', text: 'Snap:' }),
+        el('button', { class: 'btn ghost', onclick: fill }, 'Full'),
+        ...['◰', '◳', '◱', '◲'].map((g, k) => el('button', { class: 'btn ghost', onclick: () => quad(k) }, g))),
+      el('div', { class: 'grid2' },
+        bind('Left', 'pH', i, PLS_POS_BIAS - s.w, PLS_POS_BIAS + s.w, 1, v => (v - PLS_POS_BIAS) + ' px'),
+        bind('Top', 'pV', i, PLS_POS_BIAS - s.h, PLS_POS_BIAS + s.h, 1, v => (v - PLS_POS_BIAS) + ' px'),
+        bind('Width', 'pW', i, 0, s.w, 1, v => v + ' px'),
+        bind('Height', 'pS', i, 0, s.h, 1, v => v + ' px'),
+        bind('Opacity', 'pA', i, 0, 255, 1, v => Math.round(v / 255 * 100) + '%')),
+      el('div', { class: 'sub-head' }, 'Crop'),
+      el('div', { class: 'grid2' },
+        bind('Left', 'CH', i, null, null, 256, v => Math.round(v / 655.35) + '%'),
+        bind('Top', 'CV', i, null, null, 256, v => Math.round(v / 655.35) + '%'),
+        bind('Width', 'CW', i, null, null, 256, v => Math.round(v / 655.35) + '%'),
+        bind('Height', 'CS', i, null, null, 256, v => Math.round(v / 655.35) + '%')),
+      el('div', { class: 'sub-head' }, 'Border'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Style', plsEnumSelect('bS', i)),
+        el('label', { class: 'field' }, 'Colour', el('input', { type: 'number', class: 'num', min: 0, max: 544, value: store.val('bC', ...i) ?? 33,
+          onchange: (e) => store.set('bC', i, Math.max(0, Math.min(544, +e.target.value || 0))) })),
+        el('span', { class: 'hint', text: 'a colour number from the unit’s own palette' })),
+      el('div', { class: 'grid2' },
+        bind('Border opacity', 'bA', i, 0, 255, 1, v => Math.round(v / 255 * 100) + '%'),
+        bind('Border width', 'bH', i, 0, 127, 1, v => v + ' px'),
+        bind('Border height', 'bV', i, 0, 127, 1, v => v + ' px')),
+      el('div', { class: 'sub-head' }, 'Opening'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Effect', plsEnumSelect('oT', i)),
+        el('label', { class: 'field' }, 'Direction', plsEnumSelect('oW', i))),
+      bind('Duration', 'oD', i, 0, 255, 1, v => (v / 10).toFixed(1) + ' s'),
+      el('div', { class: 'sub-head' }, 'Closing'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Effect', plsEnumSelect('cT', i, PLS_ENUMS.oT)),
+        el('label', { class: 'field' }, 'Direction', plsEnumSelect('cW', i, PLS_ENUMS.oW))),
+      bind('Duration', 'cD', i, 0, 255, 1, v => (v / 10).toFixed(1) + ' s'));
+  }
+  function render() {
+    const L = plsLayer(sel);
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Layers' }),
+        el('span', { class: 'hint', text: 'Drag to move, corners to resize. Mixer layout; matrix mode re-labels the slots.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Preset',
+            el('select', { onchange: (e) => { preset = +e.target.value; enter(); store.notify(); } },
+              ...PLS_PRESET_NAMES.map((n, p) => { const o = el('option', { value: p, text: n }); if (p === preset) o.selected = true; return o; }))),
+          preset === PLS.CUR ? el('span', { class: 'hint', text: 'Editing the current preset changes the picture on air at once.' }) : null,
+          el('div', { class: 'spacer' }),
+          preset === PLS.NEXT ? el('button', { class: 'btn pgm', onclick: plsTake }, 'TAKE') : null)),
+      el('div', { class: 'split-wide' },
+        el('div', {},
+          el('div', { class: 'panel' },
+            el('div', { class: 'canvas-wrap' }, plsPresetCanvas(preset, 720, { sel, onMove: dragMove, onResize: dragResize, onSelect: (l) => { sel = l; store.notify(); } })),
+            el('div', { class: 'hint pad', text: `Main output ${plsOutputPx(0).w}×${plsOutputPx(0).h}. Position is the layer’s top-left corner; the guide gives no z-order control.` })),
+          el('div', { class: 'panel' }, el('h2', `${L.name} · ${PLS_PRESET_NAMES[preset]}`), editor())),
+        el('div', { class: 'panel' }, el('h2', 'Stack'), stack())));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Memories ----------
+VIEWS.plsmemories = (() => {
+  let mode = 'recall';        // 'recall' | 'take' | 'save'
+  let saveFrom = PLS.CUR;
+  let inspect = PLS.MEM;
+  let copyFrom = PLS.CUR, copyTo = PLS.MEM;
+  const presetSelect = (val, on) => el('select', { onchange: (e) => on(+e.target.value) },
+    ...PLS_PRESET_NAMES.map((n, p) => { const o = el('option', { value: p, text: n }); if (p === val) o.selected = true; return o; }));
+  function enter() {
+    for (const p of [PLS.CUR, PLS.NEXT, PLS.PREV, 3, 4, 5, 6]) for (const { l } of PLS_LAYERS) store.get('IN', [p, l]);
+    plsFetchPreset(inspect);
+    store.scan('OH'); store.scan('OV');
+  }
+  function tap(p) {
+    if (mode === 'save') { plsCopy(saveFrom, p); return; }
+    plsCopy(p, PLS.NEXT);
+    // The copy is the unit's own verb and answers with the changed variables;
+    // the take goes after it on the same link, in order.
+    if (mode === 'take') plsTake();
+  }
+  function slot(p, label) {
+    const used = PLS_LAYERS.some(L => (store.val('IN', p, L.l) ?? 0) > 0);
+    return el('button', { class: 'slot' + (used ? ' valid' : '') + (inspect === p ? ' sel' : ''),
+      onclick: () => tap(p), oncontextmenu: (e) => { e.preventDefault(); inspect = p; enter(); store.notify(); } },
+      el('span', { class: 'num', text: label }), el('span', { class: 'lbl', text: used ? PLS_LAYERS.filter(L => (store.val('IN', p, L.l) ?? 0) > 0).map(L => L.tag).join(' ') : 'empty' }));
+  }
+  function render() {
+    return el('div', { class: 'mode-' + mode },
+      el('div', { class: 'view-head' }, el('h1', { text: 'Memories' }),
+        el('span', { class: 'hint', text: 'Four user presets in the unit, plus the previous look. Recall lands in Next.' })),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' },
+          el('div', { class: 'seg' },
+            el('button', { class: mode === 'recall' ? 'on recall' : '', onclick: () => { mode = 'recall'; store.notify(); } }, 'Recall'),
+            el('button', { class: mode === 'take' ? 'on take' : '', onclick: () => { mode = 'take'; store.notify(); } }, 'Recall + take'),
+            el('button', { class: mode === 'save' ? 'on save' : '', onclick: () => { mode = 'save'; store.notify(); } }, 'Save')),
+          mode === 'save' ? el('label', { class: 'field' }, 'Save from',
+            el('div', { class: 'seg' },
+              el('button', { class: saveFrom === PLS.CUR ? 'on take' : '', onclick: () => { saveFrom = PLS.CUR; store.notify(); } }, 'Current'),
+              el('button', { class: saveFrom === PLS.NEXT ? 'on recall' : '', onclick: () => { saveFrom = PLS.NEXT; store.notify(); } }, 'Next'))) : null,
+          el('div', { class: 'spacer' }),
+          el('span', { class: 'hint', text: 'right-click a slot to inspect it' })),
+        el('div', { class: 'mem-grid', style: 'margin-top:10px' },
+          ...[0, 1, 2, 3].map(n => slot(PLS.MEM + n, String(n + 1))),
+          mode === 'save' ? null : slot(PLS.PREV, 'PREV'))),
+      el('div', { class: 'split-wide' },
+        el('div', { class: 'panel' }, el('h2', `${PLS_PRESET_NAMES[inspect]}`),
+          el('div', { class: 'canvas-wrap' }, plsPresetCanvas(inspect, 480)),
+          el('div', { class: 'layers', style: 'margin-top:10px' }, ...PLS_LAYERS.map(L => el('div', { class: 'layer' + ((store.val('IN', inspect, L.l) ?? 0) > 0 ? ' on' : '') },
+            el('span', { class: 'tag', text: L.tag }), el('span', { class: 'src', text: plsSourceName(L.kind, store.val('IN', inspect, L.l)) }), el('span', { class: 'hint', text: L.name }))))),
+        el('div', { class: 'panel' }, el('h2', 'Copy any preset'),
+          el('div', { class: 'hint pad', text: 'COPY_FROM, COPY_TO, then COPY_CTRL — the verb every recall and save above is made of. A copy into Current changes the picture on air.' }),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'From', presetSelect(copyFrom, v => { copyFrom = v; })),
+            el('label', { class: 'field' }, 'To', presetSelect(copyTo, v => { copyTo = v; })),
+            el('button', { class: 'btn', onclick: () => plsCopy(copyFrom, copyTo) }, 'Copy')))));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Inputs ----------
+VIEWS.plsinputs = (() => {
+  let sel = null;
+  const STATUS = ['sc', 'sF', 'sw', 'st', 'sf', 'sl', 'ss', 'sn', 'sK'];
+  const SETTINGS = ['SH', 'SV', 'Sw', 'Sh', 'Sg', 'Sc', 'Sr', 'Su', 'SS', 'ST', 'si', 'so', 'sO', 'SF', 'Sn', 'Sp', 'Sm', 'iS', 'iV', 'il', 'iH', 'iC', 'KT', 'KR', 'KG', 'KB', 'KH', 'KL', 'KM', 'KA', 'KI', 'SI', 'SJ', 'SK', 'SL'];
+  function enter() {
+    for (const m of ['iu', 'iK', 'Sf', ...STATUS]) store.scan(m);
+    for (const m of ['EF', 'ER', 'ES']) store.scan(m);
+    store.scan('Yf'); store.scan('YL'); store.scan('Kg');
+    if (sel != null) for (const m of SETTINGS) store.get(m, [sel]);
+  }
+  function row(slot) {
+    const on = store.val('iu', slot) !== 0;
+    const locked = plsInputHasSignal(slot);
+    const w = store.val('sw', slot), h = store.val('st', slot);
+    return el('tr', { class: (on ? '' : 'dim') + (sel === slot ? ' sel-row' : ''), style: 'cursor:pointer', onclick: () => { sel = slot; enter(); store.notify(); } },
+      el('td', { text: 'IN ' + plsInputNo(slot) }),
+      el('td', {}, el('button', { class: 'btn ghost' + (on ? '' : ' pgm'), onclick: (e) => { e.stopPropagation(); store.set('iu', [slot], on ? 0 : 1); } }, on ? 'Enabled' : 'Disabled')),
+      el('td', { text: plsEnumLabel('iK', store.val('iK', slot)) }),
+      el('td', {}, boolChip(store.val('sc', slot) == null ? null : locked ? 1 : 0, plsEnumLabel('sF', store.val('sF', slot)), 'no signal')),
+      el('td', { class: 'val', text: (w && h) ? `${w}×${h}` : '·' }),
+      el('td', { class: 'val', text: plsHz(store.val('sf', slot)) }),
+      el('td', {},
+        el('button', { class: 'btn ghost' + (store.val('Sf', slot) === 1 ? ' pgm' : ''), onclick: (e) => { e.stopPropagation(); store.set('Sf', [slot], store.val('Sf', slot) === 1 ? 0 : 1); } }, 'Freeze'),
+        el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: (e) => { e.stopPropagation(); store.set('Ii', [slot], 1); } }, 'Autoset')));
+  }
+  function settings() {
+    const i = [sel];
+    const n = plsInputNo(sel);
+    // The guide gives HDCP to inputs 11 and 12 and, two pages on, names inputs
+    // 9 and 10 as the DVI ones; the manual's rear panel agrees with the latter.
+    // Go by what the input reports itself to be, and let a real unit answer
+    // E11 if the slot turns out not to carry it.
+    const dvi = (store.val('iK', sel) ?? 0) >= 8 && store.val('iK', sel) <= 11;
+    const kt = store.val('KT', sel) ?? 0;
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', `Input ${n}`), el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ghost', onclick: () => store.set('Sa', i, 1) }, 'Auto-centre'),
+        el('button', { class: 'btn ghost', onclick: () => store.set('Ss', i, 1) }, 'Reset settings')),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Signal type', plsEnumSelect('iK', i)),
+        el('label', { class: 'field' }, 'SD standard', plsEnumSelect('iS', i)),
+        el('label', { class: 'field' }, 'Source', enumSelect('iV', i, ['Stable (DVD)', 'VCR'])),
+        el('label', { class: 'field' }, 'Sync load', enumSelect('il', i, ['Hi-Z', '75 Ω']))),
+      el('div', { class: 'sub-head' }, 'Picture'),
+      el('div', { class: 'grid2' },
+        bind('Brightness', 'Sg', i), bind('Contrast', 'Sc', i), bind('Colour', 'Sr', i), bind('Hue', 'Su', i),
+        bind('Sharpness / motion', 'Sm', i, 0, 15, 1, v => v === 15 ? 'min correction' : v === 0 ? 'max correction' : String(v))),
+      el('div', { class: 'sub-head' }, 'Geometry'),
+      el('div', { class: 'grid2' },
+        bind('H position', 'SH', i, 0, 2048, 1, v => (v - 1024) + ''), bind('V position', 'SV', i, 0, 2048, 1, v => (v - 1024) + ''),
+        bind('H size', 'Sw', i, 0, 4096, 1, v => (v - 2048) + ''), bind('V size', 'Sh', i, 0, 4096, 1, v => (v - 2048) + ''),
+        bind('Phase', 'SS', i, 0, 31), bind('Total pixels per line', 'ST', i, 0, 4095)),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Input aspect', plsEnumSelect('si', i)),
+        el('label', { class: 'field' }, 'Shown as', plsEnumSelect('so', i)),
+        el('label', { class: 'field' }, 'Overscan', checkbox(store.val('sO', sel) === 1, v => store.set('sO', i, v ? 1 : 0))),
+        el('label', { class: 'field' }, 'Force 4:3 on PAL/NTSC', checkbox(store.val('SF', sel) === 1, v => store.set('SF', i, v ? 1 : 0))),
+        el('label', { class: 'field' }, '2:2 pulldown', checkbox(store.val('Sn', sel) === 1, v => store.set('Sn', i, v ? 1 : 0))),
+        el('label', { class: 'field' }, '3:2 pulldown', checkbox(store.val('Sp', sel) === 1, v => store.set('Sp', i, v ? 1 : 0)))),
+      el('div', { class: 'sub-head' }, 'Crop'),
+      el('div', { class: 'grid2' },
+        bind('Left', 'SI', i, null, null, 256, v => Math.round(v / 655.35) + '%'), bind('Top', 'SJ', i, null, null, 256, v => Math.round(v / 655.35) + '%'),
+        bind('Width', 'SK', i, null, null, 256, v => Math.round(v / 655.35) + '%'), bind('Height', 'SL', i, null, null, 256, v => Math.round(v / 655.35) + '%')),
+      el('div', { class: 'sub-head' }, 'Keying'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Type', plsEnumSelect('KT', i)),
+        kt ? el('label', { class: 'field' }, 'Invert', checkbox(store.val('KI', sel) === 1, v => store.set('KI', i, v ? 1 : 0))) : null,
+        kt ? toggleBtn('Colour grabber', 'Kg', []) : null,
+        kt && store.val('Kg') === 1 ? el('button', { class: 'btn', onclick: () => store.set('Kc', [], 1) }, 'Grab colour') : null),
+      kt ? el('div', { class: 'grid2' },
+        bind('Red level', 'KR', i), bind('Green level', 'KG', i), bind('Blue level', 'KB', i), bind('Tolerance', 'KH', i),
+        bind('Luma low', 'KL', i), bind('Luma high', 'KM', i), bind('DSK background', 'KA', i)) : null,
+      kt && store.val('Kg') === 1 ? el('div', { class: 'grid2' },
+        bind('Grabber H', 'Kh', [], 0, 65535, 256, v => Math.round(v / 655.35) + '%'), bind('Grabber V', 'Kv', [], 0, 65535, 256, v => Math.round(v / 655.35) + '%')) : null,
+      dvi ? el('div', {}, el('div', { class: 'sub-head' }, 'HDCP'),
+        el('div', { class: 'row' },
+          toggleBtn('HDCP support', 'iH', i, 'pvw'),
+          el('label', { class: 'field' }, 'Cable length', enumSelect('iC', i, ['under 10 m', '5–20 m', 'over 15 m'])))) : null);
+  }
+  function edid() {
+    // Four plugs carry an EDID: analog 1 and 2, DVI-D 1 and 2 (index 2 is unused).
+    const plugs = [[0, 'Analog 1'], [1, 'Analog 2'], [3, 'DVI-D 1'], [4, 'DVI-D 2']];
+    return el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'EDID'),
+      el('table', { class: 'grid' },
+        el('thead', el('tr', ...['Plug', 'Preferred format', 'Rate', 'State', ''].map(h => el('th', { text: h })))),
+        el('tbody', ...plugs.map(([k, name]) => el('tr', {},
+          el('td', { text: name }),
+          el('td', {}, plsEnumSelect('EF', [k])),
+          el('td', {}, plsEnumSelect('ER', [k])),
+          el('td', { text: ['ready', 'saving', 'reading'][store.val('ES', k)] ?? '·' }),
+          el('td', {}, el('button', { class: 'btn ghost', onclick: () => store.set('ES', [k], 1) }, 'Write')))))));
+  }
+  function render() {
+    const rows = PLS_INPUT_SLOTS.map(row);
+    const withSignal = PLS_INPUT_SLOTS.filter(plsInputHasSignal).length;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Inputs' }),
+        el('span', { class: 'hint', text: `${withSignal} of 10 with signal · click a row to adjust it` })),
+      sel != null ? settings() : null,
+      el('div', { class: 'panel', style: 'overflow:auto' },
+        el('table', { class: 'grid' },
+          el('thead', {}, el('tr', {}, ...['Input', 'State', 'Type', 'Signal', 'Size', 'Rate', ''].map(h => el('th', { text: h })))),
+          el('tbody', {}, ...rows))),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Backup'),
+          el('label', { class: 'field' }, 'When an input loses signal, show', plsEnumSelect('Yf', [], [[0, 'nothing'], ...PLS_INPUT_SLOTS.map(s => [plsInputNo(s), 'IN ' + plsInputNo(s)])])),
+          el('label', { class: 'field' }, 'Refuse a signal-less input on a layer', checkbox(store.val('YL') === 1, v => store.set('YL', [], v ? 1 : 0)))),
+        edid()));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Outputs ----------
+VIEWS.plsoutputs = (() => {
+  const OUT = ['Main', 'Preview'];
+  function enter() {
+    for (const m of ['OF', 'OR', 'OA', 'OD', 'OS', 'OC', 'OG', 'OJ', 'OI', 'OP', 'OB', 'OH', 'OV', 'OT', 'OO', 'Oh', 'On', 'Rf', 'Rg', 'Rs', 'Xr', 'Xe', 'Xm', 'Xc', 'Xt', 'Xl']) store.scan(m);
+    store.scan('Om');
+  }
+  function card(o) {
+    const i = [o];
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', OUT[o]), el('div', { class: 'spacer' }),
+        el('span', { class: 'hint val', text: `${store.val('OH', o) ?? '·'}×${store.val('OV', o) ?? '·'} @ ${plsHz(store.val('OT', o))}` }),
+        toggleBtn('Black', 'OB', i)),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Format', plsEnumSelect('OF', i)),
+        el('label', { class: 'field' }, 'Rate', plsEnumSelect('OR', i)),
+        el('label', { class: 'field' }, 'Pattern', plsEnumSelect('OP', i))),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Analog', plsEnumSelect('OA', i)),
+        el('label', { class: 'field' }, 'Sync', plsEnumSelect('OS', i)),
+        el('label', { class: 'field' }, 'Digital', plsEnumSelect('OD', i)),
+        el('label', { class: 'field' }, 'Overscan', checkbox(store.val('OO', o) === 1, v => store.set('OO', i, v ? 1 : 0)))),
+      el('div', { class: 'sub-head' }, 'Background'),
+      el('div', { class: 'row' }, el('label', { class: 'field' }, 'Colour', plsEnumSelect('OC', i))),
+      store.val('OC', o) === 32 ? el('div', { class: 'grid2' }, bind('Hue', 'OG', i), bind('Saturation', 'OJ', i), bind('Brightness', 'OI', i)) : null,
+      el('div', { class: 'sub-head' }, 'Picture'),
+      el('div', { class: 'grid2' },
+        bind('Anti-flicker', 'Rf', i, 0, 7, 1, v => v === 0 ? 'off' : String(v)),
+        bind('Gamma', 'Rg', i, 5, 40, 1, v => (v / 10).toFixed(1)),
+        bind('Sharpness', 'Rs', i)),
+      el('div', { class: 'sub-head' }, 'HDCP'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Detection', enumSelect('Oh', i, ['Off', 'Automatic', 'Configuration 1', 'Configuration 2', 'Configuration 3'])),
+        boolChip(store.val('On', o), 'HDCP on', 'HDCP off')),
+      el('div', { class: 'sub-head' }, 'Frame lock'),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Reference', plsEnumSelect('Xr', i)),
+        el('label', { class: 'field' }, 'Mode', plsEnumSelect('Xm', i)),
+        boolChip(store.val('Xl', o), 'locked', 'free'),
+        el('span', { class: 'hint', text: `now ${plsEnumLabel('Xm', store.val('Xc', o)).toLowerCase()} on ${plsEnumLabel('Xr', store.val('Xe', o)).toLowerCase()} · ${plsHz(store.val('Xt', o))}` })));
+  }
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Outputs' }),
+        el('span', { class: 'hint', text: 'Main and preview' })),
+      el('div', { class: 'panel' }, el('div', { class: 'row' },
+        toggleBtn('Preview follows the main output’s format and rate', 'Om', [], 'pvw'))),
+      el('div', { class: 'split-wide' }, card(0), card(1)));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Audio ----------
+VIEWS.plsaudio = (() => {
+  const OUT = ['Main', 'Preview'];
+  function enter() {
+    for (const m of ['AV', 'Au', 'Am', 'AD', 'Ae', 'Af', 'Al', 'AB', 'AL', 'Ab', 'Ai', 'Ac', 'AC', 'As', 'iu']) store.scan(m);
+  }
+  const bal = (v) => v == null ? '·' : v === 45 ? 'C' : v < 45 ? 'L' + (45 - v) : 'R' + (v - 45);
+  function outCard(o) {
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', OUT[o]), el('div', { class: 'spacer' }), toggleBtn('Mute', 'Au', [o])),
+      // The guide gives three points on the scale (0 = mute, 32 = −18 dB,
+      // 255 = 0 dB) and no curve, so anything else is shown as the raw step.
+      bind('Master volume', 'AV', [o], 0, 255, 1, v => v === 0 ? 'mute' : v === 255 ? '0 dB' : v === 32 ? '−18 dB' : String(v)),
+      el('div', { class: 'grid2' },
+        bind('Delay', 'AD', [o], 0, 80, 1, v => store.val('Ae') === 1 ? 'auto' : Math.round(v * 6.25) + ' ms'),
+        el('label', { class: 'field' }, 'Stereo', checkbox(store.val('Am', o) === 1, v => store.set('Am', [o], v ? 1 : 0)))));
+  }
+  function inRow(slot) {
+    const n = plsInputNo(slot);
+    return el('tr', { class: store.val('iu', slot) === 0 ? 'dim' : '' },
+      el('td', { text: 'IN ' + n }),
+      el('td', {}, plsEnumSelect('Ai', [slot], [[0, 'none'], ...PLS_INPUT_SLOTS.map(s => [plsInputNo(s), 'audio in ' + plsInputNo(s)])])),
+      el('td', { style: 'min-width:200px' }, bind('', 'AL', [slot], 0, 255, 1, v => v === 45 ? '0 dB' : String(v))),
+      el('td', { style: 'min-width:160px' }, bind('', 'Ab', [slot], 0, 90, 1, bal)),
+      // De-embedding belongs to the SDI inputs; which slots those are is the
+      // same disagreement the Inputs view notes, so the reported type decides.
+      store.val('iK', slot) === 12 ? el('td', {}, el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'L', enumSelect('Ac', [slot], Array.from({ length: 16 }, (_, k) => `${'ABCD'[k >> 2]}${(k & 3) + 1}`))),
+        el('label', { class: 'field' }, 'R', enumSelect('AC', [slot], Array.from({ length: 16 }, (_, k) => `${'ABCD'[k >> 2]}${(k & 3) + 1}`))),
+        boolChip(store.val('As', slot), 'locked', 'no audio'))) : el('td', { text: '—' }));
+  }
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Audio' }),
+        el('span', { class: 'hint', text: 'Two outputs, ten input channels and an auxiliary' })),
+      el('div', { class: 'panel' }, el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Audio follows', enumSelect('Af', [], ['a free choice of input', 'the top layer'])),
+        el('label', { class: 'field' }, 'Automatic delay', checkbox(store.val('Ae') === 1, v => store.set('Ae', [], v ? 1 : 0))))),
+      el('div', { class: 'split-wide' }, outCard(0), outCard(1)),
+      el('div', { class: 'panel' }, el('h2', 'Auxiliary input'),
+        el('div', { class: 'grid2' }, bind('Level', 'Al', [], 0, 255, 1, v => v === 45 ? '0 dB' : String(v)), bind('Balance', 'AB', [], 0, 90, 1, bal))),
+      el('div', { class: 'panel', style: 'overflow:auto' }, el('h2', 'Input channels'),
+        el('table', { class: 'grid' },
+          el('thead', el('tr', ...['Input', 'Audio from', 'Level', 'Balance', 'SDI de-embed'].map(h => el('th', { text: h })))),
+          el('tbody', ...PLS_INPUT_SLOTS.map(inRow)))));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 Pictures (logos and frames) ----------
+VIEWS.plspictures = (() => {
+  function enter() {
+    for (const m of ['PF', 'PZ', 'PE', 'PM', 'PX', 'PS', 'PL', 'PT', 'PW', 'PH', 'PB', 'PN', 'PI', 'Pt', 'Pm', 'Pc', 'Pw', 'Ph', 'Ps', 'Pn', 'OH', 'OV']) store.scan(m);
+  }
+  // Frames are pictures 9–14 and logos 1–6 in the status tables; their
+  // validity is a bit each in PF (frames) and PZ (logos).
+  function tile(kind, n) {
+    const idx = kind === 'frame' ? 8 + n : n;
+    const valid = flagOn(store.val(kind === 'frame' ? 'PF' : 'PZ') ?? 0, n - 1);
+    const w = store.val('Pw', idx), h = store.val('Ph', idx);
+    const frames = store.val('Pn', idx);
+    return el('button', { class: 'slot still' + (valid ? ' valid' : '') + (store.val('PX') === idx ? ' sel' : ''), onclick: () => store.set('PX', [], idx) },
+      el('span', { class: 'num', text: `${kind === 'frame' ? 'F' : 'L'}${n}` }),
+      el('span', { class: 'lbl', text: valid ? `${w || '?'}×${h || '?'}` : 'empty' }),
+      valid && frames > 1 ? el('span', { class: 'lbl', text: `${frames} frames` }) : null);
+  }
+  function capture() {
+    const st = store.val('PE');
+    const busy = st != null && st !== 0;
+    const s = plsOutputPx(store.val('PS') ?? 0);
+    const run = (mode) => { store.set('PM', [], mode); store.set('PG', [], 1); };
+    return el('div', { class: 'panel' },
+      el('div', { class: 'row' }, el('h2', 'Capture'), el('div', { class: 'spacer' }),
+        boolChip(st == null ? null : busy ? 0 : 1, 'free', plsEnumLabel('PE', st)),
+        el('span', { class: 'hint', text: `${plsEnumLabel('CK', store.val('CK'))}${store.val('CP') ? ' ' + store.val('CP') + '%' : ''}` })),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Into', plsEnumSelect('PX', [])),
+        el('label', { class: 'field' }, 'From', enumSelect('PS', [], ['Main output', 'Preview output'])),
+        el('label', { class: 'field' }, 'Cut-out colour', bind('', 'Pc', [], 0, 7))),
+      el('div', { class: 'grid2' },
+        bind('Left', 'PL', [], PLS_POS_BIAS, PLS_POS_BIAS + s.w, 1, v => (v - PLS_POS_BIAS) + ' px'),
+        bind('Top', 'PT', [], PLS_POS_BIAS, PLS_POS_BIAS + s.h, 1, v => (v - PLS_POS_BIAS) + ' px'),
+        bind('Width', 'PW', [], 0, s.w, 1, v => v + ' px'),
+        bind('Height', 'PH', [], 0, s.h, 1, v => v + ' px')),
+      el('div', { class: 'row' },
+        el('label', { class: 'field' }, 'Keying', enumSelect('PB', [], ['None', 'Luma key', 'Chroma key'])),
+        el('label', { class: 'field' }, 'Animated: frames', el('input', { type: 'number', class: 'num', min: 1, max: store.val('Pm') ?? 255, value: store.val('PN') ?? 1,
+          onchange: (e) => store.set('PN', [], Math.max(1, +e.target.value || 1)) })),
+        bind('Interval', 'PI', [], 1, 1000, 1, v => v + ' ms')),
+      el('div', { class: 'row', style: 'margin-top:8px' },
+        el('button', { class: 'btn', disabled: busy || !store.val('PX') || store.val('PX') > 6, onclick: () => run(2) }, 'Record logo'),
+        el('button', { class: 'btn', disabled: busy || !store.val('PX') || store.val('PX') > 6, onclick: () => run(3) }, 'Record animated logo'),
+        el('button', { class: 'btn', disabled: busy || (store.val('PX') ?? 0) < 9, onclick: () => run(4) }, 'Record frame'),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn ghost', disabled: busy || !store.val('PX'), onclick: () => run(5) }, 'Delete')),
+      el('div', { class: 'hint pad', text: 'Pictures are captured from an output, so put the wanted source on air (or on preview) first. A logo can key on luma or chroma; a frame fills the background layer.' }));
+  }
+  function render() {
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Pictures' }),
+        el('span', { class: 'hint', text: 'Six frames and six logos, stored in the unit' })),
+      el('div', { class: 'split' },
+        el('div', {},
+          el('div', { class: 'panel' }, el('h2', 'Frames'), el('div', { class: 'mem-grid' }, ...[1, 2, 3, 4, 5, 6].map(n => tile('frame', n)))),
+          el('div', { class: 'panel' }, el('h2', 'Logos'), el('div', { class: 'mem-grid' }, ...[1, 2, 3, 4, 5, 6].map(n => tile('logo', n))))),
+        capture()));
+  }
+  return { enter, render };
+})();
+
+// ---------- PLS300 System ----------
+VIEWS.plssystem = (() => {
+  let armed = false;
+  function enter() {
+    for (const m of ['?', 'xV', 'xU', 'xR', 'yo', 'xK', 'xi', 'xj', 'xk', 'xl', 'nw', 'np', 'nk', 'nt', 'ne', 'YK', 'YB', 'Yb', 'YD', 'YL', 'wS', 'wR', 'wC', 'CK', 'CP', 'YS', 'yA']) store.scan(m);
+  }
+  const OPTIONS = ['LAN module', 'SDI board 1', 'Recording board', 'CF Caecina', 'CF Fannia', 'CF Thrasea', 'SDI board 2', 'Audio evolution', 'HDCP DVI evolution'];
+  const COMPONENTS = ['', 'Main micro', 'Front panel micro', 'FPGA Caecina', 'FPGA Fannia', 'FPGA Thrasea', 'Sync CPLD'];
+  const ip = () => { const o = [0, 1, 2, 3].map(k => store.val('nw', 0, k)); return o.every(x => x != null) ? o.join('.') : '·'; };
+  const id = () => { const p = ['xi', 'xj', 'xk', 'xl'].map(m => store.val(m)); return p.every(x => x != null) ? p.map(v => v.toString(16).padStart(4, '0')).join('') : '·'; };
+  function render() {
+    const opts = store.val('yo');
+    const lock = store.val('YK');
+    const busy = (store.val('CK') ?? 0) !== 0;
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'System' }), el('span', { class: 'hint', text: 'Device, network, front panel and standby' })),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Device'),
+          plsKv('Model', deviceModel()),
+          plsKv('Device ID', id()),
+          plsKv('Variable set', fmt(store.val('xV'))),
+          plsKv('Updater', fmt(store.val('xU'))),
+          plsKv('Board revision', fmt(store.val('xR'))),
+          plsKv('Options', opts == null ? '·' : OPTIONS.filter((_, b) => flagOn(opts, b)).join(', ') || 'none'),
+          ...COMPONENTS.map((name, k) => name && store.val('xK', k) != null ? plsKv(name, fmt(store.val('xK', k))) : null)),
+        el('div', { class: 'panel' }, el('h2', 'Network'),
+          plsKv('IP address', ip()),
+          plsKv('Netmask', store.val('nk') == null ? '·' : `/${32 - store.val('nk')}`),
+          plsKv('Port', fmt(store.val('np', 0))),
+          plsKv('Protocol', plsEnumLabel('nt', store.val('nt'))),
+          el('div', { class: 'kv' }, el('span', { class: 'k', text: 'LAN' }), boolChip(store.val('ne'), 'enabled', 'RS-232 only')),
+          el('div', { class: 'hint pad', text: 'Read only here: LANENABLE off would end this very session, and the address is changed from the front panel with LANSTORE.' }))),
+      el('div', { class: 'split' },
+        el('div', { class: 'panel' }, el('h2', 'Front panel'),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'Lock',
+              el('div', { class: 'seg' }, ...PLS_ENUMS.YK.map(([v, label]) => el('button', { class: lock === v ? (v === 0 ? 'on recall' : 'on take') : '', onclick: () => store.set('YK', [], v) }, label))))),
+          el('div', { class: 'grid2' },
+            bind('Display brightness', 'YB', [], 1, 8, 1, v => Math.round(v * 12.5) + '%'),
+            bind('Key brightness', 'Yb', [], 10, 100, 1, v => v + '%')),
+          el('div', { class: 'row' }, toggleBtn('T-bar enabled', 'YD', [], 'pvw'),
+            el('span', { class: 'hint', text: store.val('yA') === 1 ? 'driven by an Orchestra controller' : '' }))),
+        el('div', { class: 'panel' }, el('h2', 'Standby'),
+          el('div', { class: 'row' },
+            boolChip(store.val('wS') == null ? null : store.val('wS') === 1 ? 0 : 1, 'running', 'standby'),
+            el('div', { class: 'spacer' }),
+            el('button', { class: 'btn', onclick: () => store.set('wQ', [], 1) }, 'Standby'),
+            el('button', { class: 'btn', onclick: () => store.set('wQ', [], 0) }, 'Wake')),
+          el('div', { class: 'sub-head' }, 'Display device on the RS-232 port'),
+          el('div', { class: 'row' },
+            el('label', { class: 'field' }, 'Speed', plsEnumSelect('wR', [])),
+            el('button', { class: 'btn ghost', onclick: () => store.set('wC', [], 1) }, 'Wake it'),
+            el('button', { class: 'btn ghost', onclick: () => store.set('wC', [], 2) }, 'Sleep it')),
+          el('div', { class: 'hint pad', text: 'The wake and sleep strings themselves (STDBYPROJ_ON/OFF) are 50 characters each — set them in the Inspector.' }))),
+      el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('h2', 'Maintenance'), el('div', { class: 'spacer' }),
+          busy ? el('span', { class: 'chip on' }, el('span', { class: 'dot' }), `${plsEnumLabel('CK', store.val('CK'))} ${store.val('CP') ?? 0}%`) : null,
+          store.val('YS') === 1 ? el('span', { class: 'chip bad' }, el('span', { class: 'dot' }), 'writing flash — do not power off') : null),
+        el('div', { class: 'row' },
+          el('label', { class: 'field' }, 'Arm', checkbox(armed, v => { armed = v; store.notify(); })),
+          el('button', { class: 'btn ghost', disabled: !armed, onclick: () => { armed = false; store.set('YE', [], 1); } }, 'Erase stored image settings'),
+          el('button', { class: 'btn ghost', disabled: !armed, onclick: () => { armed = false; store.set('YR', [], 1); } }, 'Factory reset'),
+          el('button', { class: 'btn ghost', disabled: !armed, onclick: () => { armed = false; store.set('Ia', [], 1); } }, 'Autoset every input'))));
+  }
+  return { enter, render };
+})();
+
 VIEWS.connection = (() => {
   let entry = null;             // keypad buffer; null until seeded from meta
-  let plat = null;              // 'livecore' | 'midra' | 'livepremier' | 'midra4k' | 'alta4k'
+  let plat = null;              // 'livecore' | 'midra' | 'pls300' | 'livepremier' | 'midra4k' | 'alta4k'
   let seeded = false;
 
   const isDemo = () => !!globalThis.OPENRCS_DEMO_DEVICE;
@@ -9144,10 +9922,11 @@ VIEWS.connection = (() => {
   function platformPicker() {
     const pick = (p) => { plat = p; store.notify(); };
     // "Midra" is the earlier series on TCP 10500 — Pulse2, Eikos2, Saphyr,
-    // SmartMatriX2, QuickMatriX, QuickVu. The 4K boxes speak the LivePremier
-    // protocol on 10606 and sit with it.
+    // SmartMatriX2, QuickMatriX, QuickVu — and the PLS300 the one before that,
+    // on the same port. The 4K boxes speak the LivePremier protocol on 10606
+    // and sit with it.
     return el('div', { class: 'seg big' },
-      ...[['livecore', 'LiveCore'], ['midra', 'Midra'], ['livepremier', 'LivePremier'], ['midra4k', 'Midra 4K'], ['alta4k', 'Alta 4K']]
+      ...[['livecore', 'LiveCore'], ['midra', 'Midra'], ['pls300', 'PLS300'], ['livepremier', 'LivePremier'], ['midra4k', 'Midra 4K'], ['alta4k', 'Alta 4K']]
         .map(([id, name]) => el('button', { class: plat === id ? 'on recall' : '', onclick: () => pick(id) }, name)));
   }
 
@@ -9235,7 +10014,7 @@ VIEWS.connection = (() => {
             el('input', { type: 'text', placeholder: 'the processor, port 80', value: (() => { try { return localStorage.getItem('orcs.snapshotOrigin') || ''; } catch { return ''; } })(),
               onchange: (e) => { try { const v = e.target.value.trim(); if (v) localStorage.setItem('orcs.snapshotOrigin', v); else localStorage.removeItem('orcs.snapshotOrigin'); } catch { /* private mode */ } MNG_SNAP_TICK++; store.notify(); } }),
             el('span', { class: 'hint', text: 'A unit serves its snapshots on port 80. Only a simulator, which serves them wherever it was started, needs this.' })) : null,
-          el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu. LivePremier: Aquilon. Midra 4K: QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K. Alta 4K: Zenith 100, Zenith 200.' }),
+          el('div', { class: 'hint pad', text: 'LiveCore: Ascender, NeXtage, SmartMatriX Ultra. Midra: Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu. PLS300: the Pulse PLS300 (LAN must be enabled on its front panel first). LivePremier: Aquilon. Midra 4K: QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K. Alta 4K: Zenith 100, Zenith 200.' }),
           store.setupError
             ? el('div', { class: 'hint pad bad', text: `Rejected: ${store.setupError}` })
             : null,

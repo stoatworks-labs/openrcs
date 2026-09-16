@@ -1,18 +1,20 @@
-# Analog Way Midra and LiveCore control protocol
+# Analog Way Midra, LiveCore and PLS300 control protocol
 
 Reference for the wire protocol `openrcs-proto` implements. Per-variable ranges
 and dimensions are declarations — the crate validates against them, but the
 device is the final authority.
 
-| | Midra series | LiveCore series |
-|---|---|---|
-| Devices | Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu | Ascender 16/32/48, NeXtage 8/16, SmartMatriX Ultra |
-| Variables | 562 | 1014 |
-| Groups | 49 | 88 |
-| Outbound terminator | `\r\n` | `\n` |
-| Port | TCP 10500 | TCP 10500 |
+| | Midra series | LiveCore series | Pulse PLS300 |
+|---|---|---|---|
+| Devices | Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX, QuickVu | Ascender 16/32/48, NeXtage 8/16, SmartMatriX Ultra | PLS300 |
+| Variables | 562 | 1014 | 222 |
+| Groups | 49 | 88 | 17 |
+| Mnemonic | 5 characters | 5 characters | 1–2 letters, case-sensitive |
+| Outbound terminator | `\r\n` | `\n` | none |
+| Port | TCP 10500 | TCP 10500 | TCP 10500 |
+| Source | reverse-engineered, confirmed on a Pulse2 | reverse-engineered, confirmed on a NeXtage 16 | the published Programmer's Guide; no unit yet |
 
-The device replies with CRLF on both platforms.
+The device replies with CRLF on all three platforms.
 
 ## Framing
 
@@ -50,6 +52,7 @@ A rejected command is answered with `E<code>\r\n`:
 | Code | Meaning |
 |---|---|
 | `E10` | unknown command |
+| `E11` | index value out of range (PLS300; the guide lists it, the later platforms do not) |
 | `E12` | wrong number of indices |
 
 An empty line draws no response. Client-side validation
@@ -60,6 +63,39 @@ An empty line draws no response. Client-side validation
 The device sends unsolicited value frames. On connect it immediately pushes
 `ITcct0,1` (`INTERFACE_CONNECTED_CONTROLLERS`). A client must accept value
 frames at any time, not only in response to a request.
+
+## The PLS300 — the generation before Midra
+
+The "Programmer's Guide For PLS300" (2009–12) describes the same protocol with
+three differences, none of them to the decoder:
+
+- **Mnemonics are one or two letters and case-sensitive.** `NC` is
+  `PREVIEWED_LAYER`, `Nc` is `COPY_CTRL`. The only single-character entries
+  are the specials `#` (`DIESE`, dump every variable), `*` (`READY`) and `?`
+  (`DEV`, which answers **78** for the PLS-300; Midra answers 256–288, and
+  that is how the bridge tells them apart on a scan).
+- **No outbound terminator.** "There is no starting/ending code needed in a
+  command string" — the mnemonic itself ends the command, so `1,2,4IN` is a
+  complete set and `1,2,IN` a complete read. Replies are still CRLF-terminated.
+- **`E11`**, an index that is the right count but out of range, joins `E10`
+  and `E12`.
+
+The device model is one screen (two in matrix mode), two outputs (main and
+preview) and ten inputs numbered 1–6 and 9–12 in twelve-wide tables. Every
+per-layer variable (`GRP_PRESET_ELEMENT`, 25 of them) is indexed
+`[preset, layer]` with presets 0 = current, 1 = next, 2 = previous and 3–6 =
+the four user presets, and layer slots 0 = background frame, 2 = background
+live, 3 = PiP 1, 6–7 = logos, 8–9 = the audio outputs. `TK` makes next
+current; `Nf`, `Nt`, `Nc` (copy from, copy to, go) is how a preset is recalled
+or saved; `NT` is the T-bar in 0.01 %. The guide's own worked example answers
+`1,2,4IN` with `IN1,1,4`, an inconsistency kept as printed in the tests.
+
+Two traps for anyone connecting one: the unit ships with `LANENABLE` (`ne`)
+at 0 = RS-232 only, so LAN is enabled from the front panel first; and
+`LANPROTOCOL` (`nt`) is exclusive, with UDP replies going to a *configured*
+remote address rather than the sender — use TCP. Whether the unit pushes
+front-panel changes unprompted, as Midra does, is not stated. All of this is
+the guide's word: no PLS300 has answered openrcs.
 
 ## Variable model
 

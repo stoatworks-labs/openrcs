@@ -45,14 +45,15 @@ version="v$(awk '
 [ "$version" = "v" ] && { echo "no version in Cargo.toml" >&2; exit 1; }
 
 stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
-              "$here/demo-footer.js" "$here/support-footer.js" "$here/fixtures.json" \
+              "$here/demo-footer.js" "$here/support-footer.js" "$here"/fixtures*.json \
          | shasum -a 256 | cut -c1-8)"
 
 rm -rf "$dist"
 mkdir -p "$dist"
 cp "$web/app.js" "$web/style.css" "$dist/"
+# fixtures-<name>.json are the table-derived ones `?device=<name>` picks.
 cp "$here/device.js" "$here/demo.css" "$here/demo-footer.js" \
-   "$here/support-footer.js" "$here/fixtures.json" "$dist/"
+   "$here/support-footer.js" "$here"/fixtures*.json "$dist/"
 
 # index.html is generated rather than copied: the demo has to install the
 # simulated device BEFORE app.js runs, and wants a fixed asset version.

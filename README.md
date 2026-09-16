@@ -3,23 +3,25 @@
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The protocol was
 > reverse-engineered rather than taken from a published specification (the
-> LivePremier, Midra 4K and Alta 4K side is the exception — it follows the
-> vendor's published protocol guide and what the devices themselves report).
+> LivePremier, Midra 4K and Alta 4K side is the exception, and so is the PLS300 —
+> those follow the vendor's published protocol guides and what the devices
+> themselves report).
 > Both the LiveCore and Midra sides have since been validated against real
 > hardware, but device behaviour varies with model, firmware and signal state —
 > check against your own processor before a show. See [Status](#status).
 
-A Rust library for controlling **Analog Way Midra, LiveCore, LivePremier,
-Midra 4K and Alta 4K** video processors over their native TCP control
-protocols.
+A Rust library for controlling **Analog Way Midra, LiveCore, PLS300,
+LivePremier, Midra 4K and Alta 4K** video processors over their native TCP
+control protocols.
 
 It targets the Midra family (Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX,
 QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra) — a modern, dependency-light control surface for hardware whose original
-software is long out of date — and has an early mode for the current range,
-**LivePremier** (Aquilon), **Midra 4K** (QuickVu 4K, Pulse 4K, Eikos 4K,
-QuickMatrix 4K) and **Alta 4K** (Zenith 100/200), built on those families' own
-published protocol.
+software is long out of date — reaches one generation further back to the
+**Pulse PLS300** (from its published Programmer's Guide; not yet met on the
+wire), and has an early mode for the current range, **LivePremier** (Aquilon),
+**Midra 4K** (QuickVu 4K, Pulse 4K, Eikos 4K, QuickMatrix 4K) and **Alta 4K**
+(Zenith 100/200), built on those families' own published protocol.
 
 ![The openrcs Workspace — the source palette, every screen editable side by side in program and preview, and memories, on one page](docs/screenshots/workspace.png)
 
@@ -99,6 +101,25 @@ outputs as the mode changes. The LiveCore **per-output area of interest** is not
 the values stage and the apply is accepted, but the device's own status readback
 never moved off a fixed size on a NeXtage 16, so the panel shows that readback
 rather than the numbers typed into it, and warns when it sees it.
+
+**The PLS300 is spelled out but unmet.** The 222-variable table comes from the
+"Programmer's Guide For PLS300", the generation before Midra: the same
+index,…,value framing and the same port, with one- or two-letter case-sensitive
+mnemonics (`NC` and `Nc` are different variables), no outbound terminator at
+all, and an `E11` for an index out of range. The surface gives it its own
+eight views — Live (take, T-bar, the five layer slots of the next preset,
+freeze, output black), Layers (drag and resize on a canvas of the main
+output), Memories (the four user presets and the previous look, through the
+unit's preset-copy verb), Inputs, Outputs, Audio, Pictures (the six frames and
+six logos) and System — and all of it has been driven only against a fixture
+derived from the table. **No PLS300 has answered openrcs yet.** Two things the
+guide leaves open are worth knowing before one does: the unit ships with LAN
+off (`LANENABLE` 0 = RS-232 only; enable it on the front panel first), and
+the guide names inputs 11–12 as the DVI pair on one page and 9–10 on another,
+so the HDCP and SDI de-embed controls follow what each input reports itself to
+be. The Bitfocus `analogway-pls300` module was the only other wire evidence and
+it is not trustworthy on this: it sends every command twice, never reads a
+reply, and freezes the input after the one asked for.
 
 **LivePremier (Aquilon) is in field testing.** `openrcs-awj` implements the AWJ
 protocol — JSON over TCP 10606, from Analog Way's published Programmer's Guide
@@ -201,9 +222,9 @@ ESP32) between the processor and its clients. The protocol engine is
 `no_std`-friendly so the same code backs all of them.
 
 How all of this compares with the vendor's own control software — the RCS²
-for Midra, the Web RCS for LiveCore, LivePremier and Midra 4K — feature by
-feature, with what is full, partial, missing or beyond stock on each family:
-[docs/COMPARISON.md](docs/COMPARISON.md).
+for Midra, the Web RCS for LiveCore, LivePremier and Midra 4K, the original
+RCS for the PLS300 — feature by feature, with what is full, partial, missing or
+beyond stock on each family: [docs/COMPARISON.md](docs/COMPARISON.md).
 
 ## Web control surface
 
@@ -224,15 +245,16 @@ file), or run it from source:
 
 ```bash
 cargo run -p openrcs-server -- --device <processor-ip> --platform livecore
-# ...or --platform midra, --platform livepremier for an Aquilon,
+# ...or --platform midra, --platform pls300 for a Pulse PLS300,
+# --platform livepremier for an Aquilon,
 # --platform midra4k for a QuickVu/Pulse/Eikos/QuickMatrix 4K,
 # --platform alta4k for a Zenith 100/200
 # then open http://127.0.0.1:8730/
 ```
 
-The port is optional — each family has its own (10500 for LiveCore and Midra,
-10606 for LivePremier, Midra 4K and Alta 4K) and it is filled in from
-`--platform`.
+The port is optional — each family has its own (10500 for LiveCore, Midra and
+the PLS300, 10606 for LivePremier, Midra 4K and Alta 4K) and it is filled in
+from `--platform`.
 
 `--device` is optional: without it the server starts unconfigured and the
 **Connection** view sets the processor from the UI — keypad or network scan —
@@ -326,11 +348,13 @@ cargo run --example probe -- <device-ip>:10500 livecore
 
 ## The protocol in one paragraph
 
-Both families speak a terse ASCII protocol over TCP 10500. Commands put the
-5-character mnemonic last, replies put it first, and a reply's final
-comma-separated field is the value. Midra terminates outbound commands with
-CRLF, LiveCore with LF. The device pushes unsolicited updates and NAKs bad
-commands with `E<code>`. A short summary is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+The mnemonic families speak a terse ASCII protocol over TCP 10500. Commands
+put the mnemonic last (five characters on Midra and LiveCore, one or two
+case-sensitive letters on the PLS300), replies put it first, and a reply's
+final comma-separated field is the value. Midra terminates outbound commands
+with CRLF, LiveCore with LF, and the PLS300 with nothing at all. The device
+pushes unsolicited updates and NAKs bad commands with `E<code>`. A short
+summary is in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 The full protocol reference — framing, the variable model, and every variable
 for both platforms — is a companion repository:

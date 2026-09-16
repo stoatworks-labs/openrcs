@@ -605,6 +605,84 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Pulse PLS300 — the generation before Midra, from its published guide, 2026-09-16
+
+Table started 2026-09-13 (the day the guide was found), landed with a surface
+2026-09-16. **Nothing here has met a unit.** Every fact is from the
+"Programmer's Guide For PLS300" (51 pages, ManualsLib hosts it; Analog Way's
+own legacy page 404s), scraped page by page from ManualsLib's positioned-text
+markup and rebuilt into `protocol/pls300_protocol.json` (222 variables, 17
+groups). `tables.rs` was regenerated with the public generator variant and
+checked byte-identical for Midra and LiveCore first, so the PLS300 block is the
+only change in it.
+
+**It is the Midra table's ancestor, not another protocol.** Same
+`idx,…,valueMNEMONIC` / `MNEMONICidx,…,value` framing, replies CRLF, `E10`/`E12`,
+`#`/`*`/`?` specials (`DEV` = **78**; Midra 256–288), a 0–10000 T-bar (`NT`,
+like `GCtba`). What differs: 1–2 letter **case-sensitive** mnemonics (`NC` ≠
+`Nc`; no alphabetic single-letter ones exist, so the stream is unambiguous
+without a terminator), **no outbound terminator at all**, `E11` = index value
+out of range, and at most two indices. The codec needed nothing: the decoder
+already scanned a variable-length mnemonic, `Platform::Pls300` just carries an
+empty terminator. `classify()` reads the number after `DEV` and calls 78 a
+PLS300; `DEV780` is still a Midra.
+
+**Device model, for the surface:** one screen (two in matrix mode — the table
+has NO variable for the mode, so the surface draws the mixer layout and says
+so), outputs 0 main / 1 preview, ten inputs 1–6 and 9–12 in twelve-wide tables
+(slots 6 and 7 absent). `GRP_PRESET_ELEMENT` (25 vars) is `[preset, layer]`:
+presets 0 current, 1 next, 2 previous, 3–6 the four user presets; layers 0 BG
+frame, 1 BG frame out 2 (matrix), 2 BG live, 3 PiP 1 (BG live out 2 in
+matrix), 4–5 unassigned, 6–7 logos, 8–9 audio outputs. `IN` is the input
+number on a live layer, the frame or logo number on the others. Position
+`pH`/`pV` is the **top-left** corner biased by 32768 (LiveCore's is the
+centre); `pW`/`pS` the size. Take = `TK` 1; recall/save = `Nf`, `Nt`, `Nc`
+(copy from, to, go — Nc auto-resets); `NC` = which layer the preview output
+shows; `NQ` 14–19 = the six quick layouts (13 resets layer properties; its
+default of 0 is below its own min, so the fixture generator clamps).
+
+**The guide contradicts itself on the input layout.** `iH` (HDCP) is indexed
+for inputs 11 and 12, `Xr` (frame-lock reference) names 8/9 as the DVI inputs
+and 10/11 as SDI, and the user manual's rear panel goes analog → DVI-D → SDI.
+The Inputs view therefore shows HDCP for whatever input reports a DVI-D type
+(`iK` 8–11) and SDI de-embedding for `iK` 12, and lets a unit answer `E11` if
+a slot turns out not to carry it. The `Ac`/`AC` de-embed tables are 14 wide
+with labels for 10–13 only; shown for SDI-typed slots, unverified.
+
+**The Bitfocus `analogway-pls300` module is not evidence.** Fire-and-forget
+(empty data handler), every command sent twice with ` \r\n ` between, and its
+freeze uses 1-based ids against `Sf`'s 0-based index — "freeze input 1"
+freezes input 2. `tests/pls300.rs` pins the off-by-one boundary.
+
+**Traps for the first real connection:** `LANENABLE` (`ne`) ships as 0 =
+RS-232 only, enable on the front panel; `nt` is exclusive UDP/TCP/AMX and UDP
+replies go to a configured remote, so TCP; default port 10500; the guide's
+own example answers `1,2,4IN` with `IN1,1,4` (kept as printed in the test);
+whether the unit pushes front-panel changes is not stated. The System view
+keeps the LAN block read-only because `0ne` would end the session that sent it.
+
+**Surface:** eight `pls*` views (Live, Layers, Memories, Inputs, Outputs,
+Audio, Pictures, System) plus Shows/Plan/Inspector/Console kept from the
+mnemonic set — `viewSupported` sorts views into awj / pls / mnem kinds and a
+PLS300 sees only its own kind plus `PLS_SHARED_VIEWS`. Shows' scopes gained
+`GRP_KEYING`, `GRP_EDID`, `GRP_SETTINGS`, `GRP_REFERENCE`, `GRP_AUDIO` so a
+show file captures a PLS300 too. Verified in the browser against
+`demo/fixtures-pls300.json` (derived from the table by `demo/table-fixture.py`
+— the README says why it is the one non-recorded fixture; `?device=pls300`
+loads it): take moves next → current → previous with `TK` falling back to 0,
+a canvas drag writes `pH`/`pV`/`pW`/`pS` and re-draws from the echo, save and
+recall+take through `Nf`/`Nt`/`Nc` land in the right presets, a picture
+record sets the `PF` bit, keying controls appear with the type, and the
+LiveCore fixture still shows no PLS300 section. `demo/device.js` models the
+take, the copy, the picture bitfields and the auto-reset triggers on this
+platform, and nothing else.
+
+**Not done:** the siblings. The guide says "the above listed devices share
+the same code structure", which is boilerplate from a family (Pulse LE, Smart
+MatriX, Di-VentiX II, Eikos, Opus) where each shipped its own guide with its
+own `DEV` code; only the PLS300 guide was found. Matrix mode has no wire
+handle. And a PLS300 in hand would settle all of the above in an afternoon.
+
 ## Midra 4K / Alta 4K: Show, Cues, Plan, LUTs, soft edge, autoscale — 2026-09-15, round five
 
 After v0.6.0. Still simulator-only; every write below made through the surface

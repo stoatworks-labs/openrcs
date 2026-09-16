@@ -27,6 +27,8 @@ views — is the same code the bridge server serves.
 | File | What it is |
 |---|---|
 | `fixtures.json` | The recorded variable table and device state the demo starts from |
+| `fixtures-pls300.json` | The table-derived PLS300 state, loaded by `?device=pls300` |
+| `table-fixture.py` | Derives a fixture from a `protocol/*.json` table, for a platform nobody has recorded |
 | `device.js` | The simulated device: same message contract as the bridge's websocket |
 | `demo-footer.js` | The standing "this is a demo" banner and the limitations footer |
 | `demo.css` | The layout changes the hosted build needs (the app is a 100vh grid) |
@@ -46,6 +48,15 @@ Hand-authoring that would be a guess about what the device does, and guesses
 drift away from the protocol without anything failing loudly. If the fixture
 needs regenerating, record it again rather than editing it.
 
+**`fixtures-pls300.json` is the one exception**, and says so in its `source`.
+No PLS300 has answered openrcs, so there is nothing to record; the PLS300
+surface exists from the published Programmer's Guide alone, and this fixture
+is derived from that table by `table-fixture.py` — every variable at the
+guide's default, plus a show-like overlay so the views have something to draw.
+`?device=pls300` on the demo URL loads it instead of the LiveCore recording.
+Regenerate it with `python3 demo/table-fixture.py pls300 > demo/fixtures-pls300.json`
+after a table change; do not hand-edit it either.
+
 ## What the simulated device actually models
 
 From the control surface's point of view a processor is mostly a large
@@ -59,6 +70,10 @@ something rather than just remembers something:
   load-and-take does both.
 - **Screen memories** — the same, per screen, and portable across screens.
 - **Still erase** and **capture-done**, which otherwise leave the UI hanging.
+- On the PLS300 fixture: **TAKE** (next becomes current, current becomes
+  previous), **preset copy** (`Nf`/`Nt`/`Nc`, which is what a recall or a save
+  is), a picture record or delete landing in the validity bitfields, and the
+  triggers the guide marks "auto reset" falling back to 0.
 
 Everything else is an honest echo. Where the real device would do something
 this cannot know about — video actually moving, a signal appearing on an

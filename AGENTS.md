@@ -5,16 +5,27 @@ Onboarding for LLM agents working in this repo.
 ## What this is
 
 A Rust library for controlling Analog Way Midra series (Pulse2, Eikos2, Saphyr,
-SmartMatriX2, QuickMatriX, QuickVu) and LiveCore series (Ascender 16/32/48,
-NeXtage 8/16, SmartMatriX Ultra) video processors over their TCP control
-protocol, and LivePremier (Aquilon), Midra 4K (QuickVu 4K, Pulse 4K, Eikos 4K,
-QuickMatrix 4K) and Alta 4K (Zenith 100/200) processors over theirs.
+SmartMatriX2, QuickMatriX, QuickVu), LiveCore series (Ascender 16/32/48,
+NeXtage 8/16, SmartMatriX Ultra) and Pulse PLS300 video processors over their
+TCP control protocol, and LivePremier (Aquilon), Midra 4K (QuickVu 4K, Pulse
+4K, Eikos 4K, QuickMatrix 4K) and Alta 4K (Zenith 100/200) processors over
+theirs.
 
-**Two families, not two dialects.** Midra/LiveCore exchange terse ASCII
+**Two families, not two dialects.** Midra/LiveCore/PLS300 exchange terse ASCII
 mnemonics addressed by index on TCP 10500; LivePremier, Midra 4K and Alta 4K
 exchange JSON addressed by path on TCP 10606. They share a company name and
-nothing else. Everything that differs hangs off `hub::Family`, and the two
+nothing else. Everything that differs hangs off `hub::Family`, and the
 surfaces share the shell — header, nav, Connection — but no views.
+
+**Inside the mnemonic family, three platforms.** Midra and LiveCore share one
+surface, gated per view on the variables the unit advertises. The PLS300 —
+the generation before Midra, with 1–2 letter case-sensitive mnemonics and no
+outbound terminator — has its own eight `pls*` views over its `[preset,
+layer]` grid, and keeps only the table-driven tools (Shows, Plan, Inspector,
+Console) of the Midra/LiveCore set; `viewSupported` in `app.js` is where that
+is decided. Its table is from the published Programmer's Guide and **no PLS300
+has answered openrcs** — the surface has been driven against
+`demo/fixtures-pls300.json`, which is derived from the table, not recorded.
 
 **Inside the AWJ family, two object models.** LivePremier and Midra 4K / Alta
 4K share the wire — port, framing, verbs, silent writes, subscriptions, the six
@@ -32,7 +43,7 @@ compatibility.
 ## Layout
 
 ```
-crates/openrcs-proto/   Midra/LiveCore engine: codec, tables, validation (no_std)
+crates/openrcs-proto/   Midra/LiveCore/PLS300 engine: codec, tables, validation (no_std)
   src/codec.rs          encode/decode; the only place the wire format lives
   src/tables.rs         GENERATED from protocol/*.json — never hand-edit
 crates/openrcs-awj/     LivePremier / Midra 4K / Alta 4K engine (no_std, serde_json on alloc)
@@ -61,8 +72,14 @@ std binary and may use crates. Keep the split.
 - **Be precise about validation.** The LiveCore codec is confirmed against
   device behaviour; the Midra table is not yet exercised against a device. Do
   not overstate this.
-- **The two platforms differ.** Midra terminates commands with `\r\n`, LiveCore
-  with `\n`. This is not cosmetic and is easy to regress.
+- **The platforms differ.** Midra terminates commands with `\r\n`, LiveCore
+  with `\n`, the PLS300 with nothing. This is not cosmetic and is easy to
+  regress; `tests/pls300.rs` pins the guide's own spellings.
+- **The PLS300 is guide-only.** Say "from the Programmer's Guide" and "not yet
+  driven against a PLS300" wherever it is described; do not promote any of it
+  to verified without a unit answering. The guide contradicts itself on which
+  inputs are the DVI pair (11–12 on one page, 9–10 on another), which is why
+  the HDCP and SDI de-embed controls go by the input's reported type.
 - **The AWJ paths exist twice** — `crates/openrcs-awj/src/paths.rs` and the
   `LP` table in `web/app.js` for LivePremier, `crates/openrcs-awj/src/mng.rs`
   and the `MNG` table for Midra 4K / Alta 4K — because the browser builds the

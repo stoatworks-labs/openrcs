@@ -1,7 +1,9 @@
-//! Wire protocol for Analog Way Midra and LiveCore series video processors.
+//! Wire protocol for Analog Way Midra and LiveCore series video processors,
+//! and for the Pulse PLS300 that came before them.
 //!
-//! Both generations speak a terse ASCII protocol over TCP 10500. The encoding
-//! is asymmetric — commands put the mnemonic last, replies put it first:
+//! All three generations speak a terse ASCII protocol over TCP 10500. The
+//! encoding is asymmetric — commands put the mnemonic last, replies put it
+//! first:
 //!
 //! ```text
 //! set:    idx0,idx1,…,<value><MNEMONIC><terminator>
@@ -9,8 +11,9 @@
 //! reply:  <MNEMONIC>idx0,idx1,…,<value>\n
 //! ```
 //!
-//! The terminator differs by platform: Midra sends CRLF, LiveCore sends LF.
-//! See [`Platform`].
+//! The terminator differs by platform: Midra sends CRLF, LiveCore sends LF,
+//! and the PLS300 needs none at all — its one- or two-letter mnemonic ends
+//! the command. See [`Platform`].
 //!
 //! Per-variable ranges and dimensions are declarations, not guarantees — the
 //! crate validates against them but the device is the final authority.
@@ -30,12 +33,13 @@ pub use codec::{
     encode_get, encode_get_checked, encode_set, encode_set_checked, parse_frame,
     parse_reply, Decoder, Frame, Reply,
 };
-pub use tables::{livecore, midra};
+pub use tables::{livecore, midra, pls300};
 
 /// One controllable variable in the device's control table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VarDef {
-    /// Mnemonic sent to the device (usually 5 chars; a few specials are 1).
+    /// Mnemonic sent to the device (5 chars on Midra and LiveCore, 1–2
+    /// case-sensitive letters on the PLS300; a few specials are 1).
     pub mnemonic: &'static str,
     /// Mnemonic the device replies with. Differs from `mnemonic` only for the
     /// handful of debug/identify specials.
@@ -106,6 +110,10 @@ pub enum Platform {
     Midra,
     /// Ascender 16/32/48, NeXtage 8/16, SmartMatriX Ultra.
     LiveCore,
+    /// Pulse PLS300 — the generation before Midra, from its published
+    /// Programmer's Guide. Its siblings (Pulse LE, Smart MatriX, Di-VentiX II,
+    /// Eikos, Opus) share the framing but each has its own table.
+    Pls300,
 }
 
 impl Platform {
@@ -114,14 +122,16 @@ impl Platform {
         match self {
             Platform::Midra => midra::TERMINATOR,
             Platform::LiveCore => livecore::TERMINATOR,
+            Platform::Pls300 => pls300::TERMINATOR,
         }
     }
 
-    /// Default control port (10500 on both, but keep it addressable).
+    /// Default control port (10500 on all three, but keep it addressable).
     pub fn port(self) -> u16 {
         match self {
             Platform::Midra => midra::PORT,
             Platform::LiveCore => livecore::PORT,
+            Platform::Pls300 => pls300::PORT,
         }
     }
 
@@ -130,6 +140,7 @@ impl Platform {
         match self {
             Platform::Midra => midra::VARS,
             Platform::LiveCore => livecore::VARS,
+            Platform::Pls300 => pls300::VARS,
         }
     }
 

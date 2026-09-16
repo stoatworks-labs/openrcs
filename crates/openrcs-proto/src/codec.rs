@@ -52,7 +52,8 @@ pub enum Frame {
     /// A value update or status push.
     Value(Reply),
     /// A device error / NAK, `E<code>`. Known codes:
-    /// `10` = unknown command, `12` = wrong number of indices.
+    /// `10` = unknown command, `12` = wrong number of indices, and on the
+    /// PLS300 also `11` = index value out of range.
     Error(u16),
 }
 

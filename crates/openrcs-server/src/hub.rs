@@ -24,13 +24,13 @@ pub type Key = (String, Vec<i64>);
 /// Which protocol a processor speaks.
 ///
 /// The two are not dialects of one protocol — they share a company name and
-/// nothing else. Midra and LiveCore exchange terse ASCII mnemonics addressed by
-/// index; LivePremier, Midra 4K and Alta 4K exchange JSON addressed by path.
-/// Everything that differs between them hangs off this enum rather than off a
-/// flag somewhere later.
+/// nothing else. Midra, LiveCore and the PLS300 exchange terse ASCII mnemonics
+/// addressed by index; LivePremier, Midra 4K and Alta 4K exchange JSON
+/// addressed by path. Everything that differs between them hangs off this enum
+/// rather than off a flag somewhere later.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
-    /// Midra or LiveCore, over TCP 10500.
+    /// Midra, LiveCore or the Pulse PLS300, over TCP 10500.
     Mnemonic(Platform),
     /// LivePremier, Midra 4K or Alta 4K, over TCP 10606.
     Awj(AwjSeries),
@@ -74,6 +74,7 @@ impl Family {
         match self {
             Family::Mnemonic(Platform::LiveCore) => "livecore",
             Family::Mnemonic(Platform::Midra) => "midra",
+            Family::Mnemonic(Platform::Pls300) => "pls300",
             Family::Awj(AwjSeries::LivePremier) => "livepremier",
             Family::Awj(AwjSeries::Midra4k) => "midra4k",
             Family::Awj(AwjSeries::Alta4k) => "alta4k",
@@ -83,6 +84,7 @@ impl Family {
     pub fn parse(s: &str) -> Self {
         match s {
             "midra" => Family::Mnemonic(Platform::Midra),
+            "pls300" => Family::Mnemonic(Platform::Pls300),
             "livepremier" => Family::Awj(AwjSeries::LivePremier),
             "midra4k" => Family::Awj(AwjSeries::Midra4k),
             "alta4k" => Family::Awj(AwjSeries::Alta4k),
@@ -459,11 +461,20 @@ async fn probe(ip: Ipv4Addr, port: u16) -> Option<Option<&'static str>> {
 /// connect**, and the `DEV=259` that earlier notes describe as an unsolicited
 /// push on connect is the reply to the UI's own `get('?')`. Midra therefore
 /// scans as found-but-unidentified.
+///
+/// The device code tells the two 10500 generations apart: a PLS300 answers
+/// `?` with `DEV78` (its Programmer's Guide), a Midra with 256–288. Nothing
+/// has been measured on a PLS300, so this is the guide's word, not a unit's.
 fn classify(greeting: &str) -> Option<&'static str> {
     if greeting.contains("PDEV") || greeting.contains("ITcct") {
         Some("livecore")
-    } else if greeting.contains("DEV") {
-        Some("midra")
+    } else if let Some(tail) = greeting.split("DEV").nth(1) {
+        let code: String = tail.chars().take_while(char::is_ascii_digit).collect();
+        if code == "78" {
+            Some("pls300")
+        } else {
+            Some("midra")
+        }
     } else {
         None
     }
@@ -783,6 +794,17 @@ mod tests {
         // it answers `?` with. Kept because a device that has been spoken to
         // by something else may still have it in flight.
         assert_eq!(classify("DEV259\r\n"), Some("midra"));
+    }
+
+    #[test]
+    fn device_code_78_is_a_pls300() {
+        // From the PLS300 Programmer's Guide, not a measurement: the guide
+        // gives DEV = 78 for the PLS-300 and the Midra guide 256–288.
+        assert_eq!(classify("DEV78\r\n"), Some("pls300"));
+        // A code that merely starts with 78 is not one.
+        assert_eq!(classify("DEV780\r\n"), Some("midra"));
+        // A LiveCore PDEV still wins, whatever follows it.
+        assert_eq!(classify("PDEV78\r\n"), Some("livecore"));
     }
 
     #[test]

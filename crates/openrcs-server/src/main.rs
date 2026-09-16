@@ -1,5 +1,5 @@
 //! openrcs-server — bridges a browser control surface to an Analog Way
-//! Midra/LiveCore processor.
+//! Midra/LiveCore/PLS300 processor, or a LivePremier / Midra 4K / Alta 4K one.
 //!
 //! Serves the web UI over HTTP and a `/ws` websocket. The websocket carries a
 //! small JSON protocol: the browser sends `set`/`get`/`scan`/`raw`, the server
@@ -171,7 +171,7 @@ fn parse_args() -> Config {
             }
             "-h" | "--help" => {
                 eprintln!("openrcs-server [--device host:port] \
-                           [--platform livecore|midra|livepremier|midra4k|alta4k] \
+                           [--platform livecore|midra|pls300|livepremier|midra4k|alta4k] \
                            [--listen host:port] [--web dir] [--config file] [--tailnet]");
                 eprintln!();
                 eprintln!("  --device is optional. Without it the server starts unconfigured");
@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn a_platform_name_round_trips_through_the_browser_protocol() {
-        for name in ["livecore", "midra", "livepremier", "midra4k", "alta4k"] {
+        for name in ["livecore", "midra", "pls300", "livepremier", "midra4k", "alta4k"] {
             assert_eq!(Family::parse(name).name(), name);
         }
         // Anything else falls back rather than failing setup.

@@ -17,10 +17,10 @@ cargo run -p openrcs-server -- --device <processor-ip>:10500 --platform livecore
 # then open http://127.0.0.1:8730/
 ```
 
-Use `--platform midra` for the Midra family, and `--platform livepremier`,
-`--platform midra4k` or `--platform alta4k` for the current range, which listens
-on TCP 10606 instead (the port is filled in from the platform when you leave it
-off). The header shows the device model, platform and a connection indicator;
+Use `--platform midra` for the Midra family, `--platform pls300` for a Pulse
+PLS300, and `--platform livepremier`, `--platform midra4k` or `--platform alta4k`
+for the current range, which listens on TCP 10606 instead (the port is filled
+in from the platform when you leave it off). The header shows the device model, platform and a connection indicator;
 every view updates live as the device — or another operator — changes state.
 
 `--device` is optional. Started without one, the server comes up unconfigured
@@ -571,10 +571,58 @@ On Midra 4K and Alta 4K, recalling a preset also overwrites the destination's
 take time with the one stored in the memory — that is the processor's own
 behaviour, and the Screens view shows the new time straight after the recall.
 
+## PLS300
+
+The **Pulse PLS300** is the generation before Midra: the same port and framing,
+one screen, two outputs (main and preview), ten inputs numbered 1–6 and 9–12,
+and one preset grid — a *current* preset on air, a *next* preset you edit, the
+*previous* look, and four user presets. Nothing of the Midra/LiveCore surface
+fits that model, so the PLS300 has eight views of its own, plus the shared
+tools (Shows, Plan, Inspector, Console) and Connection. Everything here comes
+from the vendor's published Programmer's Guide and has been exercised only
+against a simulated unit built from it; **no PLS300 has been connected yet**.
+Before one is: the unit ships with LAN off — enable it on the front panel
+(Control menu) — and answers on TCP 10500.
+
+- **Live** — the next preset's five layer slots (background frame, background
+  live, PiP, two logos) with the source now on air beside a picker for what
+  goes on next; **TAKE**, the **T-bar**, auto-take and preset-toggle switches;
+  the unit's six quick layouts; which layer the preview output shows; the four
+  user presets as one-tap recalls into next; per-input **freeze** (or freeze
+  all); and **output black** for main and preview.
+- **Layers** — a canvas of the main output, to scale, for any of the seven
+  presets: drag a layer to move it, its corners to resize, or type the numbers.
+  Opacity, crop, border, and the opening and closing effects with their
+  direction and duration. Editing *Current* changes the picture on air.
+- **Memories** — the four user presets and the previous look. **Recall** puts
+  one into next, **Recall + take** puts it on air, **Save** stores current or
+  next into a slot; right-click a slot to inspect what it holds. All of it is
+  the unit's own preset-copy verb, which the panel at the bottom also exposes
+  directly.
+- **Inputs** — each input's type, signal, size and rate, freeze and autoset;
+  click a row for its picture, geometry, aspect, crop and keying settings, and
+  HDCP on the DVI inputs. The EDID of the four plugs that carry one, and the
+  backup input the unit falls to when a source drops.
+- **Outputs** — main and preview: format, rate, analog and digital signal
+  types, sync polarity, test pattern, background colour, anti-flicker, gamma,
+  sharpness, HDCP, and the frame-lock reference and mode with what the unit
+  reports it is locked to.
+- **Audio** — master volume, mute, stereo and delay per output, the auxiliary
+  input, and per-input level, balance and audio-source map, with SDI
+  de-embedding channel picks on the SDI inputs.
+- **Pictures** — the six frames and six logos the unit stores, with their
+  sizes; capture one from an output (position, size, keying, animated-logo
+  frame count) or delete one.
+- **System** — device identity and versions, the fitted options, network
+  (read-only — turning LAN off would end the session), front-panel lock and
+  brightness, standby, the display device on the RS-232 port, and the resets
+  behind an arm switch.
+
 ## Notes
 
 Both families have been driven against real hardware — a NeXtage 16 (LiveCore)
-and a Pulse2 (Midra). A few behaviours still depend on the device: assigning a
+and a Pulse2 (Midra). The PLS300 has not: its table and its views are from
+the Programmer's Guide alone. A few behaviours still depend on the device: assigning a
 live input needs a signal present on it, and some capabilities vary by model and
 firmware (openrcs hides what a given unit doesn't implement). Per-variable ranges
 are the device's declarations — the hardware is always the final authority. The
