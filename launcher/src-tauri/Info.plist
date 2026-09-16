@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the bundle's Info.plist by tauri-bundler.
+
+  Since macOS 15 an app must say why it talks to the local network, and without
+  this key a double-clicked app is denied LAN traffic silently — no error, no
+  prompt. It does not show up in development, because a process started from
+  Terminal inherits Terminal's own permission. The string is shown verbatim in
+  the permission prompt.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>openRCS talks to your Analog Way switcher on the local network, and serves its control surface to browsers on it.</string>
+</dict>
+</plist>

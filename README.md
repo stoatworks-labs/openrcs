@@ -232,16 +232,21 @@ beyond stock on each family: [docs/COMPARISON.md](docs/COMPARISON.md).
 TCP connection to the device, caches state, and relays a small JSON protocol
 over a websocket to any number of browsers.
 
-**Prefer not to touch the command line?** Grab the
-**[tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)**
-(macOS, Windows, Linux) — a menu-bar app that bundles the server: enter the
-switcher's IP, pick the model, click **Start**, then **Open**. The macOS builds
-are signed and notarized.
+It ships in two shapes, from the same release:
 
-Otherwise grab a prebuilt `openrcs-server` binary from the
-[latest release](https://github.com/stoatworks-labs/openrcs/releases/latest)
-(macOS, Linux and Windows; the UI is embedded, so it's a single self-contained
-file), or run it from source:
+- **On your own machine — the desktop app.** A menu-bar / system-tray app for
+  macOS, Windows and Linux (the `.dmg`/`.pkg` app, `-setup.exe` and
+  `.deb`/`.rpm` app rows in the tables above) that bundles the server: pick an
+  interface and port, click **Start**, then **Open**. The switcher's address
+  and model are set in the surface's own **Connection** view and remembered.
+  See [`launcher/`](launcher/README.md).
+- **On the hardware — just the server.** The command-line packages (macOS
+  `-cli.pkg`, `.deb`/`.rpm`, the Windows CLI installer, the archives) install
+  the bare `openrcs-server` for a box in the rack that runs it as a service:
+  no tray, no desktop session. The UI is embedded, so it is a single
+  self-contained file.
+
+Or run it from source:
 
 ```bash
 cargo run -p openrcs-server -- --device <processor-ip> --platform livecore

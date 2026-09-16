@@ -1,0 +1,34 @@
+# openRCS launcher config — paths are relative to the app's bundled resources
+# (see tauri.conf.json `bundle.resources`), so the shipped app is
+# self-contained: it carries the openrcs-server binary.
+#
+# The launcher only chooses where the control surface listens. Which switcher
+# to drive, and which model it is, are set in the surface's own Connection view and
+# persisted by the server in its config file — so the panel has nothing to
+# keep in step with the server's platform list.
+#
+# cwd is omitted on purpose: the launcher then runs the server from its
+# writable app-config dir.
+
+[app]
+name = "openRCS"
+command = "bin/openrcs-server"
+args = ["--listen", "{host}:{port}"]
+url = "http://{host}:{port}/"
+default_port = 8730
+
+[inject]
+mode = "args"
+
+# Palette mirrored from openrcs's web UI (near-black + cyan accent).
+[app.theme]
+bg = "#0d1015"
+panel = "#151a21"
+"panel-2" = "#1b222c"
+border = "#242c37"
+text = "#e6ebf2"
+muted = "#8b96a5"
+dim = "#5b6673"
+accent = "#22b8cf"
+"accent-soft" = "#12414d"
+good = "#3fb950"
