@@ -605,6 +605,44 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## The whole screen flashed on every interaction — 2026-09-17
+
+**"The whole screen flashes when interacting with the layers."** Three things,
+all from one design: every store notify rebuilt the entire document
+(`root.replaceChildren(header(), nav(), main)`), and a device echoes every
+drag, so each interaction rebuilt the page several times in a row.
+1. `.main` is the scroll container and a new one starts at the top — on the
+   Layers view (1565 px tall at laptop height) every drag end, and every frame
+   the unit pushed, yanked the page to the top. Measured: scrollTop 150 → 0.
+2. The Workspace sized its canvases in a `requestAnimationFrame` after
+   render, so for one frame every canvas was 2 px tall and its layers gone
+   (measured 2 → 83 px two frames later). Several renders per drag = several
+   blinks.
+3. A thumbnail tick (`SNAP_TICK`, every 3–4 s) changed every picture's URL
+   and rendered; a URL the browser has not loaded paints as nothing until it
+   arrives, so every thumbnail blinked once per tick. Not interaction-bound,
+   but the same look.
+
+**Fix:** the tree is still built whole, but `morphChildren()` patches the
+live document to match it (attributes, handler properties, form state,
+children; keyed nodes reused wherever they sit, unkeyed by position and
+kind). `el()` sets events as handler properties so the patch can swap them;
+`key` marks the selection chrome, every layer box and the view root. The
+Workspace sizes canvases in `afterRender()` in the same frame and seeds a
+new canvas with the last fitted size. The tick preloads the next URLs with
+`Image` and swaps once they are in. A patch that throws falls back to the
+old rebuild (`console.error 'render: patch failed'`). Measured after: a
+Workspace render is ~3 ms, `.main` is the same node across renders, scroll
+stays, no unsized frame, a swapped thumbnail is already `complete`.
+Verified on the demo (Chromium + Safari via safaridriver), the PLS300 demo,
+the Midra 4K and LivePremier simulators: every view patches to exactly the
+tree a fresh render builds (outerHTML compared), no console errors. Side
+effects worth knowing: a `<details>` the operator opened stays open across
+renders (it used to collapse), the AOI drag on Video out keeps its pointer
+capture, and a handler that closed over a sibling element now finds the live
+one via `e.currentTarget` — the chrome's handles and the Workspace canvas
+were the two that did.
+
 ## Layers grabbed through the selection, and a typed address — 2026-09-16
 
 **"Layers resize but won't drag."** Every canvas lifted the selected layer to

@@ -1,6 +1,14 @@
 // openrcs control surface — vanilla ES module, no build step.
 
 // ---------- tiny DOM helper ----------
+// Events go on as handler properties (n.onclick = fn), not through
+// addEventListener: a render patches the live tree rather than replacing it
+// (see morph), so an element that stays in the document must be able to take
+// the handlers a later render built for it. EL_EVENTS is every event name
+// el() has been given, which is the set morph() copies. `key` marks an element
+// a render must never turn into a different one — a keyed element is matched
+// with the live element of the same key, or replaced.
+const EL_EVENTS = new Set();
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
   // allow el('h2', 'text') / el('div', node) — a non-plain-object 2nd arg is a child
@@ -12,7 +20,10 @@ function el(tag, props = {}, ...kids) {
     if (k === 'class') n.className = v;
     else if (k === 'text') n.textContent = v;
     else if (k === 'html') n.innerHTML = v;
-    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (k === 'key') n.dataset.key = v;
+    else if (k.startsWith('on')) {
+      if (k in n) { EL_EVENTS.add(k); n[k] = v; } else n.addEventListener(k.slice(2), v);
+    }
     else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v === true ? '' : v);
   }
   for (const c of kids.flat()) {
@@ -20,6 +31,82 @@ function el(tag, props = {}, ...kids) {
     n.append(c.nodeType ? c : document.createTextNode(c));
   }
   return n;
+}
+
+// ---------- patching the live tree ----------
+// Every store notification renders the whole surface. It used to replace the
+// document's tree with the new one, which is what made every interaction
+// flash: the scroll position went back to the top, every picture was fetched
+// or decoded again, every native control was a fresh one, and anything sized
+// after layout was unsized for a frame. Building the tree is cheap; throwing
+// the old one away was the cost. So the new tree is treated as a description
+// and the live one is patched to match it, node by node: attributes, handler
+// properties, the form state attributes do not carry, then the children.
+// Nodes stay where they are unless their kind or key changed, so scroll,
+// focus, caret, a picture already on screen and a <details> the operator
+// opened all survive a render.
+const TEXTLIKE = new Set(['text', 'number', 'search', 'url', 'email', 'password', 'tel', '']);
+const isKeyed = (n) => n.nodeType === 1 && n.dataset.key !== undefined;
+const sameKind = (a, b) => a.nodeType === b.nodeType && (a.nodeType !== 1 || a.tagName === b.tagName);
+
+/** Make live element `o` look like `n`, then do the same for their children. */
+function morph(o, n) {
+  for (const a of Array.from(o.attributes)) {
+    // an open <details> was opened by the operator; a render does not close it
+    if (!n.hasAttribute(a.name) && !(a.name === 'open' && o.tagName === 'DETAILS')) o.removeAttribute(a.name);
+  }
+  for (const a of n.attributes) if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+  for (const k of EL_EVENTS) if (o[k] !== n[k]) o[k] = n[k];
+  const t = o.tagName;
+  if (t === 'INPUT') {
+    if (n.type === 'checkbox' || n.type === 'radio') { if (o.checked !== n.checked) o.checked = n.checked; }
+    // the field being typed in keeps its text; everything else shows the store
+    else if (n.type !== 'file' && o.value !== n.value && !(document.activeElement === o && TEXTLIKE.has(n.type))) o.value = n.value;
+  } else if (t === 'TEXTAREA') {
+    if (o.value !== n.value && document.activeElement !== o) o.value = n.value;
+  } else if (t === 'OPTION') {
+    if (o.selected !== n.selected) o.selected = n.selected;
+  }
+  morphChildren(o, n);
+  if (t === 'SELECT' && o.selectedIndex !== n.selectedIndex) o.selectedIndex = n.selectedIndex;
+}
+
+/**
+ * Line the children of live `o` up with those of `n`. An unkeyed child is
+ * reused when the next live child is of the same kind; a keyed one is reused
+ * wherever it sits, moved into place. Anything not reused goes; anything not
+ * reusable is taken from `n`, which is consumed in the process.
+ */
+function morphChildren(o, n) {
+  const kids = Array.from(n.childNodes);
+  let keyed = null;
+  for (let c = o.firstChild; c; c = c.nextSibling) if (isKeyed(c)) (keyed ??= new Map()).set(c.dataset.key, c);
+  let cur = o.firstChild;
+  for (let i = 0; i < kids.length; i++) {
+    const nk = kids[i];
+    let match = null;
+    if (isKeyed(nk)) {
+      const c = keyed?.get(nk.dataset.key);
+      if (c && c.tagName === nk.tagName) { match = c; keyed.delete(nk.dataset.key); }
+    } else {
+      for (;;) {
+        if (!cur) break;
+        if (isKeyed(cur)) { cur = cur.nextSibling; continue; }   // claimed by key, or dropped at the end
+        if (sameKind(cur, nk)) { match = cur; break; }
+        // a node of another kind: the one after it may be this node's match
+        // (something was inserted before it) — keep it for the next round
+        const next = kids[i + 1];
+        if (next && !isKeyed(next) && sameKind(cur, next)) break;
+        const stale = cur; cur = cur.nextSibling; stale.remove();
+      }
+    }
+    if (!match) { o.insertBefore(nk, cur); continue; }
+    if (match === cur) cur = cur.nextSibling; else o.insertBefore(match, cur);
+    if (match.nodeType === 3) { if (match.data !== nk.data) match.data = nk.data; }
+    else if (match.nodeType === 1) morph(match, nk);
+  }
+  while (cur) { const stale = cur; cur = cur.nextSibling; stale.remove(); }
+  if (keyed) for (const c of keyed.values()) c.remove();
 }
 const keyOf = (m, idx) => m + '|' + idx.join(',');
 
@@ -535,7 +622,7 @@ window.addEventListener('blur', () => { if (DRAG) endDrag(); });
 // ---------- app shell ----------
 const store = new Store();
 // debug handle: the same data path the UI uses, for scripting/inspection
-window.openrcs = { store, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
+window.openrcs = { store, el, morph: morphChildren, get VIEWS() { return VIEWS; }, get view() { return currentView; } };
 const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'lpshow', 'lpcues', 'lpplan', 'plslive', 'plslayers', 'plsmemories', 'plsinputs', 'plsoutputs', 'plsaudio', 'plspictures', 'plssystem', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
@@ -707,27 +794,45 @@ function nav() {
   return n;
 }
 
+let renderedView = null;   // the view the live tree shows, for the switch below
 function render() {
   const root = document.getElementById('app');
-  // preserve focus + caret across full re-render (device frames re-render us)
+  // Focus and caret survive a patch on their own; this is the fallback for an
+  // element the patch had to replace, found again by its id.
   const act = document.activeElement;
   const fid = act && act.id ? act.id : null;
   const selS = fid ? act.selectionStart : null;
   const selE = fid ? act.selectionEnd : null;
 
+  const id = effectiveView();
+  const view = VIEWS[id].render();
+  // A view change replaces the subtree rather than patching one view into
+  // the shape of another, so no scroll offset or field carries across.
+  view.dataset.key = 'view:' + id;
+  const next = el('div', {}, header(), nav(), el('main', { class: 'main' }, view));
   root.classList.toggle('nav-hidden', navCollapsed);
-  root.replaceChildren(
-    header(),
-    nav(),
-    el('main', { class: 'main' }, VIEWS[effectiveView()].render()),
-  );
+  try {
+    morphChildren(root, next);
+  } catch (err) {
+    // a patch that cannot cope falls back to what a render always was
+    console.error('render: patch failed, rebuilding', err);
+    root.replaceChildren(header(), nav(), el('main', { class: 'main' }, VIEWS[id].render()));
+  }
+  if (id !== renderedView) {
+    renderedView = id;
+    const m = root.querySelector('.main');
+    if (m) m.scrollTop = 0;
+  }
+  // Anything a view sizes from layout is done now, in the same frame, so it
+  // is never on screen unsized.
+  VIEWS[id].afterRender?.();
 
-  if (fid) {
-    const next = document.getElementById(fid);
-    if (next) {
-      next.focus();
-      if (selS != null && next.setSelectionRange) {
-        try { next.setSelectionRange(selS, selE); } catch { /* non-text input */ }
+  if (fid && document.activeElement !== act) {
+    const again = document.getElementById(fid);
+    if (again) {
+      again.focus();
+      if (selS != null && again.setSelectionRange) {
+        try { again.setSelectionRange(selS, selE); } catch { /* non-text input */ }
       }
     }
   }
@@ -843,12 +948,26 @@ function workOverlay(s, sw, sh, withTag = true) {
  * no longer inside it.
  */
 function selectionChrome(cv, box, onResize) {
-  const chrome = el('div', { class: 'sel-chrome' + (box.classList.contains('top') ? ' top' : '') },
-    ...(onResize ? ['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c, onpointerdown: (e) => onResize(e, c, box) })) : []));
-  const follow = () => { for (const k of ['left', 'top', 'width', 'height']) chrome.style[k] = box.style[k]; };
-  follow();
-  new MutationObserver(follow).observe(box, { attributes: true, attributeFilter: ['style'] });
+  // Keyed, and the box is keyed by its layer, so a render never turns the
+  // chrome into a layer or a layer into the chrome; the live chrome follows
+  // the live box, which is whatever sits just before it. A handle finds that
+  // box when pressed rather than closing over the one it was built beside,
+  // because after a render only the handler is new — the elements are not.
+  const chrome = el('div', { key: 'chrome', class: 'sel-chrome' + (box.classList.contains('top') ? ' top' : '') },
+    ...(onResize ? ['nw', 'ne', 'sw', 'se'].map(c => el('div', { class: 'handle ' + c,
+      onpointerdown: (e) => onResize(e, c, e.currentTarget.parentNode.previousElementSibling) })) : []));
+  const follow = (b) => { for (const k of ['left', 'top', 'width', 'height']) chrome.style[k] = b.style[k]; };
+  follow(box);
   cv.append(chrome);
+  // A drag writes the box's inline style straight from the pointer; while
+  // one is on, copy it every frame. The loop ends with the chrome's time in
+  // the document — one that a render discarded never starts.
+  const tick = () => {
+    if (!chrome.isConnected) return;
+    if (DRAG && chrome.previousElementSibling) follow(chrome.previousElementSibling);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
   return chrome;
 }
 
@@ -1627,9 +1746,27 @@ function startSnapshots() {
   if (startSnapshots.timer || !snapshotsWork()) return;
   startSnapshots.timer = setInterval(() => {
     if (currentView !== 'workspace' || document.hidden) return;
-    SNAP_TICK++;
-    store.notify();
+    snapshotTick(() => { SNAP_TICK++; });
   }, 3000);
+}
+/**
+ * Move every picture on screen to the next tick's URL — after fetching it.
+ * A background image the browser has not loaded paints as nothing until it
+ * arrives, so bumping the tick and rendering used to blink every thumbnail
+ * once per tick. Now the next pictures are fetched first, and the swap paints
+ * from cache. `bump` advances the tick once they are in.
+ */
+let snapshotTickBusy = false;
+function snapshotTick(bump) {
+  if (snapshotTickBusy) return;
+  const urls = [];
+  for (const e of document.querySelectorAll('.shot, img.thumb')) {
+    const u = e.tagName === 'IMG' ? e.getAttribute('src') : (/url\("?([^")]+)"?\)/.exec(e.style.backgroundImage) || [])[1];
+    if (u && /[?&]t=\d+/.test(u)) urls.push(u.replace(/([?&]t=)(\d+)/, (_, k, n) => k + (+n + 1)));
+  }
+  snapshotTickBusy = true;
+  const load = (u) => new Promise((res) => { const i = new Image(); i.onload = i.onerror = () => res(); i.src = u; });
+  Promise.all(urls.map(load)).then(() => { snapshotTickBusy = false; bump(); store.notify(); });
 }
 /** Ask the device to keep thumbnails of the inputs up to date. */
 function enableSnapshots() {
@@ -2926,7 +3063,7 @@ VIEWS.layers = (() => {
       if (!src && !on && l !== sel) continue;
       const r = rectPx(l);
       const box = el('div', {
-        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off'),
+        key: 'L' + l, class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off'),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l + 1}`,
         onpointerdown: (e) => dragMove(e, l, scale),
       },
@@ -4021,8 +4158,7 @@ function startMngSnapshots() {
   startMngSnapshots.timer = setInterval(() => {
     if (!mngSnapshotsWork() || document.hidden) return;
     if (!['lplayers', 'lpinputs', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpshow'].includes(currentView)) return;
-    MNG_SNAP_TICK++;
-    store.notify();
+    snapshotTick(() => { MNG_SNAP_TICK++; });
   }, 4000);
 }
 /** Ask the unit to keep a snapshot of every input it has. Written only where off. */
@@ -4262,7 +4398,7 @@ VIEWS.lpmultiview = (() => {
       const m = /^INPUT_(\d+)$/.exec(String(src || ''));
       const shot = on && m ? mngSnapshotUrl('inputs', +m[1]) : null;
       const box = el('div', {
-        class: 'lrect' + (n === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
+        key: 'W' + n, class: 'lrect' + (n === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${n};` +
           (shot ? `background-image:url(${shot})` : on && src && src !== 'NONE' ? `background:color-mix(in srgb, ${sourceColor(src)} 45%, transparent)` : ''),
         onpointerdown: (e) => dragMove(e, n, scale),
@@ -5765,7 +5901,7 @@ const mngCanvas = (() => {
       const r = rect(c, l);
       const shot = on ? mngSnapshotUrl('inputs', +String(src).replace('INPUT_', '')) : null;
       const box = el('div', {
-        class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
+        key: 'L' + l, class: 'lrect' + (l === sel ? ' sel' : '') + (on ? '' : ' off') + (shot ? ' shot' : ''),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l};` +
           (shot ? `background-image:url(${shot})` : on ? `background:color-mix(in srgb, ${mngSourceColor(src)} 55%, transparent)` : ''),
         onpointerdown: (e) => { e.currentTarget.parentNode.focus(); onSelect(l, false); dragMove(e, c, l, scale); },
@@ -5778,7 +5914,7 @@ const mngCanvas = (() => {
     if (tr) {
       const shot = mngSnapshotUrl(`screens/${c.n}/top`, +tr.frame);
       const box = el('div', {
-        class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
+        key: 'top', class: 'lrect top' + (sel === 'top' ? ' sel' : '') + (shot ? ' shot' : ''),
         style: `left:${tr.left * scale}px;top:${tr.top * scale}px;width:${tr.w * scale}px;height:${tr.h * scale}px;z-index:99;` + (shot ? `background-image:url(${shot})` : ''),
         onpointerdown: (e) => { onSelect('top', false); dragTop(e, c, scale); },
       }, el('span', { class: 'lrect-tag', text: tags ? `top · frame ${tr.frame}` : 'top' }));
@@ -7423,7 +7559,15 @@ VIEWS.videoout = (() => {
   function canvas() {
     const a = aoi();
     const scale = CW / a.src.w;
-    const cv = el('div', { class: 'screen-canvas vo-canvas', style: `width:${CW}px;height:${Math.round(a.src.h * scale)}px` });
+    const onMove = (e) => {
+      if (!drag) return;
+      const dx = (e.clientX - drag.x) / drag.scale, dy = (e.clientY - drag.y) / drag.scale;
+      if (drag.kind === 'move') writeAoi({ w: drag.w, h: drag.h, cx: drag.cx + dx, cy: drag.cy + dy });
+      else writeAoi({ w: drag.w + dx * 2, h: drag.h + dy * 2, cx: drag.cx, cy: drag.cy });
+      store.notify();
+    };
+    const cv = el('div', { class: 'screen-canvas vo-canvas', style: `width:${CW}px;height:${Math.round(a.src.h * scale)}px`,
+      onpointermove: onMove, onpointerup: () => { drag = null; }, onpointerleave: () => { drag = null; } });
     const left = (a.cx - a.w / 2) * scale + CW / 2;
     const top = (a.cy - a.h / 2) * scale + (a.src.h * scale) / 2;
     const rect = el('div', {
@@ -7442,16 +7586,6 @@ VIEWS.videoout = (() => {
           drag = { kind: 'size', x: e.clientX, y: e.clientY, cx: a.cx, cy: a.cy, w: a.w, h: a.h, scale };
         },
       }));
-    const onMove = (e) => {
-      if (!drag) return;
-      const dx = (e.clientX - drag.x) / drag.scale, dy = (e.clientY - drag.y) / drag.scale;
-      if (drag.kind === 'move') writeAoi({ w: drag.w, h: drag.h, cx: drag.cx + dx, cy: drag.cy + dy });
-      else writeAoi({ w: drag.w + dx * 2, h: drag.h + dy * 2, cx: drag.cx, cy: drag.cy });
-      store.notify();
-    };
-    cv.addEventListener('pointermove', onMove);
-    cv.addEventListener('pointerup', () => { drag = null; });
-    cv.addEventListener('pointerleave', () => { drag = null; });
     cv.append(rect);
     return cv;
   }
@@ -7829,7 +7963,7 @@ VIEWS.multiview = (() => {
       if (!on && w !== sel) continue;
       const r = rectPx(w), src = store.val('MLces', out, w);
       const box = el('div', {
-        class: 'lrect' + (w === sel ? ' sel' : '') + (on ? '' : ' off'),
+        key: 'W' + w, class: 'lrect' + (w === sel ? ' sel' : '') + (on ? '' : ' off'),
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${w + 1}`,
         onpointerdown: (e) => dragMove(e, w, scale),
       },
@@ -8239,7 +8373,9 @@ VIEWS.workspace = (() => {
     .filter(c => (ctxRole(s, c) === 'pgm' ? showLive : showEdit))
     .sort((a, b) => (ctxRole(s, a) === 'pgm' ? 0 : 1) - (ctxRole(s, b) === 'pgm' ? 0 : 1));
 
-  // size every canvas to the largest box that fits its slot, keeping aspect ratio
+  // size every canvas to the largest box that fits its slot, keeping aspect
+  // ratio; runs after every render (afterRender) and on a window resize
+  const fitted = new Map();   // 'screen:ctx' -> {w, h} the last pass set
   function fitCanvases() {
     document.querySelectorAll('.ws-screen .canvas-wrap').forEach(wrap => {
       const cv = wrap.querySelector('.screen-canvas'); if (!cv) return;
@@ -8248,8 +8384,10 @@ VIEWS.workspace = (() => {
       if (!availW || !availH) return;
       let w = availW, h = w / ar;
       if (h > availH) { h = availH; w = h * ar; }
-      cv.style.width = Math.round(w) + 'px';
-      cv.style.height = Math.round(h) + 'px';
+      w = Math.round(w); h = Math.round(h);
+      cv.style.width = w + 'px';
+      cv.style.height = h + 'px';
+      if (cv.dataset.fit) fitted.set(cv.dataset.fit, { w, h });
     });
   }
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
@@ -8462,9 +8600,12 @@ VIEWS.workspace = (() => {
   }
 
   // ---- pointer drags on the canvas ----
-  function dragMove(e, s, c, l, cv, sw, sh) {
+  // The canvas is the box's parent at the time of the press: a render keeps
+  // the live elements and refreshes only their handlers, so an element closed
+  // over when the handler was built may no longer be the one on screen.
+  function dragMove(e, s, c, l, sw, sh) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); select(s, c, l);
-    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh);
+    const box = e.currentTarget, sx = e.clientX, sy = e.clientY, r0 = layerRectPx(s, c, l), k = scaleOf(box.parentNode, sw, sh);
     const move = (ev) => {
       const r = { ...r0, left: r0.left + (ev.clientX - sx) / k.x, top: r0.top + (ev.clientY - sy) / k.y };
       asPct(box, r, sw, sh); setGeom(s, c, l, r);
@@ -8472,10 +8613,10 @@ VIEWS.workspace = (() => {
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); endDrag(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   }
-  function dragResize(e, s, c, l, cv, sw, sh, corner, box) {
+  function dragResize(e, s, c, l, sw, sh, corner, box) {
     e.preventDefault(); e.stopPropagation(); beginDrag(); select(s, c, l);
     const sx = e.clientX, sy = e.clientY;
-    const r0 = layerRectPx(s, c, l), k = scaleOf(cv, sw, sh), ar = r0.h ? r0.w / r0.h : 16 / 9;
+    const r0 = layerRectPx(s, c, l), k = scaleOf(box.parentNode, sw, sh), ar = r0.h ? r0.w / r0.h : 16 / 9;
     const west = corner.includes('w'), north = corner.includes('n');
     const move = (ev) => {
       const dx = (ev.clientX - sx) / k.x, dy = (ev.clientY - sy) / k.y;
@@ -8620,19 +8761,24 @@ VIEWS.workspace = (() => {
     const { w: sw, h: sh } = screenPx(s);
     const role = ctxRole(s, c);
     const n = maxLayers(s);
-    const cv = el('div', { class: 'screen-canvas ws-cv-' + role });
-    cv.dataset.ar = String(sw / sh);
-    cv.append(workOverlay(s, sw, sh, false) || '');
     const pointFromEvent = (e) => {
-      const b = cv.getBoundingClientRect();
+      const b = e.currentTarget.getBoundingClientRect();
       return { x: (e.clientX - b.left) / (b.width || 1) * sw, y: (e.clientY - b.top) / (b.height || 1) * sh };
     };
-    // dropping on bare canvas places the source on the first free layer, where you let go
-    Object.entries(dropTarget((e) => {
-      const src = droppedSource(e);
-      if (src == null || Number.isNaN(src)) return;
-      drop(s, c, src, pointFromEvent(e));
-    })).forEach(([k, v]) => cv.addEventListener(k.slice(2), v));
+    const cv = el('div', {
+      class: 'screen-canvas ws-cv-' + role, 'data-ar': String(sw / sh), 'data-fit': s + ':' + c,
+      // dropping on bare canvas places the source on the first free layer, where you let go
+      ...dropTarget((e) => {
+        const src = droppedSource(e);
+        if (src == null || Number.isNaN(src)) return;
+        drop(s, c, src, pointFromEvent(e));
+      }),
+    });
+    // the size the last layout pass found for this slot, so the canvas is
+    // never on screen unsized between a render and the pass that follows it
+    const fs = fitted.get(s + ':' + c);
+    if (fs) { cv.style.width = fs.w + 'px'; cv.style.height = fs.h + 'px'; }
+    cv.append(workOverlay(s, sw, sh, false) || '');
 
     for (let l = 0; l < n; l++) {
       const src = store.val('PRinp', s, c, l);
@@ -8643,7 +8789,7 @@ VIEWS.workspace = (() => {
       const missing = src && !sourceAvailable(src);
       const snap = snapshotUrl(src);
       const box = el('div', {
-        class: 'lrect' + (isSel ? ' sel' : '') + (src ? '' : ' empty') + (missing ? ' missing' : '') + (snap ? ' shot' : ''),
+        key: 'L' + l, class: 'lrect' + (isSel ? ' sel' : '') + (src ? '' : ' empty') + (missing ? ' missing' : '') + (snap ? ' shot' : ''),
         title: missing ? `${sourceName(src)} is not available — a take waiting on this layer will not land` : '',
         // background-color, not the shorthand — see srcTile
         style: `background-color:${srcColor(src)};z-index:${l + 1};opacity:${Math.max(0.15, alpha)}`
@@ -8655,13 +8801,13 @@ VIEWS.workspace = (() => {
         }),
         onpointerdown: (e) => {
           if (armed != null) { e.stopPropagation(); assign(s, c, l, armed); }
-          else dragMove(e, s, c, l, cv, sw, sh);
+          else dragMove(e, s, c, l, sw, sh);
         },
       },
         el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `${layerName(l)}${src ? ' · ' + sourceNameFor(src, l) : ''}${missing ? ' ⚠' : ''}` }));
       asPct(box, r, sw, sh);
       cv.append(box);
-      if (isSel) selectionChrome(cv, box, (e, cn, b) => dragResize(e, s, c, l, cv, sw, sh, cn, b));
+      if (isSel) selectionChrome(cv, box, (e, cn, b) => dragResize(e, s, c, l, sw, sh, cn, b));
     }
     const broken = assignedLayers(s, c).filter(l => !sourceAvailable(store.val('PRinp', s, c, l)));
     return el('div', { class: 'ws-ctx ws-ctx-' + role },
@@ -9113,7 +9259,6 @@ VIEWS.workspace = (() => {
   function render() {
     const all = active();
     const screens = all.filter(s => !hidden.has(s));
-    requestAnimationFrame(fitCanvases);
     return el('div', { class: 'ws-page' },
       el('div', { class: 'panel ws-bar' },
         el('div', { class: 'ws-toggles' },
@@ -9146,7 +9291,7 @@ VIEWS.workspace = (() => {
         inspector()),
       memoryBar());
   }
-  return { enter, render };
+  return { enter, render, afterRender: fitCanvases };
 })();
 
 // ---------- Audio (Midra) ----------
@@ -9651,7 +9796,7 @@ function plsPresetCanvas(p, width, opts = {}) {
     if (!on && opts.sel !== L.l) return;
     const r = plsRect(p, L.l);
     const box = el('div', {
-      class: 'lrect' + (opts.sel === L.l ? ' sel' : '') + (on ? '' : ' off'),
+      key: 'L' + L.l, class: 'lrect' + (opts.sel === L.l ? ' sel' : '') + (on ? '' : ' off'),
       style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${z + 1}`,
       onpointerdown: opts.onMove ? (e) => opts.onMove(e, L.l, scale) : null,
       onclick: opts.onSelect ? () => opts.onSelect(L.l) : null,

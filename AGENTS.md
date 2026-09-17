@@ -237,9 +237,19 @@ std binary and may use crates. Keep the split.
   answered.** Reads sent then go nowhere and destinations are empty, so the
   AWJ views settle themselves on render (`settle()`) and everything the
   Screens view shows per destination is in the hub's connect-time inventory.
-- **Web RCS refs go stale on every render** — the surface rebuilds its tree on
-  each store notify, so a browser-driven test must re-find an element after
-  any action that changes state.
+- **A render patches the live tree; it does not rebuild it.** Every store
+  notify builds the whole surface and `morphChildren` patches the document to
+  match — attributes, handler properties, form state, children — so scroll,
+  focus, caret, a picture on screen and an open `<details>` survive a device
+  frame. The rules that keep that true: `el()` wires events as handler
+  properties (`n.onclick = fn`), never `addEventListener` on an element a view
+  builds; a handler must not close over an element built in the same render —
+  it reads `e.currentTarget` (the live one) instead; anything sized from
+  layout goes in the view's `afterRender()` (Workspace's `fitCanvases`), never
+  in a `requestAnimationFrame`; and an element that must never be patched into
+  a different one carries a `key` (the selection chrome, every layer box, the
+  view root). A browser-driven test should still re-find an element after an
+  action: a node whose kind or key changed is replaced.
 
 ## Midra (10500) and LiveCore facts worth not regressing
 
