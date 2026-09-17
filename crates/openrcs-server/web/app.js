@@ -580,10 +580,12 @@ function header() {
     el('div', { class: 'brand', html: 'open<span>rcs</span>' }),
     el('div', { class: 'dev-id' },
       el('div', { class: 'model', text: model }),
-      // The port actually configured, not the family's default (meta.port):
-      // a simulator or a second unit on a non-default port would otherwise be
-      // described as something it is not.
-      el('div', { class: 'sub', text: plat ? `${platformName(plat)} · :${store.meta?.device?.split(':').pop() || store.meta?.port || ''}` : 'not configured' })),
+      // The address actually configured, not the family's default port: two
+      // bridges on one desk (a NeXtage in the tray app, a Pulse2 from the
+      // command line) look the same in every other way, and a simulator or a
+      // second unit on a non-default port would otherwise be described as
+      // something it is not.
+      el('div', { class: 'sub', text: plat ? `${platformName(plat)} · ${store.meta?.device || ':' + (store.meta?.port || '')}` : 'not configured' })),
     el('div', { class: 'spacer' }),
     store.plan
       ? el('button', { class: 'chip plan', title: 'Plan mode — edits are staged, not sent. Open Plan to push.',
