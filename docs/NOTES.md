@@ -605,6 +605,51 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## A layer resized on program never moved on the wall — 2026-09-17, at a show
+
+**"When I resize a layer on PGM it doesn't change on the hardware."** A NeXtage
+16 at a show (192.168.2.140, driven from the 0.8.1 tray app). The bridge read
+back everything it had written — `PRsih`/`PRsiv`/`PRpoh`/`PRpov` echoed with
+the new values — and the output did not move. Read through the running bridge
+(no writes): `CTpmu` = **1**, `PIwus[s,0]` = 0 on the bank on air (bank A,
+`GCsta` 0) and 1 on the other — "was unmodified" false on program: the edits
+were sitting in the unit as pending.
+
+**The mechanism, from the vendor's own client.** `ORX_WebRCS.swf` (v04.02.03,
+the copy the unit serves) does two things openrcs never did: on device init
+(`DeviceInit::DeviceInitInitializeDevice`) it writes `CTpmu` = 1 — preset-update
+mode ON — and after every layer edit (`LayerHandle::updateVars`, the drag and
+resize handles; `MoveLayersToPixelPrecision`, `LoadInputInLayers`,
+`SetLayersToFullScreen`, `PasteLayers`, `processPresetLayout`, native
+background changes, …) it calls `DeviceUpdates::UpdatePresets`, which is one
+write: **`GCupd` = 1** (GROUP_UPDATE). With the mode on, a preset-element write
+is held until that trigger; the vendor client writes the changed `PR*` values,
+then `GCupd`, and the outputs follow. `PIwur` is never written by the LiveCore
+client (the Midra one uses it to re-baseline a program edit). Memory loads
+(`PMloa`) and layer swaps (`LS*`) are device-side and get no `GCupd`.
+
+Why it never showed before: nobody had watched a LiveCore output while openrcs
+edited a layer. The August notes assumed "LiveCore edits program directly"; the
+bench session on the 16th fired every write path at the home NeXtage with no
+monitor on it, and read-back echoes look like success. The show unit had been
+connected to the Web RCS at some point, so it was in mode 1 — every unit that
+has ever seen the vendor client is.
+
+**Fix (this commit).** `Store._sendSet` notes every `PR*`/`PN*` write (a
+`store.set`, a plan push, or a typed Console set) and fires `GCupd` 25 ms after
+the last of a burst — one commit per drag step, and the four writes of a
+geometry change land together instead of size-then-position. `presetEditMode()`
+(was `midraEditMode`) puts a LiveCore into mode 1 on the way into every editing
+view, as the vendor does, and keeps a Midra at 0 as before (there the mode makes
+the take verb inert, and a Midra has no `GCupd`). Proven against a scripted
+LiveCore that records the wire: a Workspace resize now arrives as the four
+preset writes followed by `1GCupd`.
+
+**Still to confirm on a unit:** that `GCupd` also lands preview-bank edits
+before a take (the vendor commits those the same way, so it should), and what
+mode 0 does — the vendor never uses it, and the home NeXtage was off when this
+was found.
+
 ## The whole screen flashed on every interaction — 2026-09-17
 
 **"The whole screen flashes when interacting with the layers."** Three things,

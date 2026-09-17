@@ -256,9 +256,18 @@ std binary and may use crates. Keep the split.
 - **Keep the Midra's preset-update mode OFF.** `CTpmu`=1 makes `GCtak` inert
   (accepted, latched at 1, nothing moves, `GCtav` pinned at 0); with it off,
   preview (ctx 1) edits stick and the take lands. Measured on a Pulse2
-  2026-09-16. `midraEditMode()` is the one place it is written; a Midra take
+  2026-09-16. `presetEditMode()` is the one place it is written; a Midra take
   pulses `GCtak` 0 then 1; a Midra cut runs the T-bar through the middle to
   the far end (one write of the far end is ignored).
+- **A LiveCore preset-element write shows nothing until `GCupd`.** In
+  preset-update mode (`CTpmu`=1 — the vendor's Web RCS sets it on every
+  connect, so a unit in the field is in it) every `PR*`/`PN*` write is held
+  pending; `GCupd`=1 (GROUP_UPDATE) applies them all. A layer resized on
+  program with no `GCupd` never moved on the wall (NeXtage 16, 2026-09-17).
+  `Store._sendSet` notes every such write and `commitPresets()` fires the
+  trigger 25 ms after the last of a burst; `presetEditMode()` keeps a LiveCore
+  at 1. Do not add a write path that bypasses `store.set` (a raw Console set
+  is parsed for the same reason), and never diff-then-skip the trigger.
 - **`MAmfa`/`MAnfa`/`MAsfa` are FADE_AUTO: 1 = fade IN (up), 2 = fade OUT (to
   black).** `MAnas`/`MAsas` are ALPHA_STATUS (0 at max, 1 at min, 3/4 in
   transition). Both verified on a NeXtage 16; the constants are `FADE_IN`,

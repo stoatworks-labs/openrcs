@@ -226,22 +226,32 @@ function animateTbar(g, to, ttime) {
   _tbarAnim[g] = setInterval(tick, 45);   // ~22 fps; final tick lands exactly on `to`
   tick();
 }
-// Midra's PRESET_UPDATE_MODE (CTpmu) must be OFF for the take verb to work.
-// Measured on a Pulse2 (2026-09-16): with it on, GCtak is accepted, latches at 1
-// and transitions nothing, GCtav sits at 0 and every preview edit keeps it
-// there; with it off, preview (ctx 1) edits stick just the same and GCtak puts
-// them on air. The mode was being switched on here on the belief that preview
-// edits needed it — they do not. Leave it off, and make sure of it before a
-// take, since the vendor client turns it on when it connects.
-function midraEditMode() {
-  if (isMidra() && store.byMnem.has('CTpmu') && store.val('CTpmu') !== 0) store.set('CTpmu', [], 0);
+// PRESET_UPDATE_MODE (CTpmu) means opposite things to the two platforms, and
+// both vendor clients write it on connect, so a unit is in whichever mode the
+// last client left it — make sure of it on the way into any editing view.
+//
+// Midra: it must be OFF for the take verb to work. Measured on a Pulse2
+// (2026-09-16): with it on, GCtak is accepted, latches at 1 and transitions
+// nothing, GCtav sits at 0 and every preview edit keeps it there; with it off,
+// preview (ctx 1) edits stick just the same and GCtak puts them on air.
+//
+// LiveCore: it is the mode the vendor's Web RCS runs in — ON — where every
+// preset-element write is held until GROUP_UPDATE (GCupd), which the store
+// fires after each burst of them (Store._noteEdit). A unit found at 1 with no
+// GCupd ever sent showed none of its program edits (NeXtage 16, 2026-09-17).
+// Keeping it on is what makes a resize land as one change rather than as a
+// size then a position.
+function presetEditMode() {
+  if (!store.byMnem.has('CTpmu')) return;
+  const want = isMidra() ? 0 : 1;
+  if (store.val('CTpmu') !== want) store.set('CTpmu', [], want);
 }
 // A Midra take is the device's own GCtak, which runs each layer's programmed
 // transition. It is a level the device drops after the transition — but an
 // inert one (see above) leaves it latched at 1, and a 1 written over a 1 is
 // nothing — so it is always pulsed 0 then 1.
 function midraTake(screen) {
-  midraEditMode();
+  presetEditMode();
   store.set('GCtak', [screen], 0);
   store.set('GCtak', [screen], 1);
 }
@@ -251,7 +261,7 @@ function midraTake(screen) {
 // write of the far end is ignored, two writes 50 ms apart (the middle, then
 // the end) land every time. Proven on the Pulse2 in both directions.
 function midraCut(screen) {
-  midraEditMode();
+  presetEditMode();
   const max = store.byMnem.get('GCtba')?.max ?? 10000;
   const at = store.val('GCtba', screen) ?? 0;
   const to = at >= max / 2 ? 0 : max;
@@ -515,8 +525,32 @@ class Store {
       this.notify();
       return;
     }
+    this._sendSet(m, idx, v);
+  }
+  _sendSet(m, idx, v) {
     this.send({ t: 'set', m, i: idx, v });
     this.pushLog('tx', `${m} ${[...idx, v].join(',')}`);
+    this._noteEdit(m);
+  }
+  // A LiveCore in preset-update mode (CTpmu = 1, which the vendor's own client
+  // sets on every connect and a unit then keeps) holds every preset-element
+  // write — PR* layers, PN* native background — as a pending edit and shows
+  // nothing on its outputs until GROUP_UPDATE (GCupd) is fired. The vendor's
+  // client fires it after each edit; a layer resized on program without it
+  // never moves on the wall (a NeXtage 16 at a show, 2026-09-17). So every
+  // such write here schedules one commit a moment after the last of a burst,
+  // which also lands the four writes of a geometry change together rather
+  // than size-then-position. A Midra has no GCupd and is untouched.
+  _noteEdit(m) {
+    if (!/^P[RN]/.test(m) || !this.byMnem.has('GCupd')) return;
+    clearTimeout(this._commitT);
+    this._commitT = setTimeout(() => this.commitPresets(), 25);
+  }
+  commitPresets() {
+    clearTimeout(this._commitT); this._commitT = null;
+    if (!this.byMnem.has('GCupd')) return;
+    this.send({ t: 'set', m: 'GCupd', i: [], v: 1 });
+    this.pushLog('tx', 'GCupd 1');
   }
   get(m, idx = []) { this.send({ t: 'get', m, i: idx }); }
 
@@ -547,7 +581,14 @@ class Store {
   // subscription list starts empty. Prefix matched, so one path per subtree.
   psub(paths) { this.send({ t: 'psub', paths }); }
   scan(m) { this.send({ t: 'scan', m }); }
-  raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
+  raw(d) {
+    this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d);
+    // a typed `0,0,0,960PRsih` is a preset-element write like any other: a set
+    // carries one number more than the variable has indices, a get does not
+    const m = /^([\d,\s-]*?)([A-Za-z]{5})\s*$/.exec(d);
+    const def = m && this.byMnem.get(m[2]);
+    if (def && m[1].split(',').filter(x => x.trim() !== '').length === def.dims.length + 1) this._noteEdit(m[2]);
+  }
 
   // ---- plan mode ----
   setPlan(on) { this.plan = !!on; this._persistPlan(); this.notify(); }
@@ -569,8 +610,7 @@ class Store {
     const total = entries.length + paths.length;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
-      this.send({ t: 'set', m: e.m, i: e.idx, v: e.v });
-      this.pushLog('tx', `${e.m} ${[...e.idx, e.v].join(',')}`);
+      this._sendSet(e.m, e.idx, e.v);
       if (onProgress) onProgress((i + 1) / total);
       if ((i & 15) === 15) await sleep(30);
     }
@@ -1137,13 +1177,13 @@ VIEWS.memories = (() => {
       store.get('PMssh', [slot, 0]); store.get('PMssv', [slot, 0]);
     }
     function enter() {
-      midraEditMode();
+      presetEditMode();
       store.scan('PMpst'); store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     }
     function save(slot) { store.set('GCsrq', [2, slot], 1); store.get('PMpst', [slot]); got.delete(slot); ensure(slot); store.notify(); }
     function reset(slot) { store.set('CTpmr', [slot], 1); store.get('PMpst', [slot]); got.delete(slot); if (sel === slot) sel = null; store.notify(); }
     function recall(slot) {                       // re-apply the stored preset to preview (ctx 1)
-      midraEditMode();
+      presetEditMode();
       for (let sc = 0; sc < screenCount(); sc++)
         for (let l = 0; l < layerSlots(); l++) {
           store.set('PRsih', [sc, 1, l], store.val('PMsih', slot, sc, l) || 0);
@@ -1209,9 +1249,9 @@ VIEWS.memories = (() => {
     const ctxOf = (a) => a.role === 'pgm' ? liveCtx(a.screen) : editCtx(a.screen);
 
     function enter() {
-      // Midra: keep preset-update mode OFF — preview edits stick without it,
-      // and with it on the take verb is dead (see midraEditMode).
-      midraEditMode();
+      // Midra: preset-update mode OFF (the take verb is dead with it on);
+      // LiveCore: ON, and every write commits with GCupd (see presetEditMode).
+      presetEditMode();
       for (const m of ['SCmly', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
       if (hasBanks()) store.scan('GCsta');
       LAYER_MEM.fetch(from.screen, ctxOf(from), from.layer);
@@ -3011,9 +3051,10 @@ VIEWS.layers = (() => {
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
     // Midra protects the program preset: edits go to the preview context and a
-    // take commits them. Preset-update mode stays OFF — with it on the take
-    // verb is inert (see midraEditMode). LiveCore edits apply directly.
-    midraEditMode();
+    // take commits them, with preset-update mode OFF (the take verb is inert
+    // with it on). LiveCore edits either bank and commits each with GCupd,
+    // which needs the mode ON (see presetEditMode).
+    presetEditMode();
     if (isMidra() && store.byMnem.has('PSfrv')) store.scan('PSfrv');
     if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctxOf()]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
@@ -8393,7 +8434,7 @@ VIEWS.workspace = (() => {
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
 
   function enter() {
-    midraEditMode();
+    presetEditMode();
     // a Midra's frame layer shows the loaded frames, so their validity is what makes a number usable there
     if (isMidra()) { store.get('CTpmu', []); store.scan('GCtba'); store.scan('GCtav'); if (store.byMnem.has('PSfrv')) store.scan('PSfrv'); }
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
@@ -9239,7 +9280,7 @@ VIEWS.workspace = (() => {
     }
   }
   function recallMidra(i) {
-    midraEditMode();
+    presetEditMode();
     const c = 1;
     for (let s = 0; s < screenCount(); s++)
       for (let l = 0; l < layerSlots(); l++) {

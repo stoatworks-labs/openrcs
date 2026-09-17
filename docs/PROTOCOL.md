@@ -186,6 +186,30 @@ To ask the device which bank is live rather than inferring it: set `PMscf`
 (screen), `PMprf` = 0 (`PRESET_MODE` MAIN), `PMmet` (slot), `PMsav` = 1, then
 read `PMinp[slot, layer]` — the device saves whichever bank is on air.
 
+## Preset-update mode and GROUP_UPDATE (LiveCore)
+
+`CTpmu` (`PRESET_UPDATE_MODE`) decides when a preset-element write reaches the
+outputs. At **1** the unit holds every `PR*` and `PN*` write as a pending edit
+— the value is accepted and echoed, `PIwus[screen, bank]` (`PI_WAS_UNMODIFIED_
+STATUS`) drops to 0 for that bank, and nothing moves — until **`GCupd` = 1**
+(`GROUP_UPDATE`, no index) applies everything pending on every screen and bank
+at once. The vendor's Web RCS runs in that mode: it writes `1CTpmu` on device
+init and `1GCupd` after each edit (a handle drag, a source drop, a paste, a
+layout, a native-background change), which is why a unit that has ever met the
+vendor client is at 1. What 0 does the vendor never exercises.
+
+Seen on a NeXtage 16 at a show (2026-09-17): `CTpmu` 1, program bank `PIwus` 0,
+a layer resized over the protocol with no `GCupd` ever sent, and the wall
+unchanged. openrcs now keeps a LiveCore at 1 and commits every burst of
+preset-element writes with `GCupd`, so a geometry change lands as one change
+rather than a size and then a position. Memory loads (`PMloa`/`PMlot`) and
+layer swaps (`LS*`) are device-side actions and take no `GCupd`; the vendor
+client sends none after them.
+
+A Midra has no `GCupd`, and its `CTpmu` gates the take instead: at 1 the
+take verb `GCtak` is accepted and does nothing (Pulse2, 2026-09-16), so
+openrcs keeps a Midra at 0 and a LiveCore at 1.
+
 ## Preset elements differ between the platforms
 
 LiveCore packs its per-layer booleans into one bitfield, `PRflg` (`PE_FLAGS`):

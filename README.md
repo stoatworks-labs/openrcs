@@ -111,6 +111,13 @@ backwards. The bridge also gained a link watchdog: a processor that stops
 answering is dropped after 20 s and shows OFFLINE instead of ONLINE, and every
 memory erase or save-over asks for a second tap.
 
+The show itself found a fifth (2026-09-17): a **LiveCore layer edit never
+reached the wall**. The unit was in preset-update mode — the vendor's own
+client puts every unit it meets there — where a layer write is held until a
+`GCupd` update, which openrcs never sent. It now sends one after every burst of
+layer writes, as the vendor client does, so a resize or a source change on
+program or preview lands at once.
+
 Two things this release added are worth calling out for what is and is not proven.
 The Midra **video out** — its three plug modes, its screen sources, and its area of
 interest — is confirmed on a Pulse2, including watching the SDI plug move between
