@@ -39,9 +39,12 @@ nothing at all; a result listed as **unidentified** was found and answered, it
 just did not name its platform, so pick that yourself and connect. A processor
 that already has a control session open elsewhere may not answer at all.
 
-**No command line?** The [tray launcher](https://github.com/stoatworks-labs/openrcs/releases/tag/launcher-v0.1.0)
-(macOS, Windows, Linux) bundles the server in a menu-bar app: enter the switcher's
-IP, pick the model, click **Start**, then **Open**. Nothing else to install.
+**No command line?** The **openRCS tray app** ships with every release beside the
+server packages — `openrcs-<version>-macos-app.dmg` / `.pkg` on macOS (universal,
+signed and notarised), `openRCS_<version>_amd64.deb` and `.rpm` on Linux,
+`openRCS_<version>_x64-setup.exe` on Windows. It bundles the server in a menu-bar
+app: click **Start server**, then **Open**, and point it at the switcher from the
+Connection view. Nothing else to install.
 
 The interface is a single dark theme, chosen deliberately for the blacked-out
 environments these processors live in. The left nav is grouped into **Program**
