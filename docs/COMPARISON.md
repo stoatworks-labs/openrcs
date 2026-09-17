@@ -4,7 +4,7 @@
 
 Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K, and the original RCS for the Pulse PLS300. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.
 
-This page describes **openrcs v0.8.1** (`1b1bd72`) as of 2026-09-16, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
+This page describes **openrcs v0.8.2** (`b42a956`) as of 2026-09-17, read from the views the app actually shows for each family and the device variables each one drives. The vendor columns are read from the current manuals, not from a running unit:
 
 - **Midra** (Pulse², Eikos², Saphyr, SmartMatriX², QuickMatriX, QuickVu) — RCS²: Pulse² user manual, RCS² chapters 6–7
 - **LiveCore** (Ascender, NeXtage, SmartMatriX Ultra) — Web RCS: LiveCore user manual, Web RCS chapter 7
