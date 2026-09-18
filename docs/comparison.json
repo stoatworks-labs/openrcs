@@ -1,9 +1,9 @@
 {
  "$comment": "Source of truth for docs/COMPARISON.md (run scripts/gen-comparison.py) and for the site's copy. Stock states: Y the vendor tool has it, N it does not, X the platform has no such thing. openrcs states: F full, P partial, M missing, B beyond stock, X not applicable.",
  "subject": "openrcs",
- "version": "v0.8.2",
- "commit": "b42a956",
- "date": "2026-09-17",
+ "version": "v0.8.3",
+ "commit": "224b993",
+ "date": "2026-09-18",
  "intro": "Where openrcs stands against the software Analog Way ships for each processor family — the RCS² for the Midra series, the Web RCS for LiveCore, LivePremier and Midra 4K, and the original RCS for the Pulse PLS300. Every row is a feature; the stock column is the vendor's inventory and the openrcs column is the verdict against it.",
  "platforms": [
   {
