@@ -47,7 +47,7 @@ slices, so the one bundle runs on Apple Silicon and Intel alike.
 
 The panel/tray shell is a copy of the reusable
 [av-launcher](https://github.com/stoatworks-labs/av-launcher) (`src/`,
-`src-tauri/src/`, `src-tauri/crates/`), taken at av-launcher `21bc307`; only
+`src-tauri/src/`, `src-tauri/crates/`), taken at av-launcher `804555c`; only
 `src-tauri/launcher.toml` (config + theme), `tauri.conf.json`, `Info.plist`,
 the icon and the bundled binary are app-specific. Refresh the shell by copying
 those files from a newer av-launcher checkout, not by editing them here.
