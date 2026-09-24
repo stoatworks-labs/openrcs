@@ -53,7 +53,10 @@ crates/openrcs-awj/     LivePremier / Midra 4K / Alta 4K engine (no_std, serde_j
 crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   src/hub.rs            one TCP link to the device + state cache + broadcast
   src/main.rs           HTTP/WS, the browser JSON protocol
+  src/plus.rs           the plugins' half: shared data, leases, TCP links, OSC, thumbnail relay
+  src/remote.rs         remote access: tailscale serve, tailnet/ZeroTier listeners
   web/                  vanilla ES-module SPA, no build step
+  web/plugins/<id>/     one folder per plugin (docs/PLUGINS.md); PLUGIN_INDEX in app.js lists them
 protocol/*.json         source of truth for the variable tables
 docs/PROTOCOL.md        the wire protocol
 docs/comparison.json    feature parity vs the vendor RCS, per family; edit this
@@ -324,13 +327,46 @@ std binary and may use crates. Keep the split.
   out at 40 leaves on a LiveCore and 27 on a Midra with no second table to maintain.
   `PRlay` is excluded on purpose: it is the RCS's edit selection, not layer state.
 
+## Plugins (web/plugins/, docs/PLUGINS.md)
+
+- **A new feature is a new plugin folder**, reaching the core only through
+  `host` (built in `PLUS.makeHost`, app.js). What `host` offers is the plugin
+  API; widening it is a decision, not a convenience.
+- **Bulk writes are quiet.** `afterSet` hooks (the layer-group gang) see only
+  an operator's edits. A memory re-applied, a show restored, a locked layer
+  held through a take — anything that writes many values for one reason —
+  goes through `quietly()`, or a gang applies it twice. A new bulk writer must
+  do the same.
+- **A take waits for its hooks.** `doTake`/`doCut`/`groupTake`/`groupCut` run
+  `beforeTake` hooks through `afterHooks`, which forces `GCupd` and delays the
+  take when a hook wrote, so a LiveCore commits the hold before the bar moves.
+  A new take path must go through `afterHooks` too, or Layer lock does not hold.
+- **OSC semantic verbs run on a page, not in the bridge.** `/set` and `/raw` are
+  the bridge's; everything else is forwarded to the page holding the
+  `osc-input.actions` lease. Do not re-implement a take in Rust.
+- **Links are per page** (the key carries `PAGE_ID`): HyperDeck, LW3 and Turtle
+  pair each reply with the command before it.
+- **Plugin data is the show's and lives in the bridge** (`plugin-data.json`,
+  keys `<plugin>.<name>`); the hosted demo falls back to localStorage. Cues,
+  Keys, the layer bank and working areas are still per-browser localStorage,
+  as they always were.
+- **Vendored files say where from** — livepremier-plus (arithmetic/expr.js,
+  timecode/, hyperdeck/protocol.js, the four router drivers), awj-surface
+  (speed-editor.js), otter-edid-editor (otter-edid-embed.js). Change them
+  upstream and copy.
+
 ## Verifying
 
 ```bash
 cargo test
 cargo clippy --all-targets        # must be clean
 cargo build --no-default-features # no_std must keep building
+node crates/openrcs-server/web/plugins/console/lang.test.mjs   # the command language
 ```
+
+The surface itself is checked in a browser against the demo (`demo/build-demo.sh`,
+then `demo/serve-demo.py`); the demo device models the LiveCore bank take and
+the Midra GCtak, so takes, cues and Layer lock can be driven there.
 
 `no_std` is not decoration — a future gateway target may be embedded. Do not
 reach for `std` in `openrcs-proto`.

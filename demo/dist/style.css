@@ -843,3 +843,28 @@ table.grid td input[type=checkbox] { width: 16px; height: 16px; accent-color: va
 .cue-notes-in { width: 100%; font-size: 11px; color: var(--faint); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; margin-top: 2px; }
 .cue-notes-in:hover, .cue-notes-in:focus { border-color: var(--line); background: var(--bg); color: var(--text); outline: none; }
 .cue-acts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---- pop-out windows (?popout): one view, no header or menu ---- */
+.app.popout { grid-template-rows: minmax(0, 1fr); grid-template-columns: 1fr; grid-template-areas: "main"; }
+
+/* ---- Plugins page ---- */
+.plugin-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.plugin-row:last-child { border-bottom: 0; }
+.plugin-row.off .plugin-name, .plugin-row.off .plugin-desc { opacity: .55; }
+.plugin-main { flex: 1; min-width: 0; }
+.plugin-name { font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.plugin-id { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; }
+.plugin-desc { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.plugin-why { font-size: 12px; color: var(--armed); margin-top: 4px; }
+.plugin-why.bad { color: var(--pgm); }
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.field.inline { flex-direction: row; align-items: center; gap: 6px; }
+
+/* ---- Cues: detail row ---- */
+.cue.next { box-shadow: inset 3px 0 0 var(--pvw); }
+.cue-detail { padding: 10px 12px 12px 44px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.user-key.sel { outline: 2px solid var(--accent); }
+/* a worked example: a command, and what it does (Command line, OSC input) */
+.cmd-ex { display: flex; flex-direction: column; gap: 2px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.cmd-ex code { font-family: var(--mono); color: var(--accent); }
+.view-head .spacer { flex: 1; }

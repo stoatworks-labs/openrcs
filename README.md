@@ -295,6 +295,23 @@ was built from a git checkout, the short commit it came from —
 `openrcs-server 0.7.0 (f219a9d)` — and exits. The same line opens the startup
 banner, so a running server says which build it is. `--help` lists the flags.
 
+### Plugins
+
+Past the core views, the surface is built from plugins — each one a folder
+under `crates/openrcs-server/web/plugins/`, each switchable on the **Plugins**
+page. Most are ported from LivePremier Plus: field arithmetic, layer names,
+layer groups with a gang and Send to, layer lock and take-one-layer-alone, a
+command line, timecode (MTC, LTC, OSC), MIDI mapping, the DaVinci Resolve
+Speed Editor, an EDID builder (the Otter editor), OSC input, HyperDecks with
+Mitti-style rules, matrix routing (Videohub, Lightware, Turtle AV), Companion
+buttons, a thumbnail relay, remote access over Tailscale or ZeroTier, and a
+setup file. They run on LiveCore and Midra; none has met a processor yet.
+What each does, how far each is proven, the OSC address space and how to write
+one: [docs/PLUGINS.md](docs/PLUGINS.md).
+
+The bridge keeps the plugins' shared data in `plugin-data.json` beside its
+config, so every open page sees the same layer groups, decks and routers.
+
 ### Running it on a dedicated panel
 
 `--tailnet` adds one more view, and it is **off unless you ask for it**. It

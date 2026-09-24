@@ -9,13 +9,21 @@
 // a render must never turn into a different one — a keyed element is matched
 // with the live element of the same key, or replaced.
 const EL_EVENTS = new Set();
+// Set by the Field arithmetic plugin. A number input discards anything it
+// cannot parse — `1080-80` reads back as "" — so while this is on, numeric
+// fields are built as text fields marked `data-math`, and the plugin turns an
+// expression into its number before any handler here sees it.
+let MATH_FIELDS = false;
 function el(tag, props = {}, ...kids) {
-  const n = document.createElement(tag);
   // allow el('h2', 'text') / el('div', node) — a non-plain-object 2nd arg is a child
   if (props == null || typeof props !== 'object' || props.nodeType || Array.isArray(props)) {
     kids = [props, ...kids];
     props = {};
   }
+  if (MATH_FIELDS && tag === 'input' && props.type === 'number') {
+    props = { ...props, type: 'text', inputmode: 'decimal', 'data-math': '' };
+  }
+  const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') n.className = v;
     else if (k === 'text') n.textContent = v;
@@ -226,22 +234,32 @@ function animateTbar(g, to, ttime) {
   _tbarAnim[g] = setInterval(tick, 45);   // ~22 fps; final tick lands exactly on `to`
   tick();
 }
-// Midra's PRESET_UPDATE_MODE (CTpmu) must be OFF for the take verb to work.
-// Measured on a Pulse2 (2026-09-16): with it on, GCtak is accepted, latches at 1
-// and transitions nothing, GCtav sits at 0 and every preview edit keeps it
-// there; with it off, preview (ctx 1) edits stick just the same and GCtak puts
-// them on air. The mode was being switched on here on the belief that preview
-// edits needed it — they do not. Leave it off, and make sure of it before a
-// take, since the vendor client turns it on when it connects.
-function midraEditMode() {
-  if (isMidra() && store.byMnem.has('CTpmu') && store.val('CTpmu') !== 0) store.set('CTpmu', [], 0);
+// PRESET_UPDATE_MODE (CTpmu) means opposite things to the two platforms, and
+// both vendor clients write it on connect, so a unit is in whichever mode the
+// last client left it — make sure of it on the way into any editing view.
+//
+// Midra: it must be OFF for the take verb to work. Measured on a Pulse2
+// (2026-09-16): with it on, GCtak is accepted, latches at 1 and transitions
+// nothing, GCtav sits at 0 and every preview edit keeps it there; with it off,
+// preview (ctx 1) edits stick just the same and GCtak puts them on air.
+//
+// LiveCore: it is the mode the vendor's Web RCS runs in — ON — where every
+// preset-element write is held until GROUP_UPDATE (GCupd), which the store
+// fires after each burst of them (Store._noteEdit). A unit found at 1 with no
+// GCupd ever sent showed none of its program edits (NeXtage 16, 2026-09-17).
+// Keeping it on is what makes a resize land as one change rather than as a
+// size then a position.
+function presetEditMode() {
+  if (!store.byMnem.has('CTpmu')) return;
+  const want = isMidra() ? 0 : 1;
+  if (store.val('CTpmu') !== want) store.set('CTpmu', [], want);
 }
 // A Midra take is the device's own GCtak, which runs each layer's programmed
 // transition. It is a level the device drops after the transition — but an
 // inert one (see above) leaves it latched at 1, and a 1 written over a 1 is
 // nothing — so it is always pulsed 0 then 1.
 function midraTake(screen) {
-  midraEditMode();
+  presetEditMode();
   store.set('GCtak', [screen], 0);
   store.set('GCtak', [screen], 1);
 }
@@ -251,7 +269,7 @@ function midraTake(screen) {
 // write of the far end is ignored, two writes 50 ms apart (the middle, then
 // the end) land every time. Proven on the Pulse2 in both directions.
 function midraCut(screen) {
-  midraEditMode();
+  presetEditMode();
   const max = store.byMnem.get('GCtba')?.max ?? 10000;
   const at = store.val('GCtba', screen) ?? 0;
   const to = at >= max / 2 ? 0 : max;
@@ -260,20 +278,24 @@ function midraCut(screen) {
 }
 function doTake(screen, ttime) {
   CONFIDENCE.autoSnapshot('before take');            // opt-in undo point, no-op unless armed
-  if (!hasBanks()) {                                   // Midra: one-way take per screen
-    if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
-    midraTake(screen);
-    return;
-  }
-  const g = groupOf(screen), to = editCtx(screen);    // to = bank we're bringing live
-  animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
+  afterHooks([screen], false, () => {
+    if (!hasBanks()) {                                 // Midra: one-way take per screen
+      if (ttime != null && store.byMnem.has('GCtup')) store.set('GCtup', [screen], ttime);
+      midraTake(screen);
+      return;
+    }
+    const g = groupOf(screen), to = editCtx(screen);  // to = bank we're bringing live
+    animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
+  });
 }
 /** Cut: jump the bar straight to the target end. */
 function doCut(screen) {
   CONFIDENCE.autoSnapshot('before cut');
-  if (!hasBanks()) { midraCut(screen); return; }
-  const g = groupOf(screen), to = editCtx(screen);
-  animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+  afterHooks([screen], true, () => {
+    if (!hasBanks()) { midraCut(screen); return; }
+    const g = groupOf(screen), to = editCtx(screen);
+    animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+  });
 }
 /** Complete a transition immediately by snapping the bar to the target end. */
 function forceTake(screen) {
@@ -308,19 +330,68 @@ function activeGroups() {
 }
 const groupLiveCtx = (g) => { if (!hasBanks()) return 0; const st = store.val('GCsta', g); return (st === GRP_AT_UP || st === GRP_FROM_UP || st === GRP_COPY_FROM_UP) ? 1 : 0; };
 const groupTransitioning = (g) => { const v = store.val('GCsta', g); return v === GRP_FROM_DOWN || v === GRP_FROM_UP; };
+const screensOfGroup = (g) => Array.from({ length: screenCount() }, (_, s) => s).filter(s => groupOf(s) === g);
 function groupTake(g, ttime) {
   if (!hasBanks()) return;
-  const to = 1 - groupLiveCtx(g);          // target bank: opposite of what's live
-  animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
+  afterHooks(screensOfGroup(g), false, () => {
+    const to = 1 - groupLiveCtx(g);        // target bank: opposite of what's live
+    animateTbar(g, to === 1 ? GCTBA_MAX : 0, ttime);
+  });
 }
 function groupCut(g) {
   if (!hasBanks()) return;
-  const to = 1 - groupLiveCtx(g);
-  animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+  afterHooks(screensOfGroup(g), true, () => {
+    const to = 1 - groupLiveCtx(g);
+    animateTbar(g, to === 1 ? GCTBA_MAX : 0, 0);
+  });
 }
 const groupTbar = (g, v) => { if (store.byMnem.has('GCtba')) store.set('GCtba', [g], v); };
 const groupStepBack = (g) => { if (store.byMnem.has('GCstb')) store.set('GCstb', [g], 1); };
 const commitGroups = () => { if (store.byMnem.has('GCupd')) store.set('GCupd', [], 1); };
+
+// ---------- plugin hooks ----------
+// The seams a plugin (web/plugins/, see PLUGINS below) reaches the core
+// through. Each is a set of functions the core calls at one well-defined
+// moment; with no plugin enabled every set is empty and nothing changes.
+//
+//   beforeTake({screens, cut})  — just before a take or cut leaves, with the
+//                                 screens it will move. Returns how many
+//                                 preset writes it made, so the take can wait
+//                                 for them to land (a LiveCore holds them
+//                                 until GCupd) rather than overtake them.
+//   afterSet(m, idx, v, prev)   — after any store.set that reached the device
+//                                 or the plan, with the value it replaced.
+//   layerLabel(s, l)            — a name for layer l of screen s, or null.
+//   midraRecall({slot, take})   — a Midra preset re-applied by this surface
+//                                 (a LiveCore recall is a device verb, which
+//                                 afterSet already sees: PSloa, PMlot…).
+//   snapshotUrl(n, tick)        — where to fetch input n's thumbnail, or null
+//                                 for the processor's own URL.
+const HOOKS = { beforeTake: new Set(), afterSet: new Set(), layerLabel: new Set(), midraRecall: new Set(), snapshotUrl: new Set() };
+// A bulk write — a memory re-applied, a show restored, a locked layer held
+// through a take — is not an operator's edit, and a layer-group gang must not
+// follow it: it would apply a recall's changes twice over. Everything written
+// inside `quietly` skips afterSet.
+function quietly(fn) {
+  const was = store._inSetHook;
+  store._inSetHook = true;
+  try { return fn(); } finally { store._inSetHook = was; }
+}
+function runBeforeTake(screens, cut) {
+  let wrote = 0;
+  for (const fn of HOOKS.beforeTake) {
+    try { wrote += fn({ screens, cut }) || 0; } catch (err) { console.error('plugin beforeTake', err); }
+  }
+  return wrote;
+}
+// Run a take once whatever a beforeTake hook wrote has landed. A LiveCore
+// holds preset writes until GCupd, which the store fires 25 ms after the last
+// of a burst — so the commit is forced now and the take waits past it.
+function afterHooks(screens, cut, go) {
+  if (!runBeforeTake(screens, cut)) { go(); return; }
+  store.commitPresets();
+  setTimeout(go, 120);
+}
 
 // ---------- store ----------
 class Store {
@@ -416,7 +487,8 @@ class Store {
       ? globalThis.OPENRCS_DEMO_DEVICE()
       : new WebSocket(`ws://${location.host}/ws`);
     this.ws.onmessage = (e) => this.onMsg(JSON.parse(e.data));
-    this.ws.onclose = () => { this.connected = false; this.notify(); setTimeout(() => this.connect(), 1500); };
+    this.ws.onopen = () => PLUS.onOpen();
+    this.ws.onclose = () => { this.connected = false; PLUS.onClose(); this.notify(); setTimeout(() => this.connect(), 1500); };
   }
   onMsg(m) {
     switch (m.t) {
@@ -490,6 +562,11 @@ class Store {
         if (back && this.meta) setTimeout(() => onReady(), 300);
         break;
       }
+      // The plugin channel — shared data, leases, external links, forwarded
+      // actions. The core does not read these; PLUS (below) does.
+      case 'hello': case 'kv': case 'kvsnap': case 'lease': case 'ext': case 'action': case 'plus':
+        PLUS.onMsg(m);
+        break;
     }
     this.notify();
   }
@@ -508,15 +585,50 @@ class Store {
 
   send(o) { if (this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
   set(m, idx, v) {
+    const prev = HOOKS.afterSet.size ? this.val(m, ...idx) : undefined;
     if (this.plan) {                 // stage, don't send
       this.planState.set(keyOf(m, idx), v);
       this._persistPlan();
       this.pushLog('pl', `${m} ${[...idx, v].join(',')}`);
       this.notify();
-      return;
+    } else {
+      this._sendSet(m, idx, v);
     }
+    // A hook that writes (a layer-group gang) re-enters here; the flag keeps
+    // its own writes from being ganged again, round and round the group.
+    if (HOOKS.afterSet.size && !this._inSetHook) {
+      this._inSetHook = true;
+      try {
+        for (const fn of HOOKS.afterSet) {
+          try { fn(m, idx, v, prev); } catch (err) { console.error('plugin afterSet', err); }
+        }
+      } finally { this._inSetHook = false; }
+    }
+  }
+  _sendSet(m, idx, v) {
     this.send({ t: 'set', m, i: idx, v });
     this.pushLog('tx', `${m} ${[...idx, v].join(',')}`);
+    this._noteEdit(m);
+  }
+  // A LiveCore in preset-update mode (CTpmu = 1, which the vendor's own client
+  // sets on every connect and a unit then keeps) holds every preset-element
+  // write — PR* layers, PN* native background — as a pending edit and shows
+  // nothing on its outputs until GROUP_UPDATE (GCupd) is fired. The vendor's
+  // client fires it after each edit; a layer resized on program without it
+  // never moves on the wall (a NeXtage 16 at a show, 2026-09-17). So every
+  // such write here schedules one commit a moment after the last of a burst,
+  // which also lands the four writes of a geometry change together rather
+  // than size-then-position. A Midra has no GCupd and is untouched.
+  _noteEdit(m) {
+    if (!/^P[RN]/.test(m) || !this.byMnem.has('GCupd')) return;
+    clearTimeout(this._commitT);
+    this._commitT = setTimeout(() => this.commitPresets(), 25);
+  }
+  commitPresets() {
+    clearTimeout(this._commitT); this._commitT = null;
+    if (!this.byMnem.has('GCupd')) return;
+    this.send({ t: 'set', m: 'GCupd', i: [], v: 1 });
+    this.pushLog('tx', 'GCupd 1');
   }
   get(m, idx = []) { this.send({ t: 'get', m, i: idx }); }
 
@@ -547,7 +659,14 @@ class Store {
   // subscription list starts empty. Prefix matched, so one path per subtree.
   psub(paths) { this.send({ t: 'psub', paths }); }
   scan(m) { this.send({ t: 'scan', m }); }
-  raw(d) { this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d); }
+  raw(d) {
+    this.send({ t: 'raw', d: d.endsWith('\n') ? d : d + '\n' }); this.pushLog('tx', d);
+    // a typed `0,0,0,960PRsih` is a preset-element write like any other: a set
+    // carries one number more than the variable has indices, a get does not
+    const m = /^([\d,\s-]*?)([A-Za-z]{5})\s*$/.exec(d);
+    const def = m && this.byMnem.get(m[2]);
+    if (def && m[1].split(',').filter(x => x.trim() !== '').length === def.dims.length + 1) this._noteEdit(m[2]);
+  }
 
   // ---- plan mode ----
   setPlan(on) { this.plan = !!on; this._persistPlan(); this.notify(); }
@@ -569,8 +688,7 @@ class Store {
     const total = entries.length + paths.length;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
-      this.send({ t: 'set', m: e.m, i: e.idx, v: e.v });
-      this.pushLog('tx', `${e.m} ${[...e.idx, e.v].join(',')}`);
+      this._sendSet(e.m, e.idx, e.v);
       if (onProgress) onProgress((i + 1) / total);
       if ((i & 15) === 15) await sleep(30);
     }
@@ -626,6 +744,14 @@ window.openrcs = { store, el, morph: morphChildren, get VIEWS() { return VIEWS; 
 const VIEW_IDS = ['lpscreens', 'lplayers', 'lppresets', 'lpinputs', 'lpsystem', 'lpmultiview', 'lpoutputs', 'lpstills', 'lpinspector', 'lpaudio', 'lpsetup', 'lpshow', 'lpcues', 'lpplan', 'plslive', 'plslayers', 'plsmemories', 'plsinputs', 'plsoutputs', 'plsaudio', 'plspictures', 'plssystem', 'showmode', 'workspace', 'stage', 'wall', 'memories', 'cues', 'keys', 'live', 'layers', 'destinations', 'shows', 'plan', 'connection', 'tally', 'inputs', 'outputs', 'screens', 'stills', 'capture', 'multiview', 'softedge', 'edid', 'audio', 'gpio', 'system', 'inspector', 'console', 'videoout'];
 const viewFromHash = () => { const h = location.hash.slice(1); return VIEW_IDS.includes(h) ? h : null; };
 let currentView = viewFromHash() || 'stage';
+// `?popout` opens one view in a window of its own — Cues on a second monitor,
+// Keys on a tablet — with the header and menu left off.
+const POPOUT = new URLSearchParams(location.search).has('popout');
+function popoutButton(id) {
+  if (POPOUT) return null;
+  return el('button', { class: 'btn ghost', title: 'Open this page in a window of its own',
+    onclick: () => window.open(`${location.pathname}?popout=1#${id}`, `openrcs-${id}`, 'width=960,height=720') }, 'Pop out');
+}
 let navCollapsed = (() => { try { return localStorage.getItem('orcs.nav') === '1'; } catch { return false; } })();
 const VIEWS = {};
 
@@ -697,14 +823,18 @@ const NAV = [
   ['connection', 'Connection'], ['tailnet', 'Tailnet'], ['tally', 'Tally'], ['inputs', 'Inputs'], ['outputs', 'Outputs'], ['videoout', 'Video out'], ['screens', 'Screens'],
   ['stills', 'Stills'], ['capture', 'Capture'], ['multiview', 'Multiviewer'], ['softedge', 'Soft edge'], ['edid', 'EDID'], ['audio', 'Audio'], ['gpio', 'GPIO'], ['system', 'System'],
   { section: 'Tools' },
-  ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'],
+  ['shows', 'Shows'], ['plan', 'Plan'], ['inspector', 'Inspector'], ['console', 'Console'], ['plugins', 'Plugins'],
 ];
 
 // a view is shown only when the device advertises the variable it needs
 // (until meta arrives, show everything so the nav doesn't flicker empty)
 const VIEW_REQUIRES = {
   memories: () => store.byMnem.has('PSmet') || store.byMnem.has('PMpst'),  // LiveCore or Midra
-  cues: 'PMscf', keys: 'PMscf', tally: 'TAopr',
+  // A LiveCore recalls on the device; a Midra's presets are re-applied by the
+  // client (recallMemory), so both get the cue list and the keys.
+  cues: () => store.byMnem.has('PMscf') || store.byMnem.has('PMpst'),
+  keys: () => store.byMnem.has('PMscf') || store.byMnem.has('PMpst'),
+  tally: 'TAopr',
   stills: () => store.byMnem.has('Slval') || store.byMnem.has('PSfrv'),  // LiveCore or Midra
   capture: 'STcen', multiview: 'MLcen',
   // the video out is a Midra thing, and not every frame in the range has one
@@ -745,6 +875,13 @@ const viewSupported = (id) => {
   // a processor that has no such table, so each family sees only its own. The
   // PLS300 is a third surface on the mnemonic table: its own views, plus the
   // table-driven tools that work on any mnemonic platform.
+  // A plugin view that has not loaded (or whose plugin is off) is not there,
+  // and one whose plugin says this processor cannot do it is hidden.
+  if (!VIEWS[id]) return false;
+  if (PLUS.views.has(id) && store.meta && store.configured) {
+    const man = PLUS.manifests.get(PLUS.views.get(id).plugin);
+    if (man && PLUS.why(man) !== true) return false;
+  }
   const kind = id.startsWith('lp') ? 'awj' : id.startsWith('pls') ? 'pls' : 'mnem';
   const fam = isAwj() ? 'awj' : isPls() ? 'pls' : 'mnem';
   if (kind !== fam) {
@@ -771,10 +908,12 @@ const effectiveView = () => {
   return currentView === 'tailnet' && store.tailnetEnabled ? 'tailnet' : 'connection';
 };
 
+// Plugins add to the menu once they have loaded; see PLUS.
+let NAV_SOURCE = () => NAV;
 function nav() {
   const n = el('nav', { class: 'nav' });
   let section = null, sectionShown = false;
-  for (const item of NAV) {
+  for (const item of NAV_SOURCE()) {
     if (item.section) { section = item.section; sectionShown = false; continue; }
     const [id, label] = item;
     if (!viewSupported(id)) continue;
@@ -809,14 +948,18 @@ function render() {
   // A view change replaces the subtree rather than patching one view into
   // the shape of another, so no scroll offset or field carries across.
   view.dataset.key = 'view:' + id;
-  const next = el('div', {}, header(), nav(), el('main', { class: 'main' }, view));
+  // A pop-out window is one view and nothing else: no header, no menu.
+  const next = POPOUT
+    ? el('div', {}, el('main', { class: 'main' }, view))
+    : el('div', {}, header(), nav(), el('main', { class: 'main' }, view));
   root.classList.toggle('nav-hidden', navCollapsed);
+  root.classList.toggle('popout', POPOUT);
   try {
     morphChildren(root, next);
   } catch (err) {
     // a patch that cannot cope falls back to what a render always was
     console.error('render: patch failed, rebuilding', err);
-    root.replaceChildren(header(), nav(), el('main', { class: 'main' }, VIEWS[id].render()));
+    root.replaceChildren(...(POPOUT ? [] : [header(), nav()]), el('main', { class: 'main' }, VIEWS[id].render()));
   }
   if (id !== renderedView) {
     renderedView = id;
@@ -1070,7 +1213,7 @@ const LAYER_MEM = (() => {
       if (!def) continue;                     // a leaf this platform does not have
       const bit = LAYER_CAT[m];
       if (bit != null && !flagOn(mask, bit)) continue;
-      store.set(m, [s, ctx, l], clampTo(def, v));
+      quietly(() => store.set(m, [s, ctx, l], clampTo(def, v)));
       wrote.push(m);
     }
     return wrote;
@@ -1137,21 +1280,21 @@ VIEWS.memories = (() => {
       store.get('PMssh', [slot, 0]); store.get('PMssv', [slot, 0]);
     }
     function enter() {
-      midraEditMode();
+      presetEditMode();
       store.scan('PMpst'); store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
     }
     function save(slot) { store.set('GCsrq', [2, slot], 1); store.get('PMpst', [slot]); got.delete(slot); ensure(slot); store.notify(); }
     function reset(slot) { store.set('CTpmr', [slot], 1); store.get('PMpst', [slot]); got.delete(slot); if (sel === slot) sel = null; store.notify(); }
     function recall(slot) {                       // re-apply the stored preset to preview (ctx 1)
-      midraEditMode();
-      for (let sc = 0; sc < screenCount(); sc++)
+      presetEditMode();
+      quietly(() => { for (let sc = 0; sc < screenCount(); sc++)
         for (let l = 0; l < layerSlots(); l++) {
           store.set('PRsih', [sc, 1, l], store.val('PMsih', slot, sc, l) || 0);
           store.set('PRsiv', [sc, 1, l], store.val('PMsiv', slot, sc, l) || 0);
           store.set('PRpoh', [sc, 1, l], store.val('PMpoh', slot, sc, l) ?? POS_BIAS);
           store.set('PRpov', [sc, 1, l], store.val('PMpov', slot, sc, l) ?? POS_BIAS);
           store.set('PRinp', [sc, 1, l], store.val('PMinp', slot, sc, l) || 0);
-        }
+        } });
       store.notify();
     }
     function thumb(slot) {
@@ -1209,9 +1352,9 @@ VIEWS.memories = (() => {
     const ctxOf = (a) => a.role === 'pgm' ? liveCtx(a.screen) : editCtx(a.screen);
 
     function enter() {
-      // Midra: keep preset-update mode OFF — preview edits stick without it,
-      // and with it on the take verb is dead (see midraEditMode).
-      midraEditMode();
+      // Midra: preset-update mode OFF (the take verb is dead with it on);
+      // LiveCore: ON, and every write commits with GCupd (see presetEditMode).
+      presetEditMode();
       for (const m of ['SCmly', 'SCssh', 'SCssv']) if (store.byMnem.has(m)) store.scan(m);
       if (hasBanks()) store.scan('GCsta');
       LAYER_MEM.fetch(from.screen, ctxOf(from), from.layer);
@@ -1602,7 +1745,9 @@ VIEWS.memories = (() => {
       el('div', { class: 'view-head' },
         el('h1', { text: 'Memories' }),
         el('span', { class: 'hint', text: hint }),
-        flashMsg ? el('span', { class: 'ws-flash', text: flashMsg }) : null),
+        flashMsg ? el('span', { class: 'ws-flash', text: flashMsg }) : null,
+        el('div', { class: 'spacer' }),
+        popoutButton('memories')),
       toolbar(midra),
       scope === 'layer' ? lay.body() : midra ? mid.body() : liveBody());
   }
@@ -1738,6 +1883,7 @@ const snapshotsWork = () => store.meta?.platform === 'livecore' && !!store.meta?
 /** URL for a source's thumbnail, or null when the device cannot provide one. */
 function snapshotUrl(n) {
   if (!snapshotsWork() || !n || n > 24) return null;
+  for (const fn of HOOKS.snapshotUrl) { const u = fn(n, SNAP_TICK); if (u) return u; }
   // the tick is the whole cache-busting story: a stable URL between ticks means a
   // re-render reuses the cached image instead of refetching and flickering
   return `http://${store.meta.host}/assets/Snapshots/capture_in_${n}.bmp?t=${SNAP_TICK}`;
@@ -1791,7 +1937,17 @@ const MIDRA_LAYOUTS = ['Idle', 'Reset', 'Full W1', 'Full W2', 'Full W3', 'Full W
   'Background frame + 2 PiP split H', 'Background frame + 2 PiP split V',
   'Background frame + 3 PiP split H on left', 'Background frame + 3 PiP split H on right', 'Background frame + 3 PiP split V on top', 'Background frame + 3 PiP split H on bottom',
   'Background frame + 3 PiP split H', 'Background frame + 3 PiP split diagonal', 'Reset with source'];
-const layerName = (l) => isMidra() ? (MIDRA_LAYER_NAMES[l] || 'L' + (l + 1)) : 'L' + (l + 1);
+// A plugin (Layer names) can give a layer an operator's name. The screen is
+// optional because some callers draw a layer with no screen in hand; those
+// get the platform's own name.
+function customLayerName(s, l) {
+  for (const fn of HOOKS.layerLabel) { const n = fn(s, l); if (n) return n; }
+  return null;
+}
+function layerName(l, s) {
+  if (s != null) { const n = customLayerName(s, l); if (n) return n; }
+  return isMidra() ? (MIDRA_LAYER_NAMES[l] || 'L' + (l + 1)) : 'L' + (l + 1);
+}
 // On a Midra the same INPUTLAYER number means a different thing per layer —
 // the enumeration literally reads "INPUT / FRAME n": on the background frame
 // layer 1–8 is the loaded frame of that number (a Pulse2 with frames 1 and 2
@@ -1904,20 +2060,158 @@ function bind(label, mnem, idx, min, max, step = 1, fmt = (v) => v) {
     }));
 }
 
+// ---------- memory recall, for anything scripted ----------
+// One recall for Keys, Cues and every plugin that fires a memory. The two
+// platforms store memories differently: a LiveCore recalls on the device
+// (PSmet/PMmet then a load or load-and-take verb); a Midra has eight presets
+// covering every screen and no load verb openrcs has proven, so its preset is
+// read back and re-applied to preview (ctx 1) — the same thing the Memories
+// and Workspace views do — and then taken.
+const MIDRA_PRESET_SLOTS = 8;
+function midraFetchPreset(i) {
+  for (let s = 0; s < screenCount(); s++)
+    for (let l = 0; l < layerSlots(); l++)
+      for (const m of ['PMinp', 'PMpoh', 'PMpov', 'PMsih', 'PMsiv', 'PMalp']) if (store.byMnem.has(m)) store.get(m, [i, s, l]);
+}
+function midraApplyPreset(i) {
+  presetEditMode();
+  return quietly(() => midraApplyPresetNow(i));
+}
+function midraApplyPresetNow(i) {
+  let n = 0;
+  for (let s = 0; s < screenCount(); s++)
+    for (let l = 0; l < layerSlots(); l++) {
+      const src = store.val('PMinp', i, s, l);
+      if (src == null) continue;
+      store.set('PRsih', [s, 1, l], store.val('PMsih', i, s, l) || 0);
+      store.set('PRsiv', [s, 1, l], store.val('PMsiv', i, s, l) || 0);
+      store.set('PRpoh', [s, 1, l], store.val('PMpoh', i, s, l) ?? POS_BIAS);
+      store.set('PRpov', [s, 1, l], store.val('PMpov', i, s, l) ?? POS_BIAS);
+      if (store.byMnem.has('PMalp')) store.set('PRalp', [s, 1, l], store.val('PMalp', i, s, l) ?? 255);
+      store.set('PRinp', [s, 1, l], src);
+      n++;
+    }
+  return n;
+}
+/** Which memory banks this processor has, as scopes a caller may name. */
+const memoryScopes = () => isMidra() ? ['master'] : ['master', 'screen'];
+const memorySlots = (scope) => isMidra() ? MIDRA_PRESET_SLOTS
+  : (store.byMnem.get(scope === 'master' ? 'LBPSe' : 'LBPMe')?.dims[0] || 144);
+function memoryLabel(scope, slot, screen) {
+  if (isMidra()) return `Preset ${slot + 1}`;
+  return scope === 'master' ? `Master ${slot + 1}` : `Screen ${screen + 1} · ${slot + 1}`;
+}
+/**
+ * Recall a memory. `take` puts it on air; `fade` (ms) takes it with the
+ * client-driven T-bar sweep instead of the device's own load-and-take, which
+ * is how a LiveCore take gets a duration at all. Returns a promise that
+ * settles once the last write has been sent.
+ */
+async function recallMemory({ scope = 'master', slot = 0, screen = 0, take = false, fade = null } = {}) {
+  if (isMidra()) {
+    midraFetchPreset(slot);
+    await sleep(450);                       // let the preset's contents arrive
+    midraApplyPreset(slot);
+    for (const fn of HOOKS.midraRecall) { try { fn({ slot, take }); } catch (err) { console.error('plugin midraRecall', err); } }
+    if (take) { await sleep(300); for (const s of activeScreens()) doTake(s, fade); }
+    return;
+  }
+  const timed = take && fade != null && fade > 0;
+  if (scope === 'master') {
+    store.set('PSmet', [], slot);
+    // A load (or the load half of a timed take) lands in the bank that is not
+    // on air; PSprf/PMprf spell that 1.
+    if ((!take || timed) && store.byMnem.has('PSprf')) store.set('PSprf', [], 1);
+    store.set(take && !timed ? 'PSlot' : 'PSloa', [], 1);
+    if (timed) { await sleep(300); for (const [g] of activeGroups()) groupTake(g, fade); }
+  } else {
+    store.set('PMscf', [], screen);
+    store.set('PMmet', [], slot);
+    if ((!take || timed) && store.byMnem.has('PMprf')) store.set('PMprf', [], 1);
+    store.set(take && !timed ? 'PMlot' : 'PMloa', [], 1);
+    if (timed) { await sleep(300); doTake(screen, fade); }
+  }
+}
+
+// ---------- actions: the verbs everything scripted shares ----------
+// Keys, Cues, the command line, MIDI, the Speed Editor and OSC all fire the
+// same named actions, so a verb added here — by the core or by a plugin — is
+// available to every one of them. Each has a label, the fields it takes (for
+// the editors), a description of one configured instance, and `run`.
+// `when` hides a verb the connected processor cannot do.
+const ACTIONS = new Map();
+function defineAction(id, spec) { ACTIONS.set(id, { id, fields: [], when: () => true, ...spec }); }
+function runAction(a) {
+  const spec = ACTIONS.get(a?.type);
+  if (!spec) { console.warn('unknown action', a); return; }
+  try { return spec.run(a); } catch (err) { console.error(`action ${a.type}`, err); }
+}
+const describeAction = (a) => ACTIONS.get(a.type)?.desc(a) ?? `${a.type} (not available)`;
+const allScreensOr = (s) => (s == null || s < 0) ? activeScreens() : [s];
+
+defineAction('master', { label: 'Recall master memory', fields: ['slot', 'take'],
+  desc: a => `${memoryLabel('master', a.slot)}${a.take ? ' + take' : ''}`,
+  run: a => recallMemory({ scope: 'master', slot: a.slot, take: !!a.take, fade: a.fade }) });
+defineAction('screen', { label: 'Recall screen memory', fields: ['screen', 'slot', 'take'],
+  when: () => !isMidra(),
+  desc: a => `Screen ${a.screen + 1} mem ${a.slot + 1}${a.take ? ' + take' : ''}`,
+  run: a => recallMemory({ scope: 'screen', screen: a.screen, slot: a.slot, take: !!a.take, fade: a.fade }) });
+defineAction('take', { label: 'Take', fields: ['screenAll'],
+  desc: a => a.screen < 0 ? 'Take all screens' : `Take screen ${a.screen + 1}`,
+  run: a => allScreensOr(a.screen).forEach(s => doTake(s, a.fade)) });
+defineAction('cut', { label: 'Cut', fields: ['screenAll'],
+  desc: a => a.screen < 0 ? 'Cut all screens' : `Cut screen ${a.screen + 1}`,
+  run: a => allScreensOr(a.screen).forEach(s => doCut(s)) });
+defineAction('stepback', { label: 'Step back', fields: ['screenAll'],
+  desc: a => a.screen < 0 ? 'Step back all screens' : `Step back screen ${a.screen + 1}`,
+  run: a => allScreensOr(a.screen).forEach(s => doStepBack(s)) });
+defineAction('freeze', { label: 'Freeze input', fields: ['input', 'on'],
+  when: () => store.byMnem.has('INfrz'),
+  desc: a => `${a.on ? 'Freeze' : 'Unfreeze'} IN ${a.input + 1}`,
+  run: a => store.set('INfrz', [a.input], a.on ? 1 : 0) });
+defineAction('black', { label: 'Output black', fields: ['output', 'on'],
+  when: () => store.byMnem.has('OUbla'),
+  desc: a => `${a.on ? 'Black' : 'Unblack'} OUT ${a.output + 1}`,
+  run: a => store.set('OUbla', [a.output], a.on ? 1 : 0) });
+defineAction('ftb', { label: 'Master fade', fields: ['screen', 'dir'],
+  when: () => store.byMnem.has('MAmfa'),
+  desc: a => `${a.dir === FADE_OUT ? 'Fade to black' : 'Fade up'} screen ${a.screen + 1}`,
+  run: a => store.set('MAmfa', [a.screen], a.dir) });
+defineAction('source', { label: 'Put a source on a layer', fields: ['screen', 'layer', 'bus', 'input'],
+  desc: a => `${sourceName(a.input)} → S${a.screen + 1} ${layerName(a.layer, a.screen)} (${a.bus === 'pgm' ? 'program' : 'preview'})`,
+  run: a => { presetEditMode(); store.set('PRinp', [a.screen, a.bus === 'pgm' ? liveCtx(a.screen) : editCtx(a.screen), a.layer], a.input); } });
+defineAction('cue-go', { label: 'Cue: GO next', fields: [], desc: () => 'GO next cue', run: () => CUES.goNext() });
+defineAction('cue-fire', { label: 'Cue: GO a cue', fields: ['cue'], desc: a => `GO cue ${a.cue + 1}`, run: a => CUES.go(a.cue) });
+defineAction('cue-hold', { label: 'Cue: HOLD', fields: [], desc: () => 'Hold autofollow', run: () => CUES.hold() });
+defineAction('cue-back', { label: 'Cue: back', fields: [], desc: () => 'Back one cue', run: () => CUES.back() });
+defineAction('key', { label: 'Run a key', fields: ['key'], desc: a => `Run key ${a.key + 1}`, run: a => KEYS.run(a.key) });
+
 // ---------- Cues (a show script over the memory system) ----------
+// CUES is the list's API for everything outside the view — actions, the
+// command line, OSC and timecode — so a GO from any of them is the same GO.
+const CUES = {
+  go: () => {}, goNext: () => {}, hold: () => {}, back: () => {}, list: () => [], current: () => -1,
+};
 VIEWS.cues = (() => {
   const KEY = 'openrcs.cues';
-  let cues = [];      // { id, label, scope, slot, screen, follow, wait, notes }
+  // { id, label, scope ('master'|'screen'|'none'), slot, screen, fade, follow,
+  //   wait, notes, tc, actions:[] }. `fade` (ms, optional) takes with a timed
+  // T-bar; `tc` (HH:MM:SS:FF, optional) fires the cue from timecode; `actions`
+  // are extra verbs fired with it — a Companion button, a HyperDeck play.
+  let cues = [];
   let cur = -1;       // index of the last cue taken
+  let standby = false; // after a GO, load the next cue into preview
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
-    cues = saved.cues || []; cur = saved.cur ?? -1;
+    cues = saved.cues || []; cur = saved.cur ?? -1; standby = !!saved.standby;
   } catch { /* first run */ }
-  const persist = () => localStorage.setItem(KEY, JSON.stringify({ cues, cur }));
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify({ cues, cur, standby })); } catch { /* quota/private */ } };
 
   // draft for the "add cue" row
   let dScope = 'master', dSlot = 1, dScreen = 0, dLabel = '';
-  let dFollow = false, dWait = 3000;
+  let dFollow = false, dWait = 3000, dFade = '', dTc = '';
+  let openCue = null;   // id whose extra actions are being edited
+  const actionDraft = { type: 'take', screen: -1 };
 
   // Autofollow: after a cue with follow, arm a timer to fire the next one. Any
   // manual action cancels it, so a hold is just leaving follow off.
@@ -1925,86 +2219,137 @@ VIEWS.cues = (() => {
   function clearFollow() { if (followTimer) { clearTimeout(followTimer); followTimer = null; followFrom = -1; } }
 
   function recall(c, take) {
-    if (c.scope === 'master') {
-      store.set('PSmet', [], c.slot);
-      store.set(take ? 'PSlot' : 'PSloa', [], 1);
-    } else {
-      store.set('PMscf', [], c.screen);
-      store.set('PMmet', [], c.slot);
-      store.set(take ? 'PMlot' : 'PMloa', [], 1);
-    }
+    if (c.scope === 'none') return;
+    recallMemory({ scope: c.scope, slot: c.slot, screen: c.screen, take, fade: take ? c.fade : null });
   }
   function go(i) {
     if (i < 0 || i >= cues.length) return;
     clearFollow();
-    recall(cues[i], true); cur = i; persist();
     const c = cues[i];
+    recall(c, true); cur = i; persist();
+    for (const a of c.actions || []) runAction(a);
     if (c.follow && cur + 1 < cues.length) {
       followFrom = i; followAt = Date.now() + Math.max(0, c.wait || 0);
       followTimer = setTimeout(() => { followTimer = null; followFrom = -1; goNext(); }, Math.max(0, c.wait || 0));
+    } else if (standby && cur + 1 < cues.length) {
+      // Wait for this cue's own take to have left before loading over the
+      // bank it is leaving — a fade is only on air once its time has run.
+      const next = cur + 1;
+      setTimeout(() => { if (cur === next - 1) recall(cues[next], false); }, (c.fade || 0) + 1200);
     }
     store.notify();
   }
   function goNext() { go(cur + 1 < cues.length ? cur + 1 : cur); }
+  function back() { if (cur > 0) go(cur - 1); }
   function hold() { clearFollow(); store.notify(); }
   function arm(i) { clearFollow(); recall(cues[i], false); store.notify(); }
   function addCue() {
-    const label = dLabel.trim() || (dScope === 'master' ? `Master ${dSlot + 1}` : `Screen ${dScreen + 1} · ${dSlot + 1}`);
-    cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen, follow: dFollow, wait: dWait, notes: '' });
-    dLabel = ''; persist(); store.notify();
+    const label = dLabel.trim() || (dScope === 'none' ? `Cue ${cues.length + 1}` : dScope === 'master' ? memoryLabel('master', dSlot) : memoryLabel('screen', dSlot, dScreen));
+    const fade = dFade === '' ? null : Math.max(0, Math.round(+dFade * 1000) || 0);
+    cues.push({ id: Date.now(), label, scope: dScope, slot: dSlot, screen: dScreen, fade, follow: dFollow, wait: dWait, notes: '', tc: normTc(dTc), actions: [] });
+    dLabel = ''; dTc = ''; persist(); store.notify();
   }
   function move(i, d) { const j = i + d; if (j < 0 || j >= cues.length) return; clearFollow(); [cues[i], cues[j]] = [cues[j], cues[i]]; if (cur === i) cur = j; else if (cur === j) cur = i; persist(); store.notify(); }
   function del(i) { clearFollow(); cues.splice(i, 1); if (cur >= cues.length) cur = cues.length - 1; persist(); store.notify(); }
   const patch = (c, k, v) => { c[k] = v; persist(); store.notify(); };
 
+  Object.assign(CUES, {
+    go, goNext, hold, back, arm,
+    list: () => cues, current: () => cur,
+    // for the show file and a setup restore
+    snapshot: () => ({ cues, cur, standby }),
+    restore: (s) => { if (!s || !Array.isArray(s.cues)) return; cues = s.cues; cur = s.cur ?? -1; standby = !!s.standby; persist(); store.notify(); },
+  });
+
   function cueRow(c, i) {
-    const target = c.scope === 'master' ? `Master ${c.slot + 1}` : `Screen ${c.screen + 1} · slot ${c.slot + 1}`;
-    return el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i ? ' following' : '') },
-      el('span', { class: 'cue-n', text: i + 1 }),
-      el('div', { class: 'cue-main' },
-        el('div', { class: 'cue-label', text: c.label }),
-        el('div', { class: 'cue-target', text: target + (c.follow ? ` · auto ${(c.wait / 1000).toFixed(1)}s` : '') }),
-        c.notes ? el('div', { class: 'cue-notes', text: c.notes }) : null),
-      el('label', { class: 'cue-follow', title: 'Autofollow to the next cue' },
-        checkbox(!!c.follow, v => patch(c, 'follow', v)),
-        el('input', { type: 'number', min: 0, max: 600000, step: 500, value: c.wait, style: 'width:64px',
-          title: 'Wait (ms)', oninput: e => patch(c, 'wait', Math.max(0, +e.target.value || 0)) })),
-      el('button', { class: 'btn ghost', onclick: () => arm(i) }, 'Preview'),
-      el('button', { class: 'btn pvw', onclick: () => go(i) }, 'Go'),
-      el('div', { class: 'cue-ord' },
-        el('button', { class: 'btn ghost', onclick: () => move(i, -1) }, '↑'),
-        el('button', { class: 'btn ghost', onclick: () => move(i, 1) }, '↓'),
-        el('button', { class: 'btn ghost', onclick: () => del(i) }, '✕')));
+    const target = c.scope === 'none' ? 'actions only' : c.scope === 'master' ? memoryLabel('master', c.slot) : memoryLabel('screen', c.slot, c.screen);
+    const extras = (c.actions || []).map(describeAction);
+    const bits = [target];
+    if (c.fade != null) bits.push(`fade ${(c.fade / 1000).toFixed(1)}s`);
+    if (c.follow) bits.push(`auto ${(c.wait / 1000).toFixed(1)}s`);
+    if (c.tc) bits.push(`TC ${c.tc}`);
+    const open = openCue === c.id;
+    return el('div', { class: 'cue-wrap', key: 'cue:' + c.id },
+      el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i ? ' following' : '') + (i === cur + 1 ? ' next' : '') },
+        el('span', { class: 'cue-n', text: i + 1 }),
+        el('div', { class: 'cue-main' },
+          el('div', { class: 'cue-label', text: c.label }),
+          el('div', { class: 'cue-target', text: bits.join(' · ') }),
+          extras.length ? el('div', { class: 'cue-target', text: '+ ' + extras.join(' · ') }) : null,
+          c.notes ? el('div', { class: 'cue-notes', text: c.notes }) : null),
+        el('label', { class: 'cue-follow', title: 'Autofollow to the next cue' },
+          checkbox(!!c.follow, v => patch(c, 'follow', v)),
+          el('input', { type: 'number', min: 0, max: 600000, step: 500, value: c.wait, style: 'width:64px',
+            title: 'Wait (ms)', oninput: e => patch(c, 'wait', Math.max(0, +e.target.value || 0)) })),
+        el('button', { class: 'btn ghost' + (open ? ' on' : ''), title: 'Fade, timecode, notes and extra actions', onclick: () => { openCue = open ? null : c.id; store.notify(); } }, '⋯'),
+        c.scope !== 'none' ? el('button', { class: 'btn ghost', onclick: () => arm(i) }, 'Preview') : null,
+        el('button', { class: 'btn pvw', onclick: () => go(i) }, 'Go'),
+        el('div', { class: 'cue-ord' },
+          el('button', { class: 'btn ghost', onclick: () => move(i, -1) }, '↑'),
+          el('button', { class: 'btn ghost', onclick: () => move(i, 1) }, '↓'),
+          confirmBtn(`cue-del-${c.id}`, '✕', 'Delete?', () => del(i)))),
+      open ? cueDetail(c) : null);
+  }
+
+  function cueDetail(c) {
+    return el('div', { class: 'cue-detail' },
+      el('div', { class: 'row', style: 'flex-wrap:wrap' },
+        el('label', { class: 'field' }, 'Label', el('input', { type: 'text', value: c.label, style: 'width:180px', onchange: e => patch(c, 'label', e.target.value) })),
+        c.scope !== 'none' ? el('label', { class: 'field', title: 'Blank = the memory’s own take. A time takes with a T-bar sweep of that length.' }, 'Fade s',
+          el('input', { type: 'text', inputmode: 'decimal', placeholder: 'device', value: c.fade == null ? '' : (c.fade / 1000), style: 'width:70px',
+            onchange: e => patch(c, 'fade', e.target.value.trim() === '' ? null : Math.max(0, Math.round(+e.target.value * 1000) || 0)) })) : null,
+        el('label', { class: 'field', title: 'Fire this cue when incoming timecode reaches it (Timecode plugin)' }, 'Timecode',
+          el('input', { type: 'text', placeholder: 'HH:MM:SS:FF', value: c.tc || '', style: 'width:110px', onchange: e => patch(c, 'tc', normTc(e.target.value)) })),
+        el('label', { class: 'field' }, 'Notes', el('input', { type: 'text', value: c.notes || '', style: 'width:260px', onchange: e => patch(c, 'notes', e.target.value) }))),
+      el('div', { class: 'sub-head' }, 'Also fire'),
+      (c.actions || []).length
+        ? el('div', { class: 'action-list' }, ...c.actions.map((a, ai) => el('div', { class: 'action-item' },
+            el('span', { class: 'action-n', text: ai + 1 }),
+            el('span', { class: 'action-desc', text: describeAction(a) }),
+            el('button', { class: 'btn ghost', onclick: () => { c.actions.splice(ai, 1); persist(); store.notify(); } }, '✕'))))
+        : el('div', { class: 'hint', text: 'Nothing else — this cue only recalls its memory.' }),
+      actionForm(actionDraft, (a) => { (c.actions ||= []).push(a); persist(); store.notify(); }, { exclude: ['cue-go', 'cue-fire', 'cue-hold', 'cue-back'] }));
   }
 
   function render() {
     const next = cur + 1 < cues.length ? cues[cur + 1] : null;
     const following = followFrom >= 0;
+    const scopes = memoryScopes();
+    if (!scopes.includes(dScope) && dScope !== 'none') dScope = 'master';
     return el('div', {},
       el('div', { class: 'view-head' }, el('h1', { text: 'Cues' }),
-        el('span', { class: 'hint', text: 'A show script — recall, take, and autofollow down the list' })),
+        el('span', { class: 'hint', text: 'A show script — recall, take, and autofollow down the list' }),
+        el('div', { class: 'spacer' }),
+        el('label', { class: 'field inline', title: 'After each GO, load the next cue into preview so it can be checked before it goes' }, checkbox(standby, v => { standby = v; persist(); store.notify(); }), 'Standby next'),
+        popoutButton('cues')),
       el('div', { class: 'panel' },
         el('div', { class: 'takebar' },
           el('div', { class: 'tbar' },
             el('div', { class: 'cue-next-label', text: next ? `Next: ${next.label}` : (cues.length ? 'End of list' : 'No cues yet') }),
             following ? el('div', { class: 'cue-following-note', text: 'Autofollow armed — GO or HOLD' }) : null),
+          cur > 0 ? el('button', { class: 'btn ghost', onclick: back }, 'BACK') : null,
           following
             ? el('button', { class: 'btn armed take-btn', onclick: hold }, 'HOLD')
             : null,
           el('button', { class: 'btn pgm take-btn', onclick: goNext, disabled: !next || undefined }, 'GO NEXT'))),
       el('div', { class: 'panel' },
         el('h2', 'Add cue'),
-        el('div', { class: 'row' },
+        el('div', { class: 'row', style: 'flex-wrap:wrap' },
           el('div', { class: 'seg' },
-            el('button', { class: dScope === 'master' ? 'on recall' : '', onclick: () => { dScope = 'master'; store.notify(); } }, 'Master'),
-            el('button', { class: dScope === 'screen' ? 'on recall' : '', onclick: () => { dScope = 'screen'; store.notify(); } }, 'Screen')),
+            el('button', { class: dScope === 'master' ? 'on recall' : '', onclick: () => { dScope = 'master'; store.notify(); } }, isMidra() ? 'Preset' : 'Master'),
+            scopes.includes('screen') ? el('button', { class: dScope === 'screen' ? 'on recall' : '', onclick: () => { dScope = 'screen'; store.notify(); } }, 'Screen') : null,
+            el('button', { class: dScope === 'none' ? 'on recall' : '', title: 'A cue that recalls nothing — add actions to it', onclick: () => { dScope = 'none'; store.notify(); } }, 'Actions')),
           dScope === 'screen' ? el('label', { class: 'field' }, 'Screen', screenSelect(dScreen, v => { dScreen = v; store.notify(); })) : null,
-          el('label', { class: 'field' }, 'Slot',
-            el('input', { type: 'number', min: 1, max: 144, value: dSlot + 1, style: 'width:70px',
-              oninput: (e) => dSlot = Math.max(0, (+e.target.value || 1) - 1) })),
+          dScope !== 'none' ? el('label', { class: 'field' }, 'Slot',
+            el('input', { type: 'number', min: 1, max: memorySlots(dScope), value: dSlot + 1, style: 'width:70px',
+              oninput: (e) => dSlot = Math.max(0, Math.min(memorySlots(dScope) - 1, (+e.target.value || 1) - 1)) })) : null,
           el('label', { class: 'field' }, 'Label',
             el('input', { id: 'cue-label', type: 'text', placeholder: 'optional', value: dLabel, style: 'width:180px',
               oninput: (e) => dLabel = e.target.value })),
+          dScope !== 'none' ? el('label', { class: 'field' }, 'Fade s',
+            el('input', { type: 'text', inputmode: 'decimal', placeholder: 'device', value: dFade, style: 'width:64px', oninput: (e) => dFade = e.target.value })) : null,
+          el('label', { class: 'field' }, 'Timecode',
+            el('input', { type: 'text', placeholder: 'optional', value: dTc, style: 'width:100px', oninput: (e) => dTc = e.target.value })),
           el('label', { class: 'field' }, 'Autofollow', checkbox(dFollow, v => { dFollow = v; store.notify(); })),
           dFollow ? el('label', { class: 'field' }, 'Wait ms',
             el('input', { type: 'number', min: 0, max: 600000, step: 500, value: dWait, style: 'width:80px',
@@ -2019,68 +2364,93 @@ VIEWS.cues = (() => {
   return { render };
 })();
 
+// Timecode as the cue list stores it: HH:MM:SS:FF, or '' when not set.
+function normTc(s) {
+  const m = /^\s*(\d{1,2})[:;.](\d{1,2})[:;.](\d{1,2})(?:[:;.](\d{1,2}))?\s*$/.exec(String(s || ''));
+  if (!m) return '';
+  return [m[1], m[2], m[3], m[4] || '0'].map(x => x.padStart(2, '0')).join(':');
+}
+
+// ---------- action editor, shared by Keys, Cues and the plugins ----------
+// `draft` is the action being built and is kept by the caller, so a render
+// does not lose half-filled fields. A plugin field is an object
+// {name, label, type: 'number'|'text'|'select'|'bool', options, min, max}.
+const ACTION_FIELDS = {
+  slot: { label: 'Slot', type: 'number', base: 1, max: () => memorySlots('screen') },
+  screen: { render: (d, set) => el('label', { class: 'field' }, 'Screen', screenSelect(d.screen ?? 0, v => set('screen', v))) },
+  screenAll: { render: (d, set) => el('label', { class: 'field' }, 'Screen', el('select', { onchange: e => set('screen', +e.target.value) },
+    el('option', { value: -1, selected: (d.screen ?? -1) < 0 || undefined }, 'All screens'),
+    ...Array.from({ length: screenCount() }, (_, s) => el('option', { value: s, selected: d.screen === s || undefined }, 'Screen ' + (s + 1))))) },
+  input: { label: 'Input', type: 'number', base: 1, max: () => inputCount() },
+  output: { label: 'Output', type: 'number', base: 1, max: () => outputCount() },
+  layer: { label: 'Layer', type: 'number', base: 1, max: () => layerSlots() },
+  cue: { label: 'Cue', type: 'number', base: 1, max: () => Math.max(1, CUES.list().length) },
+  key: { label: 'Key', type: 'number', base: 1, max: () => Math.max(1, KEYS.list().length) },
+  take: { label: 'Then take', type: 'bool' },
+  on: { label: 'On', type: 'bool' },
+  bus: { label: 'Bus', type: 'select', options: [['pvw', 'Preview'], ['pgm', 'Program']] },
+  dir: { render: (d, set) => el('label', { class: 'field' }, 'Direction', el('select', { onchange: e => set('dir', +e.target.value) },
+    el('option', { value: FADE_OUT, selected: (d.dir ?? FADE_OUT) === FADE_OUT || undefined }, 'To black'),
+    el('option', { value: FADE_IN, selected: d.dir === FADE_IN || undefined }, 'Up'))) },
+};
+const FIELD_DEFAULTS = { slot: 0, screen: 0, input: 0, output: 0, layer: 0, cue: 0, key: 0, take: true, on: true, bus: 'pvw', dir: FADE_OUT };
+function actionField(f, d, set) {
+  const spec = typeof f === 'string' ? { name: f, ...ACTION_FIELDS[f] } : f;
+  const name = spec.name;
+  if (spec.render) return spec.render(d, set);
+  const cur = d[name] ?? spec.default ?? FIELD_DEFAULTS[name];
+  if (spec.type === 'bool') return el('label', { class: 'field' }, spec.label, checkbox(!!cur, v => set(name, v)));
+  if (spec.type === 'select') {
+    const opts = typeof spec.options === 'function' ? spec.options() : spec.options;
+    return el('label', { class: 'field' }, spec.label, enumSelect2(String(cur ?? opts[0]?.[0]), opts.map(([v, l]) => [String(v), l]),
+      v => set(name, typeof opts[0]?.[0] === 'number' ? +v : v)));
+  }
+  if (spec.type === 'text') return el('label', { class: 'field' }, spec.label, el('input', { type: 'text', value: cur ?? '', style: 'width:' + (spec.width || 140) + 'px', oninput: e => { d[name] = e.target.value; } }));
+  const base = spec.base || 0;
+  const max = typeof spec.max === 'function' ? spec.max() : spec.max;
+  return el('label', { class: 'field' }, spec.label, el('input', { type: 'number', min: base + (spec.min || 0), max: max != null ? max - 1 + base : undefined, value: (cur ?? 0) + base, style: 'width:70px',
+    oninput: e => { d[name] = Math.max(spec.min || 0, (+e.target.value || base) - base); } }));
+}
+function actionForm(draft, onAdd, { exclude = [], addLabel = 'Add action' } = {}) {
+  const types = [...ACTIONS.values()].filter(a => !exclude.includes(a.id) && a.when());
+  if (!types.some(t => t.id === draft.type)) draft.type = types[0]?.id;
+  const spec = ACTIONS.get(draft.type);
+  const set = (k, v) => { draft[k] = v; store.notify(); };
+  return el('div', { class: 'row', style: 'flex-wrap:wrap' },
+    el('label', { class: 'field' }, 'Action', enumSelect2(draft.type, types.map(t => [t.id, t.label]), v => { for (const k of Object.keys(draft)) delete draft[k]; draft.type = v; store.notify(); })),
+    ...(spec?.fields || []).map(f => actionField(f, draft, set)),
+    el('button', { class: 'btn', onclick: () => {
+      const a = { type: draft.type };
+      for (const f of spec.fields) {
+        const name = typeof f === 'string' ? f : f.name;
+        a[name] = draft[name] ?? (typeof f === 'object' ? f.default : undefined) ?? FIELD_DEFAULTS[name] ?? (name === 'screenAll' ? -1 : undefined);
+        if (name === 'screenAll') { a.screen = draft.screen ?? -1; delete a.screenAll; }
+      }
+      onAdd(a);
+    } }, addLabel));
+}
+
 // ---------- Keys (programmable macro buttons) ----------
+const KEYS = { run: () => {}, list: () => [] };
 VIEWS.keys = (() => {
   const KEY = 'openrcs.keys';
   let keys = [];      // { id, name, colour, actions:[{type,...}] }
   let editing = false;
   let openKey = null; // id being edited
   try { keys = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { /* first run */ }
-  const persist = () => localStorage.setItem(KEY, JSON.stringify(keys));
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(keys)); } catch { /* quota/private */ } };
 
-  const ACTION_TYPES = {
-    master: { label: 'Recall master memory', fields: ['slot', 'take'], desc: a => `Master mem ${a.slot + 1}${a.take ? ' + take' : ''}` },
-    screen: { label: 'Recall screen memory', fields: ['screen', 'slot', 'take'], desc: a => `Screen ${a.screen + 1} mem ${a.slot + 1}${a.take ? ' + take' : ''}` },
-    take:   { label: 'Take', fields: ['screenAll'], desc: a => a.screen < 0 ? 'Take all screens' : `Take screen ${a.screen + 1}` },
-    freeze: { label: 'Freeze input', fields: ['input', 'on'], desc: a => `${a.on ? 'Freeze' : 'Unfreeze'} IN ${a.input + 1}` },
-    black:  { label: 'Output black', fields: ['output', 'on'], desc: a => `${a.on ? 'Black' : 'Unblack'} OUT ${a.output + 1}` },
-    ftb:    { label: 'Master fade', fields: ['screen', 'dir'], desc: a => `${a.dir === FADE_OUT ? 'Fade to black' : 'Fade up'} screen ${a.screen + 1}` },
-  };
-
-  function runAction(a) {
-    switch (a.type) {
-      case 'master': store.set('PSmet', [], a.slot); store.set(a.take ? 'PSlot' : 'PSloa', [], 1); break;
-      case 'screen': store.set('PMscf', [], a.screen); store.set('PMmet', [], a.slot); store.set(a.take ? 'PMlot' : 'PMloa', [], 1); break;
-      case 'take': if (a.screen < 0) { for (let s = 0; s < screenCount(); s++) doTake(s); } else doTake(a.screen); break;
-      case 'freeze': store.set('INfrz', [a.input], a.on ? 1 : 0); break;
-      case 'black': store.set('OUbla', [a.output], a.on ? 1 : 0); break;
-      case 'ftb': store.set('MAmfa', [a.screen], a.dir); break;
-    }
-  }
   const runKey = (k) => k.actions.forEach(runAction);
+  Object.assign(KEYS, {
+    run: (i) => { const k = keys[i]; if (k) runKey(k); },
+    list: () => keys,
+    snapshot: () => keys,
+    restore: (list) => { if (Array.isArray(list)) { keys = list; persist(); store.notify(); } },
+  });
 
-  // draft for the add-action form (per open key)
-  let dType = 'master', dSlot = 0, dScreen = 0, dInput = 0, dOutput = 0, dTake = true, dOn = true, dDir = FADE_OUT;
-  function addAction(k) {
-    const a = { type: dType };
-    if (dType === 'master') { a.slot = dSlot; a.take = dTake; }
-    else if (dType === 'screen') { a.screen = dScreen; a.slot = dSlot; a.take = dTake; }
-    else if (dType === 'take') { a.screen = dScreen; }         // dScreen -1 = all
-    else if (dType === 'freeze') { a.input = dInput; a.on = dOn; }
-    else if (dType === 'black') { a.output = dOutput; a.on = dOn; }
-    else if (dType === 'ftb') { a.screen = dScreen; a.dir = dDir; }
-    k.actions.push(a); persist(); store.notify();
-  }
-
+  const draft = { type: 'master' };
   function newKey() { const k = { id: Date.now(), name: 'Key ' + (keys.length + 1), actions: [] }; keys.push(k); openKey = k.id; persist(); store.notify(); }
   function delKey(id) { keys = keys.filter(k => k.id !== id); if (openKey === id) openKey = null; persist(); store.notify(); }
-
-  function actionForm(k) {
-    const t = ACTION_TYPES[dType];
-    const f = (name) => t.fields.includes(name);
-    return el('div', { class: 'row', style: 'flex-wrap:wrap' },
-      el('label', { class: 'field' }, 'Action', enumSelect2(dType, Object.entries(ACTION_TYPES).map(([v, o]) => [v, o.label]), v => { dType = v; store.notify(); })),
-      f('screen') ? el('label', { class: 'field' }, 'Screen', screenSelect(dScreen, v => { dScreen = v; store.notify(); })) : null,
-      f('screenAll') ? el('label', { class: 'field' }, 'Screen', el('select', { onchange: e => { dScreen = +e.target.value; } },
-        el('option', { value: -1 }, 'All screens'), ...[0, 1, 2, 3, 4, 5, 6, 7].map(s => el('option', { value: s, selected: dScreen === s || undefined }, 'Screen ' + (s + 1)))) ) : null,
-      f('slot') ? el('label', { class: 'field' }, 'Slot', el('input', { type: 'number', min: 1, max: 144, value: dSlot + 1, style: 'width:70px', oninput: e => dSlot = Math.max(0, (+e.target.value || 1) - 1) })) : null,
-      f('input') ? el('label', { class: 'field' }, 'Input', el('input', { type: 'number', min: 1, max: 24, value: dInput + 1, style: 'width:70px', oninput: e => dInput = Math.max(0, (+e.target.value || 1) - 1) })) : null,
-      f('output') ? el('label', { class: 'field' }, 'Output', el('input', { type: 'number', min: 1, max: 8, value: dOutput + 1, style: 'width:70px', oninput: e => dOutput = Math.max(0, (+e.target.value || 1) - 1) })) : null,
-      f('take') ? el('label', { class: 'field' }, 'Then take', checkbox(dTake, v => { dTake = v; store.notify(); })) : null,
-      f('on') ? el('label', { class: 'field' }, 'On', checkbox(dOn, v => { dOn = v; store.notify(); })) : null,
-      f('dir') ? el('label', { class: 'field' }, 'Direction', el('select', { onchange: e => dDir = +e.target.value }, el('option', { value: FADE_OUT, selected: dDir === FADE_OUT || undefined }, 'To black'), el('option', { value: FADE_IN, selected: dDir === FADE_IN || undefined }, 'Up'))) : null,
-      el('button', { class: 'btn', onclick: () => addAction(k) }, 'Add action'));
-  }
 
   function keyEditor(k) {
     return el('div', { class: 'panel' },
@@ -2092,11 +2462,11 @@ VIEWS.keys = (() => {
       el('div', { class: 'action-list' }, ...k.actions.map((a, ai) =>
         el('div', { class: 'action-item' },
           el('span', { class: 'action-n', text: ai + 1 }),
-          el('span', { class: 'action-desc', text: ACTION_TYPES[a.type].desc(a) }),
+          el('span', { class: 'action-desc', text: describeAction(a) }),
           el('button', { class: 'btn ghost', onclick: () => { k.actions.splice(ai, 1); persist(); store.notify(); } }, '✕')))),
       k.actions.length === 0 ? el('div', { class: 'empty-state', text: 'No actions yet — add one below.' }) : null,
       el('div', { class: 'sub-head' }, 'Add action'),
-      actionForm(k));
+      actionForm(draft, (a) => { k.actions.push(a); persist(); store.notify(); }, { exclude: ['key'] }));
   }
 
   function render() {
@@ -2105,6 +2475,7 @@ VIEWS.keys = (() => {
       el('div', { class: 'view-head' }, el('h1', { text: 'Keys' }),
         el('span', { class: 'hint', text: editing ? 'Editing — tap a key to program it' : 'Tap a key to run its actions' }),
         el('div', { class: 'spacer' }),
+        popoutButton('keys'),
         el('button', { class: 'btn ' + (editing ? 'pgm' : 'ghost'), onclick: () => { editing = !editing; openKey = null; store.notify(); } }, editing ? 'Done' : 'Edit')),
       el('div', { class: 'panel' },
         el('div', { class: 'key-grid' },
@@ -2268,7 +2639,7 @@ async function restoreShow(show, onProgress) {
   });
   for (let i = 0; i < vals.length; i++) {
     const [m, idx, v] = vals[i];
-    store.set(m, idx, v);
+    quietly(() => store.set(m, idx, v));
     if (onProgress) onProgress((i + 1) / vals.length);
     if ((i & 15) === 15) await sleep(30);
   }
@@ -2750,7 +3121,7 @@ VIEWS.live = (() => {
       const src = store.val('PRinp', screen, c, l);
       const on = layerShown(screen, c, l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') },
-        el('span', { class: 'tag', text: layerName(l) }),
+        el('span', { class: 'tag', text: layerName(l, screen) }),
         el('span', { class: 'src', text: sourceNameFor(src, l) }),
         hasPRlay() ? el('button', { class: 'btn ghost', onclick: () => store.set('PRlay', [screen, c, l], store.val('PRlay', screen, c, l) === 1 ? 0 : 1) }, on ? 'Hide' : 'Show') : null));
     }
@@ -3011,9 +3382,10 @@ VIEWS.layers = (() => {
     'PRcph', 'PRcpv', 'PRcsh', 'PRcsv', 'PRotr', 'PRowa', 'PRctr', 'PRcwa'];
   function enter() {
     // Midra protects the program preset: edits go to the preview context and a
-    // take commits them. Preset-update mode stays OFF — with it on the take
-    // verb is inert (see midraEditMode). LiveCore edits apply directly.
-    midraEditMode();
+    // take commits them, with preset-update mode OFF (the take verb is inert
+    // with it on). LiveCore edits either bank and commits each with GCupd,
+    // which needs the mode ON (see presetEditMode).
+    presetEditMode();
     if (isMidra() && store.byMnem.has('PSfrv')) store.scan('PSfrv');
     if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctxOf()]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
@@ -3067,7 +3439,7 @@ VIEWS.layers = (() => {
         style: `left:${r.left * scale}px;top:${r.top * scale}px;width:${r.w * scale}px;height:${r.h * scale}px;z-index:${l + 1}`,
         onpointerdown: (e) => dragMove(e, l, scale),
       },
-        el('span', { class: 'lrect-tag', text: `${layerName(l)}${src ? ' · ' + sourceNameFor(src, l) : ''}` }));
+        el('span', { class: 'lrect-tag', text: `${layerName(l, screen)}${src ? ' · ' + sourceNameFor(src, l) : ''}` }));
       cv.append(box);
       if (l === sel) selectionChrome(cv, box, (e, c, b) => dragResize(e, l, scale, c, b));
     }
@@ -3132,7 +3504,7 @@ VIEWS.layers = (() => {
       const src = store.val('PRinp', screen, ctxOf(), l);
       const on = layerShown(screen, ctxOf(), l);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (l === sel ? ' sel' : ''), onclick: () => { sel = l; store.notify(); } },
-        el('span', { class: 'tag', text: layerName(l) }),
+        el('span', { class: 'tag', text: layerName(l, screen) }),
         el('span', { class: 'src', text: sourceNameFor(src, l) }),
         hasPRlay() ? el('button', { class: 'btn ghost', onclick: (e) => { e.stopPropagation(); store.set('PRlay', [screen, ctxOf(), l], store.val('PRlay', screen, ctxOf(), l) === 1 ? 0 : 1); } }, on ? 'Hide' : 'Show') : null));
     }
@@ -3201,7 +3573,7 @@ VIEWS.layers = (() => {
         el('div', {},
           el('div', { class: 'panel' }, el('h2', 'Layer stack'), stack()),
           el('div', { class: 'panel' }, el('h2', 'Background'), background()),
-          el('div', { class: 'panel' }, el('h2', isMidra() ? layerName(sel) : `Layer ${sel + 1}`), editor()))));
+          el('div', { class: 'panel' }, el('h2', customLayerName(screen, sel) || (isMidra() ? layerName(sel) : `Layer ${sel + 1}`)), editor()))));
   }
   return { enter, render, focus(s, r) { screen = s; if (r) role = r; sel = 0; } };
 })();
@@ -8393,7 +8765,7 @@ VIEWS.workspace = (() => {
   window.addEventListener('resize', () => { if (currentView === 'workspace') fitCanvases(); });
 
   function enter() {
-    midraEditMode();
+    presetEditMode();
     // a Midra's frame layer shows the loaded frames, so their validity is what makes a number usable there
     if (isMidra()) { store.get('CTpmu', []); store.scan('GCtba'); store.scan('GCtav'); if (store.byMnem.has('PSfrv')) store.scan('PSfrv'); }
     for (const m of ['SCssh', 'SCssv', 'SCmly', 'INava', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
@@ -8487,7 +8859,7 @@ VIEWS.workspace = (() => {
           if ((store.val('PRinp', s, c, l) || 0) !== src) {
             const why = src && src < srcMaxOf() && !inputHasSignal(src - 1)
               ? 'there is no signal on it' : 'the device refused it';
-            flash(`${sourceNameFor(src, l)} did not go on ${layerName(l)} — ${why}`);
+            flash(`${sourceNameFor(src, l)} did not go on ${layerName(l, s)} — ${why}`);
           }
         }, 350);
       }, 350);
@@ -8804,7 +9176,7 @@ VIEWS.workspace = (() => {
           else dragMove(e, s, c, l, sw, sh);
         },
       },
-        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `${layerName(l)}${src ? ' · ' + sourceNameFor(src, l) : ''}${missing ? ' ⚠' : ''}` }));
+        el('span', { class: 'lrect-tag' + (missing ? ' bad' : ''), text: `${layerName(l, s)}${src ? ' · ' + sourceNameFor(src, l) : ''}${missing ? ' ⚠' : ''}` }));
       asPct(box, r, sw, sh);
       cv.append(box);
       if (isSel) selectionChrome(cv, box, (e, cn, b) => dragResize(e, s, c, l, sw, sh, cn, b));
@@ -8816,7 +9188,7 @@ VIEWS.workspace = (() => {
         role === 'pgm' ? el('span', { class: 'ws-onair', text: 'ON AIR' }) : null,
         broken.length ? el('button', {
           class: 'ws-warn',
-          title: `${broken.map(l => layerName(l) + ' · ' + sourceNameFor(store.val('PRinp', s, c, l), l)).join(', ')} — the source is not available, so a take will not land. Click to clear them.`,
+          title: `${broken.map(l => layerName(l, s) + ' · ' + sourceNameFor(store.val('PRinp', s, c, l), l)).join(', ')} — the source is not available, so a take will not land. Click to clear them.`,
           onclick: () => { broken.forEach(l => store.set('PRinp', [s, c, l], 0)); store.notify(); },
         }, `⚠ ${broken.length} unavailable`) : null,
         el('div', { class: 'spacer' }),
@@ -8833,7 +9205,7 @@ VIEWS.workspace = (() => {
       row.append(el('button', {
         class: 'ws-slot' + (isSel ? ' sel' : '') + (src ? ' filled' : ''),
         style: src ? `--c:${srcColor(src)}` : '',
-        title: src ? `${layerName(l)} · ${sourceNameFor(src, l)}` : `${layerName(l)} — empty`,
+        title: src ? `${layerName(l, s)} · ${sourceNameFor(src, l)}` : `${layerName(l, s)} — empty`,
         ...dropTarget((e) => {
           const n = droppedSource(e);
           if (n == null || Number.isNaN(n)) return;
@@ -8958,7 +9330,7 @@ VIEWS.workspace = (() => {
 
     return el('div', { class: 'panel ws-insp' },
       el('div', { class: 'insp-title' },
-        el('h2', layerName(l)),
+        el('h2', layerName(l, s)),
         el('span', { class: 'ws-ctx-tag ' + role }, ctxName(s, c)),
         el('span', { class: 'hint', text: screenLabel(s) }),
         el('div', { class: 'spacer' }),
@@ -9239,9 +9611,9 @@ VIEWS.workspace = (() => {
     }
   }
   function recallMidra(i) {
-    midraEditMode();
+    presetEditMode();
     const c = 1;
-    for (let s = 0; s < screenCount(); s++)
+    quietly(() => { for (let s = 0; s < screenCount(); s++)
       for (let l = 0; l < layerSlots(); l++) {
         const src = store.val('PMinp', i, s, l);
         if (src == null) continue;
@@ -9251,7 +9623,7 @@ VIEWS.workspace = (() => {
         store.set('PRpov', [s, c, l], store.val('PMpov', i, s, l) ?? B);
         if (store.byMnem.has('PMalp')) store.set('PRalp', [s, c, l], store.val('PMalp', i, s, l) ?? 255);
         store.set('PRinp', [s, c, l], src);
-      }
+      } });
     flash(`Loaded preset ${i + 1} into preview`);
   }
 
@@ -10571,5 +10943,329 @@ VIEWS.connection = (() => {
 
   return { enter, render };
 })();
+
+// ================= plugins =================
+//
+// Features beyond the core surface live in web/plugins/<id>/plugin.js, one
+// folder each, and every one can be switched off from the Plugins page. The
+// pattern is LivePremier Plus's: a new feature is a new folder, not an edit to
+// this file. docs/PLUGINS.md is the authoring guide.
+//
+// A plugin module's default export is a manifest:
+//
+//   { id, name, description,
+//     requires?: (host) => true | 'why not',   // checked once meta is in
+//     setup(host) }                            // wires the plugin in
+//
+// and `setup` reaches the core only through `host` (built below). What it may
+// do there is the plugin API; anything else in this file is not, and may
+// change without notice.
+//
+// State. A plugin keeps what it owns in `host.shared(key)`, which the bridge
+// stores beside its config and hands to every open page — two panels on one
+// desk see one set of layer groups. In the hosted demo, which has no bridge,
+// it falls back to this browser's localStorage.
+//
+// Leases. Anything that must happen once however many pages are open — a
+// HyperDeck rule taking a screen, timecode firing a cue, an OSC GO — runs only
+// on the page holding that lease. The bridge grants each lease to one page and
+// hands it on when that page closes.
+const PLUGIN_INDEX = [
+  'arithmetic', 'layer-names', 'layer-groups', 'layer-lock', 'console', 'timecode',
+  'midi', 'speed-editor', 'edid-builder', 'osc-input', 'hyperdeck', 'matrix-routing',
+  'companion', 'thumbnail-relay', 'remote-access', 'setup-file',
+];
+
+const PAGE_ID = Math.random().toString(36).slice(2, 10);
+const PLUS = (() => {
+  const ENABLED_KEY = 'openrcs.plugins';
+  const manifests = new Map();      // id -> manifest
+  const failed = new Map();         // id -> error text
+  const views = new Map();          // view id -> { plugin, label, section }
+  let enabled = {};
+  try { enabled = JSON.parse(localStorage.getItem(ENABLED_KEY) || '{}'); } catch { /* first run */ }
+  const isOn = (id) => enabled[id] !== false;          // on unless switched off
+
+  // ---- the bridge side: shared data, leases, links ----
+  let clientId = null;
+  const kv = new Map();
+  const kvWatchers = new Map();    // key -> Set(fn)
+  let kvSeeded = false;
+  const leases = new Map();        // name -> { wanted, holder }
+  const links = new Map();         // key -> { state, listeners:Set, statusListeners:Set }
+  const forwarded = new Map();     // action name -> fn, for bridge-forwarded actions
+  const services = new Map();      // name -> object one plugin offers the others
+  const bridged = () => !globalThis.OPENRCS_DEMO_DEVICE;
+
+  const kvLocal = (k) => { try { const v = localStorage.getItem('openrcs.kv.' + k); return v == null ? undefined : JSON.parse(v); } catch { return undefined; } };
+  function kvNotify(k) { for (const fn of kvWatchers.get(k) || []) { try { fn(kv.get(k)); } catch (err) { console.error(err); } } }
+  function kvSet(k, v) {
+    kv.set(k, v);
+    if (bridged()) store.send({ t: 'kv', k, v });
+    else { try { localStorage.setItem('openrcs.kv.' + k, JSON.stringify(v)); } catch { /* quota/private */ } }
+    kvNotify(k);
+    store.notify();
+  }
+
+  function onMsg(m) {
+    switch (m.t) {
+      case 'hello': clientId = m.id; break;
+      case 'kvsnap':
+        for (const [k, v] of m.items) { kv.set(k, v); kvNotify(k); }
+        kvSeeded = true;
+        break;
+      case 'kv': kv.set(m.k, m.v); kvNotify(m.k); break;
+      case 'lease': {
+        const l = leases.get(m.name);
+        if (!l) break;
+        const was = l.holder;
+        l.holder = m.holder === clientId;
+        if (was !== l.holder) for (const fn of l.listeners) fn(l.holder);
+        break;
+      }
+      case 'ext': {
+        const link = links.get(m.key);
+        if (!link) break;
+        if (m.ev === 'data') for (const fn of link.listeners) { try { fn(m.data); } catch (err) { console.error(err); } }
+        else { link.state = m.ev; link.detail = m.data || ''; for (const fn of link.statusListeners) fn(link.state, link.detail); }
+        break;
+      }
+      case 'action': {
+        // An exact handler first; '*' takes whatever has none (OSC input
+        // parses its own address space there).
+        const fn = forwarded.get(m.name) || forwarded.get(m.name.split('/')[0] + '/*') || forwarded.get('*');
+        if (fn) { try { fn(m.args || [], m.name); } catch (err) { console.error(`forwarded ${m.name}`, err); } }
+        else console.warn('no handler for forwarded action', m.name);
+        break;
+      }
+      case 'plus':
+        if (m.what) lastPlus.set(m.what, m);
+        for (const fn of plusListeners) fn(m);
+        break;
+    }
+  }
+  const plusListeners = new Set();
+  // The bridge says each of these once on connect, which is usually before
+  // the plugins have loaded; a listener that arrives late is told the last.
+  const lastPlus = new Map();
+  // A reconnect is a new client to the bridge: ask again for every lease and
+  // link this page held, or they are silently gone.
+  function onOpen() {
+    for (const [name, l] of leases) if (l.wanted) store.send({ t: 'lease', name, want: true });
+    for (const [key, link] of links) if (link.refs > 0) store.send({ t: 'ext', op: 'open', key, kind: link.kind, host: link.host, port: link.port });
+  }
+  function onClose() {
+    for (const l of leases.values()) if (l.holder) { l.holder = false; for (const fn of l.listeners) fn(false); }
+    for (const link of links.values()) { link.state = 'closed'; for (const fn of link.statusListeners) fn('closed', 'bridge offline'); }
+  }
+
+  // ---- the host a plugin is handed ----
+  function makeHost(id) {
+    const host = {
+      id,
+      // the core, as a plugin may use it
+      store, el, render, notify: () => store.notify(), switchView,
+      confirmBtn, checkbox, enumSelect2, screenSelect, sourceSelect, bind, popoutButton,
+      sourceName, sourceNameFor, sourceAvailable, screenLabel, inputLabel, outputLabel,
+      layerName, customLayerName, plugName,
+      platform: () => store.meta?.platform || '', isMidra, isLiveCore: () => store.meta?.platform === 'livecore',
+      hasBanks, liveCtx, editCtx, groupOf, midTransition,
+      screenCount, layerSlots, inputCount, outputCount, srcMaxOf, activeScreens, layerLeaves,
+      layerCount: (s) => store.val('SCmly', s) || layerSlots(),
+      presetEditMode, doTake, doCut, doStepBack, setTbar, tbarValue, groupTake, groupCut,
+      recallMemory, memoryScopes, memorySlots, memoryLabel,
+      // Where a layer is, as a rectangle in screen pixels, and the one way a
+      // plugin moves it: through the screen's working area, like the Layers
+      // and Workspace views' own setGeom.
+      layerRect(s, c, l) {
+        const w = store.val('PRsih', s, c, l) || 0, h = store.val('PRsiv', s, c, l) || 0;
+        const cx = (store.val('PRpoh', s, c, l) ?? POS_BIAS) - POS_BIAS, cy = (store.val('PRpov', s, c, l) ?? POS_BIAS) - POS_BIAS;
+        return { left: cx - w / 2, top: cy - h / 2, w, h };
+      },
+      placeLayer(s, c, l, r) {
+        const f = WORK_AREA.fit(s, r);
+        store.set('PRsih', [s, c, l], Math.max(0, Math.round(f.w)));
+        store.set('PRsiv', [s, c, l], Math.max(0, Math.round(f.h)));
+        store.set('PRpoh', [s, c, l], Math.round(f.left + f.w / 2 + POS_BIAS));
+        store.set('PRpov', [s, c, l], Math.round(f.top + f.h / 2 + POS_BIAS));
+      },
+      POS_BIAS, FADE_IN, FADE_OUT, LAYER_CAT, MEM_FILTERS,
+      sleep, normTc,
+      // verbs
+      actions: { define: defineAction, run: runAction, describe: describeAction, form: actionForm, list: () => [...ACTIONS.values()] },
+      cues: CUES, keys: KEYS,
+      // seams
+      mathFields(on = true) { MATH_FIELDS = on; },
+      quietly,
+      css(text) {
+        const tag = document.createElement('style');
+        tag.dataset.plugin = id;
+        tag.textContent = text;
+        document.head.append(tag);
+      },
+      on(hook, fn) { HOOKS[hook].add(fn); return () => HOOKS[hook].delete(fn); },
+      onBridge(fn) {
+        plusListeners.add(fn);
+        for (const m of lastPlus.values()) { try { fn(m); } catch (err) { console.error(err); } }
+        return () => plusListeners.delete(fn);
+      },
+      // one plugin's API offered to the others (plugins load in PLUGIN_INDEX
+      // order, so a service is there for anything set up after it)
+      provide(name, api) { services.set(name, api); },
+      use: (name) => services.get(name) || null,
+      // a view of its own
+      view(viewId, label, v, { section = 'Plus' } = {}) {
+        VIEWS[viewId] = v;
+        views.set(viewId, { plugin: id, label, section });
+        if (!VIEW_IDS.includes(viewId)) VIEW_IDS.push(viewId);
+      },
+      // shared state, on the bridge
+      shared(key, init) {
+        const k = `${id}.${key}`;
+        return {
+          get: () => {
+            if (!kv.has(k)) { const local = bridged() ? undefined : kvLocal(k); kv.set(k, local !== undefined ? local : structuredClone(init)); }
+            return kv.get(k);
+          },
+          set: (v) => kvSet(k, v),
+          update(fn) { const v = structuredClone(this.get()); fn(v); kvSet(k, v); },
+          watch(fn) { if (!kvWatchers.has(k)) kvWatchers.set(k, new Set()); kvWatchers.get(k).add(fn); },
+          get seeded() { return kvSeeded || !bridged(); },
+        };
+      },
+      // one page at a time
+      lease(name) {
+        const full = `${id}.${name}`;
+        if (!leases.has(full)) leases.set(full, { wanted: false, holder: !bridged(), listeners: new Set() });
+        const l = leases.get(full);
+        return {
+          want(on = true) { l.wanted = on; if (bridged()) store.send({ t: 'lease', name: full, want: on }); else { l.holder = on; for (const fn of l.listeners) fn(on); } },
+          held: () => l.holder,
+          onChange(fn) { l.listeners.add(fn); },
+        };
+      },
+      // A TCP link the bridge holds for us (HyperDeck, routers, Companion).
+      // One per page: these protocols pair each reply with the command
+      // before it, and two pages' commands on one socket would cross.
+      link(kind, hostName, port) {
+        const key = `${kind}|${hostName}:${port}|${PAGE_ID}`;
+        if (!links.has(key)) links.set(key, { kind, host: hostName, port, state: 'closed', detail: '', refs: 0, listeners: new Set(), statusListeners: new Set() });
+        const link = links.get(key);
+        return {
+          key,
+          open() {
+            link.refs++;
+            if (!bridged()) { link.state = 'error'; link.detail = 'the hosted demo has no bridge to open a connection from'; for (const fn of link.statusListeners) fn(link.state, link.detail); return; }
+            store.send({ t: 'ext', op: 'open', key, kind, host: hostName, port });
+          },
+          close() { link.refs = Math.max(0, link.refs - 1); if (!link.refs && bridged()) store.send({ t: 'ext', op: 'close', key }); },
+          send(data) { if (bridged()) store.send({ t: 'ext', op: 'send', key, data }); },
+          onData(fn) { link.listeners.add(fn); return () => link.listeners.delete(fn); },
+          onStatus(fn) { link.statusListeners.add(fn); return () => link.statusListeners.delete(fn); },
+          get state() { return link.state; },
+          get detail() { return link.detail; },
+        };
+      },
+      // an action the bridge forwards (from OSC): runs on this page only
+      // while it holds the plugin's 'forwarded' lease
+      forwarded(name, fn) { forwarded.set(name, fn); },
+      bridge: (msg) => store.send(msg),
+      bridged,
+      // Every plugin's shared data at once, and a write to any key — for the
+      // Setup file plugin, which saves and restores the lot.
+      sharedAll: () => Object.fromEntries([...kv].filter(([, v]) => v !== undefined)),
+      sharedSet: (k, v) => kvSet(k, v),
+    };
+    return host;
+  }
+
+  async function load() {
+    for (const id of PLUGIN_INDEX) {
+      try {
+        const mod = await import(`./plugins/${id}/plugin.js`);
+        const man = mod.default;
+        manifests.set(man.id, man);
+      } catch (err) {
+        failed.set(id, String(err?.message || err));
+        console.error(`plugin ${id} failed to load`, err);
+      }
+    }
+    for (const [id, man] of manifests) {
+      if (!isOn(id)) continue;
+      try { man.setup(makeHost(id)); } catch (err) { failed.set(id, String(err?.message || err)); console.error(`plugin ${id} setup`, err); }
+    }
+    const h = location.hash.slice(1);
+    if (VIEWS[h] && h !== currentView) switchView(h);
+    else render();
+  }
+
+  function why(man) {
+    if (!man.requires || !store.meta) return true;
+    try { return man.requires(makeHostLite()); } catch { return 'could not check'; }
+  }
+  const makeHostLite = () => ({ store, platform: () => store.meta?.platform || '', isMidra, isLiveCore: () => store.meta?.platform === 'livecore', bridged });
+
+  function setEnabled(id, on) {
+    enabled[id] = on;
+    try { localStorage.setItem(ENABLED_KEY, JSON.stringify(enabled)); } catch { /* private mode */ }
+    // A plugin wires hooks into the core; unwiring them in place is a class of
+    // bug not worth having. A reload is the one reset that cannot miss a seam.
+    location.reload();
+  }
+
+  return { load, onMsg, onOpen, onClose, manifests, failed, views, isOn, setEnabled, why };
+})();
+
+// Plugin views go into the menu under their section, after the core's own.
+{
+  const base = NAV.slice();
+  const navWithPlugins = () => {
+    const out = base.slice();
+    const bySection = new Map();
+    for (const [vid, v] of PLUS.views) {
+      if (!bySection.has(v.section)) bySection.set(v.section, []);
+      bySection.get(v.section).push([vid, v.label]);
+    }
+    for (const [section, items] of bySection) {
+      let at = out.findIndex(x => x.section === section);
+      if (at < 0) {
+        const tools = out.findIndex(x => x.section === 'Tools');
+        out.splice(tools, 0, { section }, ...items);
+        continue;
+      }
+      at++;
+      while (at < out.length && !out[at].section) at++;
+      out.splice(at, 0, ...items);
+    }
+    return out;
+  };
+  NAV_SOURCE = navWithPlugins;
+}
+
+VIEWS.plugins = (() => {
+  function render() {
+    const rows = [...PLUGIN_INDEX].map(id => {
+      const man = PLUS.manifests.get(id);
+      const err = PLUS.failed.get(id);
+      const on = PLUS.isOn(id);
+      const avail = man ? PLUS.why(man) : 'did not load';
+      return el('div', { class: 'plugin-row' + (on ? '' : ' off') },
+        el('div', { class: 'plugin-main' },
+          el('div', { class: 'plugin-name' }, man?.name || id, el('span', { class: 'plugin-id', text: id })),
+          el('div', { class: 'plugin-desc', text: man?.description || '' }),
+          err ? el('div', { class: 'plugin-why bad', text: err })
+            : avail !== true && on ? el('div', { class: 'plugin-why', text: `Not on this processor: ${avail}` }) : null),
+        el('label', { class: 'switch' }, checkbox(on, v => PLUS.setEnabled(id, v)), el('span', { text: on ? 'On' : 'Off' })));
+    });
+    return el('div', {},
+      el('div', { class: 'view-head' }, el('h1', { text: 'Plugins' }),
+        el('span', { class: 'hint', text: 'Every feature past the core surface, each one switchable. Switching one reloads the page.' })),
+      el('div', { class: 'panel' }, ...rows));
+  }
+  return { render };
+})();
+VIEW_IDS.push('plugins');
+
+PLUS.load();
 
 render();

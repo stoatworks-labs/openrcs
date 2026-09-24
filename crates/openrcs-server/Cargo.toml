@@ -20,3 +20,6 @@ futures-util = "0.3"
 # the web UI is embedded into the binary so a release ships as a single file;
 # a --web dir (or the source tree during dev) still overrides it from disk.
 rust-embed = "8"
+# The thumbnail relay (plus.rs): a LiveCore serves its input snapshots as
+# PNGs; the bridge fetches each once for every page and hands out a JPEG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

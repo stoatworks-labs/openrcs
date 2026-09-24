@@ -48,3 +48,15 @@ jobs:
       # website (which syncs the JSON) disagreeing about a cell.
       - name: comparison doc is current
         run: python3 scripts/gen-comparison.py --check
+
+      # The web surface has no build step, so nothing else would notice a
+      # plugin that no longer parses — the page would just lose it. Node 22
+      # reads a .js file with import/export as a module on its own.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: web modules parse, command language holds
+        run: |
+          find crates/openrcs-server/web -name '*.js' -print0 | xargs -0 -n1 node --check
+          node crates/openrcs-server/web/plugins/console/lang.test.mjs

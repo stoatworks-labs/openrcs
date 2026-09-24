@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDID builder — openrcs</title>
+</head>
+<body>
+<div id="otter"></div>
+<!-- The Otter editor styles `body`, so it only ever runs in a window of its
+     own. Its host — the input plugs, and a save that writes through the
+     openrcs page that opened this window — comes from that page. -->
+<script type="module">
+  const own = window.opener && window.opener.__openrcsEdidHost;
+  if (!own) {
+    document.body.textContent = 'Open this from openrcs: Setup → EDID builder.';
+  } else {
+    import('./otter-edid-embed.js').then((otter) => {
+      const unmount = otter.mount(document.getElementById('otter'), own.host());
+      addEventListener('pagehide', () => unmount && unmount());
+    }).catch((err) => { document.body.textContent = `The EDID editor would not load: ${err.message}`; });
+  }
+</script>
+</body>
+</html>

@@ -46,11 +46,16 @@ version="v$(awk '
 
 stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
               "$here/demo-footer.js" "$here/support-footer.js" "$here"/fixtures*.json \
+              $(find "$web/plugins" -type f ! -name '*.test.mjs' | sort) \
          | shasum -a 256 | cut -c1-8)"
 
 rm -rf "$dist"
 mkdir -p "$dist"
 cp "$web/app.js" "$web/style.css" "$dist/"
+# The plugins are part of the surface: app.js imports each one from
+# plugins/<id>/plugin.js. Tests stay behind.
+(cd "$web" && find plugins -type f ! -name '*.test.mjs' ! -name '.*' | while read -r f; do
+  mkdir -p "$dist/$(dirname "$f")"; cp "$f" "$dist/$f"; done)
 # fixtures-<name>.json are the table-derived ones `?device=<name>` picks.
 cp "$here/device.js" "$here/demo.css" "$here/demo-footer.js" \
    "$here/support-footer.js" "$here"/fixtures*.json "$dist/"

@@ -14,6 +14,8 @@
 //! Setup view, then remembers that across restarts.
 
 mod hub;
+mod plus;
+mod remote;
 mod tailnet;
 
 use std::net::SocketAddr;
@@ -34,6 +36,7 @@ use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use hub::{DeviceEvent, Family, Hub, Target};
+use plus::{ClientId, Plus, PlusEvent};
 
 #[derive(Deserialize)]
 #[serde(tag = "t", rename_all = "lowercase")]
@@ -60,6 +63,21 @@ enum ClientMsg {
         action: String,
         #[serde(default)]
         value: String,
+    },
+    /// Write one plugin's shared value. Every open page is told.
+    Kv { k: String, v: serde_json::Value },
+    /// Ask for (or give up) a named lease.
+    Lease { name: String, want: bool },
+    /// A TCP link held by the bridge for a plugin: `open`, `send` or `close`.
+    Ext {
+        op: String,
+        key: String,
+        #[serde(default)]
+        host: String,
+        #[serde(default)]
+        port: u16,
+        #[serde(default)]
+        data: String,
     },
 }
 
@@ -109,6 +127,17 @@ enum ServerMsg {
         /// buttons rather than queue a second `up` behind the first.
         busy: bool,
     },
+    /// This connection's id, for the lease messages that name a holder.
+    Hello { id: ClientId },
+    /// Every plugin's shared data, on connect.
+    Kvsnap { items: Vec<(String, serde_json::Value)> },
+    Kv { k: String, v: serde_json::Value },
+    Lease { name: String, holder: Option<ClientId> },
+    Ext { key: String, ev: &'static str, data: String },
+    /// An OSC-forwarded verb, sent only to the page holding the lease.
+    Action { name: String, args: Vec<serde_json::Value> },
+    /// Anything else the plugin half reports (OSC status).
+    Plus { #[serde(flatten)] body: serde_json::Value },
 }
 
 #[derive(Serialize)]
@@ -290,6 +319,11 @@ struct TailnetUpdate {
 /// to write a setup change so it survives a reboot.
 struct App {
     hub: Arc<Hub>,
+    /// The plugins' half of the bridge: shared data, leases, links, OSC.
+    plus: Arc<Plus>,
+    /// Remote access (Tailscale serve, tailnet and ZeroTier listeners). Set
+    /// once the router it serves exists, which is after this struct.
+    remote: std::sync::OnceLock<Arc<remote::Remote>>,
     config_path: PathBuf,
     /// Set by --tailnet. Every tailnet message is dropped when false, so the
     /// gate is enforced at the server and not merely in the UI that hides it.
@@ -330,8 +364,12 @@ async fn main() {
     };
 
     let hub = Hub::start(target.clone());
+    // Beside the config, so an appliance's --config moves both together.
+    let plus = Plus::start(hub.clone(), cfg.config_path.with_file_name("plugin-data.json"));
     let app = Arc::new(App {
         hub: hub.clone(),
+        plus,
+        remote: std::sync::OnceLock::new(),
         config_path: cfg.config_path.clone(),
         tailnet: cfg.tailnet,
         tailnet_tx: tokio::sync::broadcast::channel(8).0,
@@ -342,7 +380,10 @@ async fn main() {
     // that keeps live-editing during development — otherwise fall back to the
     // copy embedded in the binary, so a release is a single self-contained file.
     let from_disk = std::path::Path::new(&cfg.web_dir).is_dir();
-    let base = Router::new().route("/ws", get(ws_handler));
+    let app_state = app.clone();
+    let base = Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/plus/snap/in/{file}", get(snap_handler));
     let app = if from_disk {
         base.fallback_service(ServeDir::new(&cfg.web_dir))
     } else {
@@ -355,6 +396,7 @@ async fn main() {
             HeaderValue::from_static("no-cache, no-store, must-revalidate"),
         ))
         .with_state(app);
+    let _ = app_state.remote.set(remote::Remote::start(app_state.plus.clone(), app.clone(), cfg.listen));
 
     println!("openrcs-server {}", version());
     match &target {
@@ -370,6 +412,18 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(cfg.listen).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+/// `/plus/snap/in/<n>.jpg` — a LiveCore input thumbnail, relayed (plus.rs).
+async fn snap_handler(
+    axum::extract::Path(file): axum::extract::Path<String>,
+    State(app): State<Arc<App>>,
+) -> impl IntoResponse {
+    let n: u32 = file.trim_end_matches(".jpg").parse().unwrap_or(0);
+    match app.plus.snapshot(n).await {
+        Ok(jpeg) => ([(header::CONTENT_TYPE, "image/jpeg")], jpeg).into_response(),
+        Err(why) => (axum::http::StatusCode::BAD_GATEWAY, why).into_response(),
+    }
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(app): State<Arc<App>>) -> impl IntoResponse {
@@ -468,8 +522,15 @@ async fn client(socket: WebSocket, app: Arc<App>) {
     let (mut tx, mut rx) = socket.split();
     let hub = app.hub.clone();
 
-    // 1. hand the browser the variable table and the current state.
-    if seed(&mut tx, &hub, app.tailnet).await.is_err() {
+    // 1. hand the browser the variable table and the current state, then the
+    //    plugins' shared data.
+    let me = app.plus.new_client();
+    if seed(&mut tx, &hub, app.tailnet).await.is_err()
+        || send(&mut tx, &ServerMsg::Hello { id: me }).await.is_err()
+        || send(&mut tx, &ServerMsg::Kvsnap { items: app.plus.kv_snapshot() }).await.is_err()
+        || send(&mut tx, &ServerMsg::Plus { body: serde_json::json!({ "what": "osc", "status": app.plus.osc_status() }) }).await.is_err()
+        || send(&mut tx, &ServerMsg::Plus { body: serde_json::json!({ "what": "remote", "status": app.remote.get().map(|r| r.status()).unwrap_or_default(), "appliance": app.tailnet }) }).await.is_err()
+    {
         return;
     }
 
@@ -478,12 +539,29 @@ async fn client(socket: WebSocket, app: Arc<App>) {
     let hub_out = hub.clone();
     let tailnet_on = app.tailnet;
     let mut tailnet_rx = app.tailnet_tx.subscribe();
+    let mut plus_rx = app.plus.subscribe();
     let pump_out = async move {
         loop {
-            // Two sources, one socket: the processor's events and this host's
-            // own tailnet results.
+            // Three sources, one socket: the processor's events, this host's
+            // own tailnet results, and the plugins' half of the bridge.
             let ev = tokio::select! {
                 ev = events.recv() => ev,
+                pev = plus_rx.recv() => {
+                    let msg = match pev {
+                        Ok(PlusEvent::Kv { k, v }) => Some(ServerMsg::Kv { k, v }),
+                        Ok(PlusEvent::Lease { name, holder }) => Some(ServerMsg::Lease { name, holder }),
+                        Ok(PlusEvent::Ext { key, ev, data }) => Some(ServerMsg::Ext { key, ev, data }),
+                        Ok(PlusEvent::Action { to, name, args }) => (to == me).then_some(ServerMsg::Action { name, args }),
+                        Ok(PlusEvent::Note(body)) => Some(ServerMsg::Plus { body }),
+                        Err(_) => None,
+                    };
+                    if let Some(msg) = msg {
+                        if send(&mut tx, &msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    continue;
+                }
                 update = tailnet_rx.recv() => {
                     match update {
                         Ok(u) => {
@@ -540,7 +618,7 @@ async fn client(socket: WebSocket, app: Arc<App>) {
     let pump_in = async move {
         while let Some(Ok(msg)) = rx.next().await {
             if let Message::Text(txt) = msg {
-                handle_client_msg(&app_rx, &txt);
+                handle_client_msg(&app_rx, &txt, me);
             }
         }
     };
@@ -549,9 +627,11 @@ async fn client(socket: WebSocket, app: Arc<App>) {
         _ = pump_out => {}
         _ = pump_in => {}
     }
+    // Hand this page's leases on and let go of its links.
+    app.plus.client_gone(me);
 }
 
-fn handle_client_msg(app: &Arc<App>, txt: &str) {
+fn handle_client_msg(app: &Arc<App>, txt: &str, me: ClientId) {
     let hub = &app.hub;
     let msg: ClientMsg = match serde_json::from_str(txt) {
         Ok(m) => m,
@@ -610,6 +690,15 @@ fn handle_client_msg(app: &Arc<App>, txt: &str) {
                 }
                 let err = match action.as_str() {
                     "status" => String::new(),
+                    // ZeroTier membership, from the Remote access plugin.
+                    "zt-join" | "zt-leave" => match app.remote.get() {
+                        Some(r) => {
+                            let e = r.zerotier(action == "zt-join", &value).await.err().unwrap_or_default();
+                            r.reconcile().await;
+                            e
+                        }
+                        None => "remote access is not running".into(),
+                    },
                     "up" => tailnet::connect(&value).await.err().unwrap_or_default(),
                     "down" => tailnet::disconnect().await.err().unwrap_or_default(),
                     "hostname" => tailnet::rename(&value).await.err().unwrap_or_default(),
@@ -646,6 +735,14 @@ fn handle_client_msg(app: &Arc<App>, txt: &str) {
             }
         }
         ClientMsg::Raw { d } => hub.raw(d),
+        ClientMsg::Kv { k, v } => app.plus.kv_set(k, v),
+        ClientMsg::Lease { name, want } => app.plus.lease(name, me, want),
+        ClientMsg::Ext { op, key, host, port, data } => match op.as_str() {
+            "open" => app.plus.link_open(key, host, port, me),
+            "send" => app.plus.link_send(&key, data),
+            "close" => app.plus.link_close(&key, me),
+            other => eprintln!("ext: unknown op {other:?}"),
+        },
     }
 }
 

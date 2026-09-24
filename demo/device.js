@@ -180,6 +180,25 @@
 
       if (m === 'GCtku' && v === 1) return this._take(idx[0]);
 
+      // The LiveCore take the surface actually sends: the T-bar (GCtba) run
+      // end to end over a group. PA/PB are fixed buffers and a take swaps
+      // which one is on air, so the bar's resting end *is* GCsta — 0 at
+      // the DOWN end (PA on air), 65535 at the UP end (PB on air), and the
+      // EFFECT_FROM states in between.
+      if (m === 'GCtba' && this.defs.has('GCsta') && this.meta.platform === 'livecore') {
+        const g = idx[0], max = this.defs.get('GCtba').max;
+        const was = this._val('GCsta', [g]);
+        const st = v >= max ? 1 : v <= 0 ? 0 : (was === 1 || was === 3) ? 3 : 2;
+        if (st !== was) this._put('GCsta', [g], st);
+        return;
+      }
+      // A Midra takes preview (context 1) to program (context 0): GCtak,
+      // pulsed 0 then 1, or the T-bar reaching either end.
+      if (this.meta.platform === 'midra') {
+        if (m === 'GCtak' && v === 1) { this._take(idx[0]); this._put('GCtak', idx, 0); return; }
+        if (m === 'GCtba') { const max = this.defs.get('GCtba').max; if (v <= 0 || v >= max) this._take(idx[0]); return; }
+      }
+
       if (m === 'PSsav' && v >= 1) return this._saveMaster(this.sel.psmet);
       if (m === 'PSloa' && v === 1) return this._loadMaster(this.sel.psmet, false);
       if (m === 'PSlot' && v === 1) return this._loadMaster(this.sel.psmet, true);
@@ -254,6 +273,14 @@
       return (this._lv = { layer, bg });
     }
 
+    /** The context not on air: the other bank on a LiveCore, 1 on a Midra. */
+    _pvwCtx(screen) {
+      if (!this.defs.has('GCsta')) return 1;
+      const g = this.state.has('Plngr|' + screen) ? this._val('Plngr', [screen]) : screen;
+      const st = this._val('GCsta', [g]);
+      return (st === 1 || st === 3 || st === 5) ? 0 : 1;
+    }
+
     /** Take: preview (context 1) becomes program (context 0) for one screen. */
     _take(screen) {
       const { layer, bg } = this._layerVars();
@@ -266,6 +293,15 @@
       for (const m of bg) this._put(m, [screen, 0], this._val(m, [screen, 1]));
       // the trigger is momentary — it falls back on its own
       this._put('GCtku', [screen], 0);
+    }
+
+    /** A load-and-take: swap the banks on a LiveCore, copy on anything else. */
+    _takeBank(screen) {
+      if (!this.defs.has('GCsta') || this.meta.platform !== 'livecore') return this._take(screen);
+      const g = this.state.has('Plngr|' + screen) ? this._val('Plngr', [screen]) : screen;
+      const up = this._pvwCtx(screen) === 1;
+      this._put('GCsta', [g], up ? 1 : 0);
+      this._put('GCtba', [g], up ? this.defs.get('GCtba').max : 0);
     }
 
     _capture(screens, ctx) {
@@ -296,19 +332,20 @@
     }
 
     _saveMaster(slot) {
-      this.memories.set('master|' + slot, this._capture(this._activeScreens(), 0));
+      this.memories.set('master|' + slot, this._activeScreens().flatMap(s => this._capture([s], 1 - this._pvwCtx(s))));
       this._put('PSval', [slot], 1);
     }
 
     _loadMaster(slot, andTake) {
       const shot = this.memories.get('master|' + slot);
       if (!shot) return;
-      this._restore(shot, 1);                       // memories recall to preview
-      if (andTake) for (const s of this._activeScreens()) this._take(s);
+      // memories recall to preview — the bank not on air
+      for (const s of this._activeScreens()) this._restore(shot.filter(([, idx]) => idx[0] === s), this._pvwCtx(s));
+      if (andTake) for (const s of this._activeScreens()) this._takeBank(s);
     }
 
     _saveScreen(screen, slot) {
-      this.memories.set('screen|' + slot, this._capture([screen], 0));
+      this.memories.set('screen|' + slot, this._capture([screen], 1 - this._pvwCtx(screen)));
       this._put('PMscw', [slot], this._val('SCssh', [screen]));
       this._put('PMmly', [slot], this._val('SCmly', [screen]));
     }
@@ -318,8 +355,8 @@
       if (!shot) return;
       // A screen memory is portable: it restores onto whichever screen is
       // selected now, not the one it was captured from.
-      this._restore(shot.map(([m, idx, v]) => [m, [screen, ...idx.slice(1)], v]), 1);
-      if (andTake) this._take(screen);
+      this._restore(shot.map(([m, idx, v]) => [m, [screen, ...idx.slice(1)], v]), this._pvwCtx(screen));
+      if (andTake) this._takeBank(screen);
     }
 
     close() {

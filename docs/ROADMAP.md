@@ -61,6 +61,16 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   (reads preview your staged values), then push it to the device on connect.
 - **Tools** — Inspector (every variable) and a raw-protocol Console.
 
+- **Plugins** — the LivePremier Plus features that carry to LiveCore and
+  Midra, each a switchable folder under `web/plugins/`: field arithmetic,
+  layer names, layer groups (gang + Send to), layer lock and take-alone, a
+  command line, timecode (MTC/LTC/OSC), MIDI mapping, the Speed Editor, the
+  Otter EDID builder, OSC input, HyperDecks with rules, matrix routing,
+  Companion, a thumbnail relay, remote access (Tailscale/ZeroTier) and a setup
+  file. The bridge grew the half a browser cannot do: shared plugin data,
+  leases, TCP links and an OSC listener (`src/plus.rs`, `src/remote.rs`).
+  Fixture- and fake-proven only; see [PLUGINS.md](PLUGINS.md).
+
 ## Near-term parity (already in the protocol)
 
 Concrete device capabilities not yet given a dedicated surface:

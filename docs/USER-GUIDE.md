@@ -108,6 +108,28 @@ On LiveCore, a **take** now animates the T-bar directly rather than firing the
 device's own take verbs — on real hardware those leave the group stuck
 mid-transition, so openrcs sweeps the bar over the transition time instead.
 
+## Plugins
+
+**Tools → Plugins** lists every feature past the core views, each with an
+on/off switch. The ones on add their own pages to the menu — Layer names,
+Layer groups, Layer lock, Command line, Timecode and HyperDecks under
+*Program*; MIDI, Speed Editor, EDID builder, OSC input, Matrix routing,
+Thumbnail relay and Remote access under *Setup*; Setup file under *Tools*.
+Keys, Cues, the command line, MIDI and OSC all fire the same actions, so a
+verb one plugin adds (press a Companion button, play a HyperDeck, route a
+router) can be put on a key, a cue or a MIDI pad.
+
+Cues gained three things alongside: a **fade** time per cue (a timed T-bar
+take), a **timecode** per cue (fired by the Timecode plugin), and **extra
+actions** fired with the cue — all under the ⋯ on each cue — plus
+**Standby next**, which loads the next cue into preview after each GO. Cues
+and Keys now also run on a Midra, re-applying its presets as the Memories page
+does. Cues, Keys, Memories and the command line can each **pop out** into a
+window of their own.
+
+Everything about each plugin — and how far each is proven, which today is
+fixtures and fakes, not hardware — is in [PLUGINS.md](PLUGINS.md).
+
 ## Workspace
 
 ![The working page — sources, live screens and memories on one page](screenshots/workspace.png)
