@@ -38,6 +38,16 @@ Same fleet, copied rather than shared: the EDID Builder plugin's otter-edid-embe
 
 Libraries, SDKs and frameworks the project is built on or bundles.
 
+### Tauri
+
+<https://tauri.app>  
+Licence: MIT or Apache-2.0  
+Copyright: The Tauri Programme within The Commons Conservancy
+
+A Cargo and npm dependency — of the app itself under src-tauri/, or of the desktop launcher under launcher/src-tauri/.
+
+Wraps a web front end in a native desktop app using the platform's own webview rather than a bundled browser, so the binary stays small.
+
 ### React, React DOM and Scheduler
 
 <https://react.dev>  
