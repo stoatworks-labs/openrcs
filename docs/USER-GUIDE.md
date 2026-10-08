@@ -336,7 +336,8 @@ the device:
 - **Inputs** — every input with its availability, active plug, live signal status
   and detected size, plus freeze and black.
 - **Outputs** — the physical outputs, their connected displays, format, size,
-  HDCP and output processing (brightness, contrast, gamma, gain). The format and
+  HDCP, a test pattern and output processing (brightness, contrast, gamma, gain).
+  On a LiveCore the patterns are listed by number — their names are not yet known. The format and
   rate lists are the device's own, named as its RCS names them — *HDTV 1080p*,
   *Computer 1920×1080 (16:9 1080p)*, *Internal rate* — and the table shows each
   output's format the same way.
@@ -346,11 +347,13 @@ the device:
 - **Capture** — grab a frame from a live source into the still library: pick a
   source and capture the full frame or a graphical region.
 - **Multiviewer** — a drag-and-resize layout designer for the monitoring outputs:
-  place up to twelve widgets, pick each one's source, and store layout memories.
+  place the widgets the unit drives (eight on a NeXtage), pick each one's source,
+  and store and name layout memories. Grid presets are offered only where they
+  fit; **Apply to output** sends the layout to the monitor.
 - **Soft edge** — a per-edge blend editor for multi-output screens: click an edge
   to feather it into its neighbour and set the black level.
 - **EDID** — set an input's preferred format and read the EDID a connected display
-  advertises. The **custom-EDID writer** builds a valid EDID for any resolution
+  advertises, on the main outputs and the monitoring outputs alike. The **custom-EDID writer** builds a valid EDID for any resolution
   and refresh rate and writes it to an input, so a source outputs exactly what you
   want.
 - **Audio** — output volume, balance, delay and mute, plus per-input channel

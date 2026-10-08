@@ -631,6 +631,30 @@ variable table and the surface. Three things came out of it:
   display EDID (`EMred`/`EMhcd`/`EMval`). **Still open:** the unit's EDID
   library listing, which only the 4521 `{LEUpA}` frame provides.
 
+**To run on the NeXtage next time it is on the bench** (none of this has been
+driven against hardware yet; each step says what would settle it):
+
+1. *Keep the layout.* Multiviewer → M8 (empty on that unit, `MMmax[7]` 0) →
+   Save. Load it back at the end.
+2. *Geometry write.* Quad → Apply; the monitor shows four equal quarters, and
+   the Inspector reads `MLcph[0,0..3]` 32768/49152, sizes 32768. Then 4×2 →
+   Apply (eight windows), then drag one widget and Apply. Any mismatch between
+   canvas and monitor means the encoding is wrong for writes.
+3. *Does the apply need the 0?* Change one widget's source, then from the
+   Console send only `0,1MLupd` while `MLupd` already reads 1. If the monitor
+   follows, the 0→1 pulse is habit, not need — note it either way.
+4. *Names.* Save a layout memory, label it in openrcs, and see the name in the
+   vendor client's multiviewer page (and the reverse).
+5. *Monitoring EDID.* EDID → plug 2 → MON 1 → Read EDID: hashcode and valid
+   should fill, as they did for the vendor client (`EMhcd[0,1]` 2148899320).
+6. *Pattern names.* On an output with a display, step Test pattern 1…15 and
+   write down what each one is, against the vendor client's list. That fills
+   in the LiveCore names the Outputs view now shows as numbers.
+7. *Companion load target.* With nothing on air that matters, pick the
+   Program bank in openrcs Memories and recall something (that writes
+   `PMprf` 0 — and lands on program), then fire the Companion module's
+   load-to-preview: it must land in the bank `GCsta` says is not on air.
+
 Reads during the session went through a separate read-only connection that
 encodes gets exactly as `encode_get` does — a comma after every index. Its first
 version left that comma off; the unit answered all 77 lines `E13` and the capture
