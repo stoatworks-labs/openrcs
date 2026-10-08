@@ -2465,7 +2465,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "per-input preferred format + store / factory, display readout, custom-EDID writer; no library or file import / export"
+        "text": "per-input preferred format + store / factory, the display readout on every output and monitoring output, custom-EDID writer; no library or file import / export"
        }
       },
       "livepremier": {
@@ -2571,11 +2571,11 @@
       "livecore": {
        "stock": {
         "state": "Y",
-        "text": "12 widgets (8 on NeXtage), templates, no-overlap editor, 8 layout memories, fit screen, load a layout in Live"
+        "text": "12 widgets (8 on NeXtage), templates, no-overlap editor, 8 named layout memories, fit screen, load a layout in Live"
        },
        "openrcs": {
         "state": "F",
-        "text": "drag / resize designer: up to 12 widgets with source and OSD label, grid presets, fullscreen, apply (MLupd), 8 layout memories (MON_MEM)"
+        "text": "drag / resize designer in the unit’s own normalised geometry, over the widgets it drives (eight on a NeXtage) with source and OSD label, grid presets that fit, fullscreen, apply, 8 named layout memories"
        }
       },
       "livepremier": {

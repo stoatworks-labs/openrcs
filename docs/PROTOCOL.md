@@ -356,3 +356,65 @@ pattern, HDCP, HDBaseT long reach, force-DVI, gamma and flicker, and `OUpoh`
 Together these are why openrcs carries a **working area**: a client-side region a
 screen is composed inside, enforced where layer geometry is written so that no path can
 escape it. Nothing is sent to the processor to establish one.
+
+## Multiviewer geometry (LiveCore)
+
+A monitoring widget's geometry — `MLcph`/`MLcpv`/`MLcsh`/`MLcsv[monitor, widget]`, and
+the same four under `MMc*[memory, widget]` — is **normalised, not pixels**, and the
+position and the size use different scales:
+
+```
+MLcph = 32768 + x / W · 32768      top-left corner; 32768 is the output's left edge
+MLcpv = 32768 + y / H · 32768
+MLcsh = w / W · 65536              65536 is the full output
+MLcsv = h / H · 65536
+```
+
+`W × H` is the monitoring output's raster (`MOshs`/`MOsvs`). Read off a NeXtage 16 on
+2026-10-08 after its own Web RCS had laid the monitor out: two large widgets over
+four small ones decoded to exactly 1 % margins and 2 % gutters on 1920×1080
+(`33095,33095` / `31456,42374` for the first, `49479,…` for its neighbour). The unit's
+untouched spare widgets read `49152,50970` / `16383,21842` — a quarter-width widget
+at the halfway mark — and the ones never used read all zero.
+
+A NeXtage drives **eight** widgets of the table's twelve: `MMmax`
+(`MON_MEM_MAX_WIDGETS`) reads 8 on every saved memory and 0 on an empty one, and
+widgets 9–12 sat at zero. `MMouw`/`MMouh` record the raster a memory was saved at.
+
+`MLupd` (`MONITORING_UPDATE`) applies the layout. The vendor client writes it **0 and
+then 1** after each change; the unit latches 1, and `MLups` goes 1 and back to 0
+some 400 ms later. A memory load (`MMloa[memory, monitor]`) applies itself — the
+unit pulses `MLupd` on its own. Note the index order: `MMsav[monitor, memory]` but
+`MMloa[memory, monitor]`. `MLfes`, the fullscreen source, is applied the same way.
+
+A memory's name is `LBMMo[memory, 16]`, one character per index like every other
+label. The vendor client writes it a keystroke at a time and zeroes a character on
+backspace.
+
+What is verified: the encoding, read back from a layout the vendor client wrote, and
+the vendor client's sequences, captured on the wire. openrcs writing the encoding
+has been driven against the demo device only.
+
+## The vendor client's own link (TCP 4521)
+
+The current vendor client — the Qt WebEngine "AW Browser" — does not open 10500.
+It holds one TCP connection to **4521** on the unit (plus HTTP on 80 for
+`/assets/`), seen on a NeXtage 16 on 2026-10-08. On that link:
+
+- Every message ends in **NUL** (`0x00`, Flash `XMLSocket` framing). The mnemonic
+  lines inside are the 10500 protocol unchanged — `0,3,1MMsav` out, `MMsav0,3,1`
+  back — so everything a 10500 client can do, this link does the same way.
+- Alongside them run **brace frames**, `{Kind|arg|…|}`, that 10500 does not carry:
+  - `{SnUpd||<n>|<0/1>|}` from the unit, many a second, cycling `n` through the
+    inputs — apparently the thumbnail refresh signal; the client meanwhile polls
+    `/assets/Snapshots/capture_in_<n>.bmp`.
+  - `{PgFwd||0|<count>|}` from the unit every ~2.1 s, the count rising by one.
+    Its meaning is not established.
+  - `{LEUpA||0|}` from the client, answered with one
+    `{LEUpd|<path>|<index>|True:True:<number>|}` per file in the unit's EDID
+    library — on that unit the six `reserved/ORX_EDID_*_INPUT.bin` files — which
+    the client then fetches from `/assets/Edids/<path>`. This is the only place
+    the library's contents are listed; no 10500 variable names them.
+
+A change made on either link is pushed to clients on the other, so a 10500 client
+sees everything the vendor client does as it happens.

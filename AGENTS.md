@@ -287,6 +287,15 @@ std binary and may use crates. Keep the split.
 - **The bridge drops a silent link after 20 s** and the browser re-runs
   `onReady()` when it returns. Do not add a "quiet" code path that stops the
   probe.
+- **Multiviewer widget geometry is normalised, never pixels.** Position is
+  `32768 + x/W·32768`, size `w/W·65536` (docs/PROTOCOL.md), read off a NeXtage
+  16 laid out by the vendor client. The demo fixture's `MLc*` values are pixels
+  openrcs itself once wrote into a simulator, which stores anything — they are
+  not evidence of the encoding. `rectPx`/`devGeom` in the Multiviewer view are
+  the only conversion points.
+- **A NeXtage drives eight multiviewer widgets, not twelve.** `MMmax` says so per
+  saved memory; `nw()` reads it and falls back to the model. `MLupd` is written
+  0 then 1, as the vendor client does — the unit latches 1.
 
 ## Protocol facts worth not regressing
 

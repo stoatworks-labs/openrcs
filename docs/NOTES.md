@@ -107,7 +107,7 @@ was needed. Also: to demo multi-screen, screens 0 AND 1 both auto-configure with
 - **Multiviewer** — drag/resize layout designer for the 2 monitoring outputs
   (MONITORING_LAYOUT). 12 widgets each: source MLces / OSD MLcso / enable MLcen /
   geom MLcph,MLcpv,MLcsh,MLcsv (top-left origin, NO +bias unlike layers — CONFIRM
-  on hw). Presets quad/3×3/4×3/single, Fullscreen (MLfen/MLfes), Apply MLupd,
+  on hw). **Wrong: normalised, not pixels — see 2026-10-08.** Presets quad/3×3/4×3/single, Fullscreen (MLfen/MLfes), Apply MLupd,
   Reset MLres, 8 memories (MMsav[out,mem]/MMloa[mem,out]). Canvas scale 720/MOshs.
   Reused the layer editor's dragMove/dragResize verbatim.
 
@@ -604,6 +604,38 @@ close() clears timers. **Validated LIVE on the NeXtage through BOTH the app UI
 repos committed+pushed to main; companion CI green. Device restored (both screens
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
+
+## Watching the vendor client set up a NeXtage 16 — 2026-10-08
+
+Allan set a NeXtage 16 (192.168.2.140) up from Analog Way's **AW Browser** while
+the session captured the traffic passively (`tcpdump` — the Mac user is in
+`access_bpf`, so no sudo — of everything to and from the unit, minus the
+thumbnail bodies on port 80) and rated every command it sent against the
+variable table and the surface. Three things came out of it:
+
+- **AW Browser talks on TCP 4521, not 10500**, with NUL-terminated messages and
+  `{Kind|…|}` brace frames beside the ordinary mnemonics. The 2026-08-08 note
+  below that the Flash client opens its own 10500 was about the `.swf`; this is
+  the current client. docs/PROTOCOL.md has the frames.
+- **The Multiviewer view had the geometry wrong.** It treated `MLcph`… as output
+  pixels — the 2026-08 note's "top-left origin, NO +bias … CONFIRM on hw". The
+  hardware answer is a normalised encoding with a 32768 edge for position and a
+  65536 scale for size; the vendor-built layout decoded to exact 1 %/2 % margins.
+  The surface would have drawn every real layout off its canvas, and its presets
+  would have put tiny widgets a whole output to the left. It also offered twelve
+  widgets where a NeXtage has eight (`MMmax`). Both fixed; the demo fixture still
+  holds the old pixel values, which is why the demo's multiviewer canvas is empty
+  until it is re-recorded.
+- **Gaps against the vendor client, now closed:** multiviewer memory labels
+  (`LBMMo`), `MLupd` written 0→1 as the vendor does, and the monitoring outputs'
+  display EDID (`EMred`/`EMhcd`/`EMval`). **Still open:** the unit's EDID
+  library listing, which only the 4521 `{LEUpA}` frame provides.
+
+Reads during the session went through a separate read-only connection that
+encodes gets exactly as `encode_get` does — a comma after every index. Its first
+version left that comma off; the unit answered all 77 lines `E13` and the capture
+shows nothing was applied (an accepted set is echoed, and none was). The
+openrcs writes in the new encoding have been driven against the demo only.
 
 ## A layer resized on program never moved on the wall — 2026-09-17, at a show
 
