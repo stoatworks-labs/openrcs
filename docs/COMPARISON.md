@@ -92,7 +92,7 @@ This page describes **openrcs v0.8.3** (`224b993`) as of 2026-09-18, read from t
 | Feature | RCS² | openrcs |
 |---|---|---|
 | Preconfig: outputs → screens, canvas | Yes — Mode (mixer / matrix), Screens status, setup assistant | **Partial** — Screens shows layer capacity and sets a working area; the operating mode is Inspector-only |
-| Output setup | Yes — framelock / internal, format, rate, sync type, force DVI, ten patterns, flicker, gamma, HDCP | **Partial** — format / rate, HDCP, black, processing where the unit advertises it; patterns only on the Video out |
+| Output setup | Yes — framelock / internal, format, rate, sync type, force DVI, ten patterns, flicker, gamma, HDCP | **Partial** — format / rate, HDCP, black, the ten test patterns, processing where the unit advertises it |
 | Midra video out (the second output) | Yes — format, status, pattern, flicker, gamma, overscan, sharpness | **Beyond stock** — plug mode (Recording, mirror out 1, mirror out 2), screen source, a draggable area of interest, format, pattern — verified on a Pulse2, SDI plug watched moving |
 | Area of interest (output crop) | No — only the SD video out crops | — — the working area stands in |
 | Custom output formats | Yes — CVT or full, check, save / load | **Missing** — Inspector only |
@@ -184,7 +184,7 @@ This page describes **openrcs v0.8.3** (`224b993`) as of 2026-09-18, read from t
 | Feature | Web RCS | openrcs |
 |---|---|---|
 | Preconfig: outputs → screens, canvas | Yes — assistant: internal rate, link, output resources / dual-link / 4K, rotation, grid and custom-canvas screens, templates, ID pattern, native inputs | **Partial** — Wall places each screen at its real output position (OSpoh / OSpov, OSupd); screen composition, resource moves and rotation are not surfaced |
-| Output setup | Yes — rate, format, timing, type / colour, 4K mode, thirteen patterns, flicker, gamma, brightness, contrast, RGB gain, HDCP, optical plug | **Partial** — format / rate, HDCP, black, brightness / contrast / gamma / RGB gain; no timing, type or patterns |
+| Output setup | Yes — rate, format, timing, type / colour, 4K mode, thirteen patterns, flicker, gamma, brightness, contrast, RGB gain, HDCP, optical plug | **Partial** — format / rate, HDCP, black, test pattern (by number — the names are not yet recovered), brightness / contrast / gamma / RGB gain; no timing or type |
 | Midra video out (the second output) | — | — |
 | Area of interest (output crop) | Yes — Setup AOI per output | **Partial** — staged and applied (OSaup); a NeXtage 16's readback never moved, so the panel draws the readback and warns |
 | Custom output formats | Yes — memories with label, load-from, validity check | **Missing** — Inspector only |

@@ -7689,7 +7689,7 @@ VIEWS.outputs = (() => {
   const N = () => outputCount();
   let sel = 0;
   function enter() {
-    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc', 'OUpat',
       'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl',
       'OSaoi', 'OSocp', 'OSash', 'OSasv', 'OSaph', 'OSapv',
       'OSsmh', 'OSsmv', 'OSSsh', 'OSSsv', 'OSSph', 'OSSpv', 'OSsro']) if (store.byMnem.has(m)) store.scan(m);
@@ -7813,7 +7813,8 @@ VIEWS.outputs = (() => {
         el('label', { class: 'field' }, 'Format', formatSelect()),
         store.byMnem.has('OUrat') ? el('label', { class: 'field' }, 'Rate', enumSelect('OUrat', i, outputRateNames())) : null,
         toggleBtn('HDCP', 'OUhdc', i),
-        toggleBtn('Black', 'OUbla', i, 'pgm')),
+        toggleBtn('Black', 'OUbla', i, 'pgm'),
+        store.byMnem.has('OUpat') ? el('label', { class: 'field' }, 'Test pattern', enumSelect('OUpat', i, outputPatternNames())) : null),
       el('div', { class: 'sub-head' }, 'Output processing'),
       el('div', { class: 'grid2' },
         bind('Brightness', 'OCbri', i, 0, 255, 1),
@@ -7870,7 +7871,9 @@ const VIDEO_OUT_FORMATS = ['SDTV PAL 4/3', 'SDTV NTSC 4/3', 'EDTV 480p 4/3', 'ED
   'HDTV 720p', 'HDTV 1035i', 'HDTV 1080i', 'HDTV 1080p', 'HDTV 1080sF', 'DCDM 2048×1080',
   'SDTV PAL 16/9', 'SDTV NTSC 16/9', 'EDTV 480p 16/9', 'EDTV 576p 16/9'];
 
-// OUpat / VOpat 0..9.
+// A Midra's OUpat / VOpat 0..9. A LiveCore's OUpat runs 0..15 over an enumeration
+// not yet recovered, so it is shown by number rather than filled in from this one.
+const outputPatternNames = () => enumLabels('OUpat', isMidra() ? TEST_PATTERNS : []);
 const TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
   'Grid', 'SMPTE', 'V burst', 'Centring', 'Soft-edge centring'];
 

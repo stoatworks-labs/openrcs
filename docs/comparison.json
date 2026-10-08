@@ -2180,7 +2180,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "format / rate, HDCP, black, processing where the unit advertises it; patterns only on the Video out"
+        "text": "format / rate, HDCP, black, the ten test patterns, processing where the unit advertises it"
        }
       },
       "livecore": {
@@ -2190,7 +2190,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "format / rate, HDCP, black, brightness / contrast / gamma / RGB gain; no timing, type or patterns"
+        "text": "format / rate, HDCP, black, test pattern (by number — the names are not yet recovered), brightness / contrast / gamma / RGB gain; no timing or type"
        }
       },
       "livepremier": {
