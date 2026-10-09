@@ -142,9 +142,16 @@ Confirmed on a NeXtage 16, with these caveats:
 - It only carries a picture once `SNAPSHOTS` is enabled for that source —
   `SNdis` (global disable) clear and `SNena[i]` set. Until then the request
   still returns 200, with a blank image.
-- **Inputs only.** `capture_out_N`, `capture_prw_N` and every other spelling
-  tried return 404, even with the matching output and preview snapshot slots
-  enabled. There is no thumbnail for a screen, output or still.
+- **Inputs only, under Snapshots.** `capture_out_N`, `capture_prw_N` and every
+  other spelling tried return 404, even with the matching output and preview
+  snapshot slots enabled. There is no thumbnail for a screen or output.
+- **Stills have theirs beside the still library**, at
+  `/assets/Stills/thumbnails/capture_fr_<n>.bmp` (frame n, source 24 + n) and
+  `capture_lg_<n>.bmp` (logo n, source 32 + n) — again a PNG named `.bmp`. Each
+  is rewritten when a still is loaded into the slot; a slot holding nothing but
+  the reserved empty still keeps the factory "NO IMAGE" card, and `LSval` /
+  `RSval` read 1 for it all the same. A NeXtage 16 has four of each. The library
+  itself is in `/assets/Stills/`, with `LibraryFileSettings.xml` indexing it.
 - A Midra (Pulse2) serves no HTTP at all — the port refuses the connection.
 
 `openrcs-server` reports the device host to the browser in its `meta` frame so

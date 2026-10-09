@@ -1630,7 +1630,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "inputs only, refreshed a few times a minute — the unit serves capture_in_N and 404s everything else"
+        "text": "inputs and the loaded frames and logos, refreshed a few times a minute — the unit serves capture_in_N, capture_fr_N and capture_lg_N and 404s outputs and previews"
        }
       },
       "livepremier": {

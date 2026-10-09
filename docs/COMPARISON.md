@@ -164,7 +164,7 @@ This page describes **openrcs v0.8.3** (`224b993`) as of 2026-09-18, read from t
 | Cut & Fill | Yes — a layer keyed by the next layer's content | **Missing** — the mnemonics beyond PRmcv are unknown |
 | Perspective / 3D layers | Yes — Ascender 32/48-4K-PL: X/Y/Z, RotX/Y/Z, anchor point, Z mixing, perspective layouts | **Partial** — Depth and Rotate X/Y/Z appear when a screen enables perspective; no anchor point or perspective layouts |
 | Working-area constraint | No | **Beyond stock** — same; Fit existing layers across every bank |
-| Live thumbnails | Yes — live pictures in layers and the source ribbon | **Partial** — inputs only, refreshed a few times a minute — the unit serves capture_in_N and 404s everything else |
+| Live thumbnails | Yes — live pictures in layers and the source ribbon | **Partial** — inputs and the loaded frames and logos, refreshed a few times a minute — the unit serves capture_in_N, capture_fr_N and capture_lg_N and 404s outputs and previews |
 
 ### Memories
 

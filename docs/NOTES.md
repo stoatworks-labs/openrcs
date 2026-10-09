@@ -605,6 +605,40 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## A still on a layer drew as a green box — 2026-10-09
+
+Reported by Allan on the NeXtage 16 (192.168.2.140): a frame on a layer showed in
+the Workspace canvas as a flat green box, not its picture. `snapshotUrl` gave up
+above source 24, so a frame (25–32) or logo (33–40) drew as its `srcColor` alone —
+hue (n·47) mod 360, which is 95 and 142 for frames 1 and 2, both green.
+
+PROTOCOL.md said the unit has no thumbnail for a still. It has, beside the library
+on the same Apache (`/assets/Stills/`, read with plain GETs, an autoindex listing):
+
+- `thumbnails/capture_fr_1..4.bmp` and `capture_lg_1..4.bmp` — one per frame and
+  logo slot, a PNG body named .bmp like the input ones. `capture_fr_1` was rewritten
+  in the same second as the library's `1_capture_in_4.png` (128×72, the captured
+  picture); every other slot's file was the 2015 factory `reserved/no-image.bmp`
+  (128×128, "NO IMAGE"), byte for byte.
+- Only four of each on this unit, and the rail lists exactly Frame 1–4 and Logo 1–4:
+  `LSval`/`RSval` 1 for slots 0–3. Frames 2–4 and the logos answer 1 while holding
+  nothing but the reserved empty still, so the NO IMAGE card is what they show.
+- `LibraryFileSettings.xml` lists the library's 101 `LargeStill` items with file name,
+  validity and hash; item 0 is `reserved/empty.jpg`.
+
+`snapshotUrl` now hands a still to `stillThumbUrl`, which asks for
+`thumbnails/capture_fr_<n>` / `capture_lg_<n>` only while `LSval`/`RSval` is 1, on
+the same `?t=` tick as the inputs (so the tick's prefetch carries it), and straight
+from the unit: the thumbnail relay plugin fetches inputs only.
+
+**Verified on the unit, read-only,** with the installed 0.9.0 server serving the
+patched `web/` on loopback: Frame 1 on program drew its picture over the green, the
+image loaded (128×72), and the rail's Stills tab showed Frame 1's picture and NO
+IMAGE for the rest. Opening the Workspace re-wrote CTpmu 1, SNdis 0 and SNena 1, the
+values the running app already held; nothing else was sent. A still on **preview**
+was not seen — the system went live first — but both canvases draw through the same
+`lrect` code. A logo with a real picture loaded has not been seen either.
+
 ## Bench: the 2026-10-08 fixes on the NeXtage 16 — 2026-10-09
 
 The same unit, openrcs-server built from main (e385b3b) on port 8741 beside the

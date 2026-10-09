@@ -1874,19 +1874,33 @@ function sourceAvailable(n) {
   return v == null ? true : v === 1;                            // unknown until scanned
 }
 // ---------- source thumbnails ----------
-// The device serves a small PNG per input from its own HTTP server (named .bmp, and
-// only for inputs — outputs and previews 404 even with their snapshot slots enabled).
-// They only appear once SNAPSHOTS is enabled for that source, which the Workspace does
-// on entry. Confirmed on a NeXtage 16; a Pulse2 serves no HTTP at all.
+// The device serves a small PNG per input from its own HTTP server (named .bmp;
+// outputs and previews 404 even with their snapshot slots enabled). They only appear
+// once SNAPSHOTS is enabled for that source, which the Workspace does on entry. A
+// frame or logo has one too, in the still library — see stillThumbUrl. Confirmed on
+// a NeXtage 16; a Pulse2 serves no HTTP at all.
 let SNAP_TICK = 0;
 const snapshotsWork = () => store.meta?.platform === 'livecore' && !!store.meta?.host;
 /** URL for a source's thumbnail, or null when the device cannot provide one. */
 function snapshotUrl(n) {
-  if (!snapshotsWork() || !n || n > 24) return null;
+  if (!snapshotsWork() || !n) return null;
+  if (n > 24) return stillThumbUrl(n);
   for (const fn of HOOKS.snapshotUrl) { const u = fn(n, SNAP_TICK); if (u) return u; }
   // the tick is the whole cache-busting story: a stable URL between ticks means a
   // re-render reuses the cached image instead of refetching and flickering
   return `http://${store.meta.host}/assets/Snapshots/capture_in_${n}.bmp?t=${SNAP_TICK}`;
+}
+// A frame (25–32) or logo (33–40) has a thumbnail beside the still library,
+// thumbnails/capture_fr_<n> and capture_lg_<n>: a 128 px PNG named .bmp, rewritten
+// when a still is loaded into the slot. A slot that holds only the reserved empty
+// still answers LSval/RSval 1 too, and its thumbnail is the device's NO IMAGE card,
+// which is the truth about it; a slot at 0 is not asked for. Without this a still on
+// a layer drew as its flat srcColor, which for frames 1 and 2 is green. Straight
+// from the device: the hooks (the thumbnail relay) carry inputs only.
+function stillThumbUrl(n) {
+  const slot = n >= 33 && n <= 40 ? ['lg', 'RSval', n - 32] : n >= 25 && n <= 32 ? ['fr', 'LSval', n - 24] : null;
+  if (!slot || store.val(slot[1], slot[2] - 1) !== 1) return null;
+  return `http://${store.meta.host}/assets/Stills/thumbnails/capture_${slot[0]}_${slot[2]}.bmp?t=${SNAP_TICK}`;
 }
 function startSnapshots() {
   if (startSnapshots.timer || !snapshotsWork()) return;
