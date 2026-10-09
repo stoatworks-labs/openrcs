@@ -370,6 +370,7 @@ table.grid td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-fa
 .mon-mem-cell .mm-n { font: 600 12px var(--mono); color: var(--muted); }
 .mon-mem-cell.saved .mm-n { color: var(--accent); }
 .mm-btns { display: flex; gap: 6px; margin-top: 6px; }
+.mon-mem-cell .mm-lbl { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; }
 .mm-btns .btn { flex: 1; }
 @media (max-width: 720px) { .mon-mem { grid-template-columns: repeat(2, 1fr); } }
 

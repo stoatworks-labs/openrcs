@@ -1874,19 +1874,33 @@ function sourceAvailable(n) {
   return v == null ? true : v === 1;                            // unknown until scanned
 }
 // ---------- source thumbnails ----------
-// The device serves a small PNG per input from its own HTTP server (named .bmp, and
-// only for inputs — outputs and previews 404 even with their snapshot slots enabled).
-// They only appear once SNAPSHOTS is enabled for that source, which the Workspace does
-// on entry. Confirmed on a NeXtage 16; a Pulse2 serves no HTTP at all.
+// The device serves a small PNG per input from its own HTTP server (named .bmp;
+// outputs and previews 404 even with their snapshot slots enabled). They only appear
+// once SNAPSHOTS is enabled for that source, which the Workspace does on entry. A
+// frame or logo has one too, in the still library — see stillThumbUrl. Confirmed on
+// a NeXtage 16; a Pulse2 serves no HTTP at all.
 let SNAP_TICK = 0;
 const snapshotsWork = () => store.meta?.platform === 'livecore' && !!store.meta?.host;
 /** URL for a source's thumbnail, or null when the device cannot provide one. */
 function snapshotUrl(n) {
-  if (!snapshotsWork() || !n || n > 24) return null;
+  if (!snapshotsWork() || !n) return null;
+  if (n > 24) return stillThumbUrl(n);
   for (const fn of HOOKS.snapshotUrl) { const u = fn(n, SNAP_TICK); if (u) return u; }
   // the tick is the whole cache-busting story: a stable URL between ticks means a
   // re-render reuses the cached image instead of refetching and flickering
   return `http://${store.meta.host}/assets/Snapshots/capture_in_${n}.bmp?t=${SNAP_TICK}`;
+}
+// A frame (25–32) or logo (33–40) has a thumbnail beside the still library,
+// thumbnails/capture_fr_<n> and capture_lg_<n>: a 128 px PNG named .bmp, rewritten
+// when a still is loaded into the slot. A slot that holds only the reserved empty
+// still answers LSval/RSval 1 too, and its thumbnail is the device's NO IMAGE card,
+// which is the truth about it; a slot at 0 is not asked for. Without this a still on
+// a layer drew as its flat srcColor, which for frames 1 and 2 is green. Straight
+// from the device: the hooks (the thumbnail relay) carry inputs only.
+function stillThumbUrl(n) {
+  const slot = n >= 33 && n <= 40 ? ['lg', 'RSval', n - 32] : n >= 25 && n <= 32 ? ['fr', 'LSval', n - 24] : null;
+  if (!slot || store.val(slot[1], slot[2] - 1) !== 1) return null;
+  return `http://${store.meta.host}/assets/Stills/thumbnails/capture_${slot[0]}_${slot[2]}.bmp?t=${SNAP_TICK}`;
 }
 function startSnapshots() {
   if (startSnapshots.timer || !snapshotsWork()) return;
@@ -7689,7 +7703,7 @@ VIEWS.outputs = (() => {
   const N = () => outputCount();
   let sel = 0;
   function enter() {
-    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc',
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc', 'OUpat', 'OUpco',
       'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl',
       'OSaoi', 'OSocp', 'OSash', 'OSasv', 'OSaph', 'OSapv',
       'OSsmh', 'OSsmv', 'OSSsh', 'OSSsv', 'OSSph', 'OSSpv', 'OSsro']) if (store.byMnem.has(m)) store.scan(m);
@@ -7813,7 +7827,9 @@ VIEWS.outputs = (() => {
         el('label', { class: 'field' }, 'Format', formatSelect()),
         store.byMnem.has('OUrat') ? el('label', { class: 'field' }, 'Rate', enumSelect('OUrat', i, outputRateNames())) : null,
         toggleBtn('HDCP', 'OUhdc', i),
-        toggleBtn('Black', 'OUbla', i, 'pgm')),
+        toggleBtn('Black', 'OUbla', i, 'pgm'),
+        store.byMnem.has('OUpat') ? el('label', { class: 'field' }, 'Test pattern', enumSelect('OUpat', i, outputPatternNames())) : null,
+        store.byMnem.has('OUpco') ? el('label', { class: 'field' }, 'Channels', enumSelect('OUpco', i, enumLabels('OUpco', PATTERN_CHANNELS))) : null),
       el('div', { class: 'sub-head' }, 'Output processing'),
       el('div', { class: 'grid2' },
         bind('Brightness', 'OCbri', i, 0, 255, 1),
@@ -7870,7 +7886,17 @@ const VIDEO_OUT_FORMATS = ['SDTV PAL 4/3', 'SDTV NTSC 4/3', 'EDTV 480p 4/3', 'ED
   'HDTV 720p', 'HDTV 1035i', 'HDTV 1080i', 'HDTV 1080p', 'HDTV 1080sF', 'DCDM 2048×1080',
   'SDTV PAL 16/9', 'SDTV NTSC 16/9', 'EDTV 480p 16/9', 'EDTV 576p 16/9'];
 
-// OUpat / VOpat 0..9.
+// A Midra's OUpat / VOpat 0..9. A LiveCore's OUpat 0..15 is a list of its own: the
+// vendor's Web RCS offers it as sixteen picture tiles in this order (read off its
+// output page on a NeXtage 16, 2026-10-09 — sixteen against the variable's 0..15),
+// with no words, so these names say what each tile shows. The first eight match
+// the Midra's. OUpco picks the channels the pattern is drawn in, in the order the
+// same page lists them.
+const outputPatternNames = () => enumLabels('OUpat', isMidra() ? TEST_PATTERNS : LIVECORE_TEST_PATTERNS);
+const LIVECORE_TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
+  'Grid', 'SMPTE', 'V burst', 'Dotted border', 'Circle', 'Colour', 'Crosshatch', 'V gradient',
+  'H gradient', 'Output number', 'Edge lines'];
+const PATTERN_CHANNELS = ['All', 'Red', 'Green', 'Blue'];
 const TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
   'Grid', 'SMPTE', 'V burst', 'Centring', 'Soft-edge centring'];
 
@@ -8278,11 +8304,25 @@ VIEWS.capture = (() => {
 
 // ---------- Multiviewer designer (monitoring output layout) ----------
 VIEWS.multiview = (() => {
-  const NW = 12;                      // custom widgets per monitoring output
+  const NW = 12;                      // widget slots in the table (MLc*[2,12])
+  // …of which a unit drives fewer: a NeXtage has eight. The device says so
+  // only per saved memory (MON_MEM_MAX_WIDGETS — 8 on every saved memory of a
+  // NeXtage 16, 0 on an empty one), so the model stands in until one is saved.
+  function nw() {
+    const saved = Array.from({ length: 8 }, (_, m) => store.val('MMmax', m) || 0).filter(v => v > 0);
+    return saved.length ? Math.min(NW, Math.max(...saved)) : /^NeXtage/.test(deviceModel() || '') ? 8 : NW;
+  }
+  const PRESETS = [['Quad', 2, 2], ['4×2', 4, 2], ['3×3', 3, 3], ['4×3', 4, 3], ['Single', 1, 1]];
   let out = 0;                        // monitoring output 0/1
   let sel = 0;                        // selected widget
-  // NB widget geometry assumed top-left origin in output px (MLcph/MLcpv/MLcsh/MLcsv);
-  // unlike the main layers, no +bias was observed — confirm on hardware.
+  const labelled = new Set();         // memories whose label has been fetched
+  // Widget geometry (MLcph/MLcpv/MLcsh/MLcsv) is normalised, not pixels. The
+  // top-left corner is 32768 + x/W·32768 — 32768 is the output's left/top edge,
+  // so the range runs one output either side — and the size is w/W·65536. Read
+  // off a NeXtage 16 laid out by the vendor's Web RCS (2026-10-08): it decoded
+  // to exact 1 % margins and 2 % gutters on a 1920×1080 monitor. The view works
+  // in output pixels and converts at these two points only.
+  const MON_EDGE = 32768, MON_POS = 32768, MON_SIZE = 65536;
   function enter() {
     for (const m of ['MLfen', 'MLfes', 'MLfso', 'MLupd', 'MOshs', 'MOsvs', 'MOava']) store.get(m, [out]);
     for (let w = 0; w < NW; w++)
@@ -8291,7 +8331,7 @@ VIEWS.multiview = (() => {
     for (const m of ['INava', 'SCmly', 'INplg']) if (store.byMnem.has(m)) store.scan(m);
     for (let s = 0; s < screenCount(); s++) fetchLabel('LBScr', [s]);
     for (let i = 0; i < inputCount(); i++) if (store.val('INava', i) !== 0) fetchLabel('LBInp', [i, store.val('INplg', i) ?? 0]);
-    for (let mem = 0; mem < 8; mem++) { store.get('MMouw', [mem]); store.get('MMouh', [mem]); }
+    for (let mem = 0; mem < 8; mem++) for (const m of ['MMouw', 'MMouh', 'MMmax']) store.get(m, [mem]);
   }
   const outSize = () => [store.val('MOshs', out) || 1920, store.val('MOsvs', out) || 1080];
   // MONITORING_ELEMENT_SOURCES, the device's own list: 0–23 inputs 1–24 (there
@@ -8315,22 +8355,26 @@ VIEWS.multiview = (() => {
     return s;
   }
   function rectPx(w) {
-    return { left: store.val('MLcph', out, w) ?? 0, top: store.val('MLcpv', out, w) ?? 0,
-      w: store.val('MLcsh', out, w) ?? 0, h: store.val('MLcsv', out, w) ?? 0 };
+    const [W, H] = outSize();
+    return { left: ((store.val('MLcph', out, w) ?? MON_EDGE) - MON_EDGE) * W / MON_POS,
+      top: ((store.val('MLcpv', out, w) ?? MON_EDGE) - MON_EDGE) * H / MON_POS,
+      w: (store.val('MLcsh', out, w) ?? 0) * W / MON_SIZE, h: (store.val('MLcsv', out, w) ?? 0) * H / MON_SIZE };
   }
-  const setGeom = (w, r) => {
-    throttledSet('MLcph', [out, w], Math.round(r.left)); throttledSet('MLcpv', [out, w], Math.round(r.top));
-    throttledSet('MLcsh', [out, w], Math.round(r.w)); throttledSet('MLcsv', [out, w], Math.round(r.h));
-  };
-  const setGeomNow = (w, r) => {
-    store.set('MLcph', [out, w], Math.round(r.left)); store.set('MLcpv', [out, w], Math.round(r.top));
-    store.set('MLcsh', [out, w], Math.round(r.w)); store.set('MLcsv', [out, w], Math.round(r.h));
-  };
+  function devGeom(r) {
+    const [W, H] = outSize(), u16 = v => Math.max(0, Math.min(65535, Math.round(v)));
+    return [['MLcph', u16(MON_EDGE + r.left * MON_POS / W)], ['MLcpv', u16(MON_EDGE + r.top * MON_POS / H)],
+      ['MLcsh', u16(r.w * MON_SIZE / W)], ['MLcsv', u16(r.h * MON_SIZE / H)]];
+  }
+  const setGeom = (w, r) => { for (const [m, v] of devGeom(r)) throttledSet(m, [out, w], v); };
+  const setGeomNow = (w, r) => { for (const [m, v] of devGeom(r)) store.set(m, [out, w], v); };
+  // The vendor's client pulses MONITORING_UPDATE 0 then 1 after every change;
+  // the unit latches 1 (MLups goes 1, then 0 when the layout has been redrawn).
+  const applyLayout = () => { store.set('MLupd', [out], 0); store.set('MLupd', [out], 1); };
   function canvas() {
     const [W, H] = outSize();
     const CW = 720, scale = CW / W, CH = H * scale;
     const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
-    for (let w = 0; w < NW; w++) {
+    for (let w = 0, n = nw(); w < n; w++) {
       const on = store.val('MLcen', out, w) === 1;
       if (!on && w !== sel) continue;
       const r = rectPx(w), src = store.val('MLces', out, w);
@@ -8374,7 +8418,7 @@ VIEWS.multiview = (() => {
   // lay N=cols*rows widgets over the output, assigning Src 1..N to empty ones
   function layout(cols, rows) {
     const [W, H] = outSize(), cw = Math.floor(W / cols), ch = Math.floor(H / rows), n = cols * rows;
-    for (let w = 0; w < NW; w++) {
+    for (let w = 0, max = nw(); w < max; w++) {
       if (w < n) {
         store.set('MLcen', [out, w], 1);
         if (!(store.val('MLces', out, w) > 0)) store.set('MLces', [out, w], w + 1);
@@ -8393,12 +8437,23 @@ VIEWS.multiview = (() => {
         el('label', { class: 'field' }, 'Source', monSource('MLces', i)),
         el('label', { class: 'field' }, 'OSD label', checkbox(store.val('MLcso', ...i) === 1, v => store.set('MLcso', i, v ? 1 : 0)))),
       el('div', { class: 'grid2' },
-        bind('X', 'MLcph', i, 0, W, 8), bind('Y', 'MLcpv', i, 0, H, 8),
-        bind('Width', 'MLcsh', i, 16, W, 8), bind('Height', 'MLcsv', i, 16, H, 8)));
+        geomSlider('X', 'left', 0, W), geomSlider('Y', 'top', 0, H),
+        geomSlider('Width', 'w', 16, W), geomSlider('Height', 'h', 16, H)));
+  }
+  // bind()'s slider, in output pixels rather than the device's units
+  function geomSlider(label, key, lo, hi) {
+    const cur = Math.round(rectPx(sel)[key]);
+    return el('label', { class: 'field slider' },
+      el('span', {}, label, el('b', { class: 'sv', text: '' + cur })),
+      el('input', {
+        type: 'range', min: lo, max: hi, step: 8, value: cur,
+        onpointerdown: beginDrag, onpointerup: endDrag, onpointercancel: endDrag,
+        oninput: (e) => { setGeom(sel, { ...rectPx(sel), [key]: +e.target.value }); e.target.parentNode.querySelector('.sv').textContent = e.target.value; },
+      }));
   }
   function list() {
     const wrap = el('div', { class: 'layers' });
-    for (let w = 0; w < NW; w++) {
+    for (let w = 0, n = nw(); w < n; w++) {
       const on = store.val('MLcen', out, w) === 1, src = store.val('MLces', out, w);
       wrap.append(el('div', { class: 'layer' + (on ? ' on' : '') + (w === sel ? ' sel' : ''), onclick: () => { sel = w; store.notify(); } },
         el('span', { class: 'tag', text: '' + (w + 1) }),
@@ -8409,12 +8464,19 @@ VIEWS.multiview = (() => {
   }
   function memories() {
     const g = el('div', { class: 'mon-mem' });
+    const hasLabels = store.byMnem.has('LBMMo');
     for (let mem = 0; mem < 8; mem++) {
       const wpx = store.val('MMouw', mem) || 0;
+      // a label is 16 gets, so only a saved memory's, and only once
+      if (wpx && hasLabels && !labelled.has(mem)) { labelled.add(mem); fetchLabel('LBMMo', [mem]); }
       g.append(el('div', { class: 'mon-mem-cell' + (wpx ? ' saved' : '') },
         el('span', { class: 'mm-n', text: 'M' + (mem + 1) }),
+        wpx && hasLabels ? el('input', {
+          class: 'lbl-in mm-lbl', type: 'text', maxlength: LABEL_LEN, value: readLabel('LBMMo', [mem]), placeholder: 'label',
+          onchange: (e) => { writeLabel('LBMMo', [mem], e.target.value); setTimeout(() => fetchLabel('LBMMo', [mem]), 300); },
+        }) : null,
         el('div', { class: 'mm-btns' },
-          el('button', { class: 'btn ghost', onclick: () => { store.set('MMsav', [out, mem], 1); store.get('MMouw', [mem]); } }, 'Save'),
+          el('button', { class: 'btn ghost', onclick: () => { store.set('MMsav', [out, mem], 1); store.get('MMouw', [mem]); store.get('MMmax', [mem]); labelled.delete(mem); } }, 'Save'),
           el('button', { class: 'btn ghost', onclick: () => { store.set('MMloa', [mem, out], 1); enter(); store.notify(); } }, 'Load'))));
     }
     return g;
@@ -8438,7 +8500,7 @@ VIEWS.multiview = (() => {
               el('button', { class: full ? 'on take' : '', onclick: () => { store.set('MLfen', [out], 1); store.notify(); } }, 'Fullscreen'))),
           el('div', { class: 'spacer' }),
           el('button', { class: 'btn ghost', onclick: () => { store.set('MLres', [out], 1); enter(); store.notify(); } }, 'Reset'),
-          el('button', { class: 'btn take', onclick: () => { store.set('MLupd', [out], 1); } }, 'Apply to output'))),
+          el('button', { class: 'btn take', onclick: applyLayout }, 'Apply to output'))),
       full
         ? el('div', { class: 'panel' }, el('h2', 'Fullscreen source'),
           el('div', { class: 'row' },
@@ -8448,10 +8510,8 @@ VIEWS.multiview = (() => {
           el('div', { class: 'panel' },
             el('div', { class: 'row' },
               el('span', { class: 'hint', text: 'Layouts:' }),
-              el('button', { class: 'btn ghost', onclick: () => layout(2, 2) }, 'Quad'),
-              el('button', { class: 'btn ghost', onclick: () => layout(3, 3) }, '3×3'),
-              el('button', { class: 'btn ghost', onclick: () => layout(4, 3) }, '4×3'),
-              el('button', { class: 'btn ghost', onclick: () => layout(1, 1) }, 'Single')),
+              ...PRESETS.filter(([, c, r]) => c * r <= nw())
+                .map(([name, c, r]) => el('button', { class: 'btn ghost', onclick: () => layout(c, r) }, name))),
             canvas()),
           el('div', { class: 'panel' }, widgetEditor(), el('div', { class: 'sub-head' }, 'Widgets'), list())),
       el('div', { class: 'panel' }, el('h2', 'Layout memories'), memories()));
@@ -8519,6 +8579,10 @@ VIEWS.edid = (() => {
   const inPlugs = () => store.byMnem.get('EIava')?.dims[1] || 6;
   const NOUT = () => store.byMnem.get('EOava')?.dims[0] || 8;
   const outPlugs = () => store.byMnem.get('EOava')?.dims[1] || 4;
+  // the monitoring outputs read their display's EDID the same way (EMred, then
+  // EMhcd/EMval/EMdat) — LiveCore EMava[2,3]; a Midra has none
+  const NMON = () => store.byMnem.get('EMava')?.dims[0] || 0;
+  const monPlugs = () => store.byMnem.get('EMava')?.dims[1] || 0;
   let inPlug = 0, outPlug = 0;
   // custom-EDID writer state
   const EDID_PRESETS = [
@@ -8531,6 +8595,7 @@ VIEWS.edid = (() => {
   function enter() {
     for (const m of ['EIava', 'EIspf', 'EIhcd']) store.scan(m);
     for (const m of ['EOava', 'EOval', 'EOhcd']) store.scan(m);
+    for (const m of ['EMava', 'EMval', 'EMhcd']) if (store.byMnem.has(m)) store.scan(m);
   }
   function generate() {
     const p = EDID_PRESETS[cPreset];
@@ -8613,15 +8678,19 @@ VIEWS.edid = (() => {
         el('button', { class: 'btn ghost', onclick: () => store.set('EIstr', idx, 1) }, 'Store'),
         store.byMnem.has('Edpsf') ? el('button', { class: 'btn ghost', style: 'margin-left:6px', onclick: () => store.set('Edpsf', idx, 1) }, 'Factory') : null));
   }
-  function outRow(i) {
-    const idx = [i, outPlug], avail = store.val('EOava', ...idx) === 1, valid = store.val('EOval', ...idx) === 1;
+  const OUT_EDID = { name: 'OUT ', ava: 'EOava', val: 'EOval', hcd: 'EOhcd', red: 'EOred' };
+  const MON_EDID = { name: 'MON ', ava: 'EMava', val: 'EMval', hcd: 'EMhcd', red: 'EMred' };
+  function outRow(i, k = OUT_EDID) {
+    const idx = [i, outPlug], avail = store.val(k.ava, ...idx) === 1, valid = store.val(k.val, ...idx) === 1;
     return el('tr', { class: avail ? '' : 'dim' },
-      el('td', { text: 'OUT ' + (i + 1) }),
+      el('td', { text: k.name + (i + 1) }),
       el('td', boolChip(avail ? 1 : 0, 'present', '—')),
       el('td', boolChip(valid ? 1 : 0, 'valid', '—')),
-      el('td', { class: 'val', text: fmt(store.val('EOhcd', ...idx)) }),
-      el('td', el('button', { class: 'btn ghost', onclick: () => { store.set('EOred', idx, 1); store.scan('EOhcd'); store.scan('EOval'); } }, 'Read EDID')));
+      el('td', { class: 'val', text: fmt(store.val(k.hcd, ...idx)) }),
+      el('td', el('button', { class: 'btn ghost', onclick: () => { store.set(k.red, idx, 1); store.scan(k.hcd); store.scan(k.val); } }, 'Read EDID')));
   }
+  // a monitoring output has fewer plugs than a main one; past them there is no row
+  const monRows = () => outPlug < monPlugs() ? Array.from({ length: NMON() }, (_, m) => outRow(m, MON_EDID)) : [];
   function plugSeg(cur, set, n, name) {
     const s = el('div', { class: 'seg' });
     for (let p = 0; p < n; p++) s.append(el('button', { class: p === cur ? 'on take' : '', onclick: () => { set(p); store.notify(); } }, name ? name(p) : 'Plug ' + (p + 1)));
@@ -8648,7 +8717,7 @@ VIEWS.edid = (() => {
         el('div', { style: 'overflow:auto' },
           el('table', { class: 'grid' },
             el('thead', el('tr', ...['Output', 'Display', 'EDID', 'Hashcode', ''].map(h => el('th', { text: h })))),
-            el('tbody', ...Array.from({ length: NOUT() }, (_, i) => outRow(i)))))),
+            el('tbody', ...Array.from({ length: NOUT() }, (_, i) => outRow(i)), ...monRows())))),
       customPanel(),
       store.byMnem.has('EdIsf')
         ? el('div', { class: 'panel' }, el('h2', 'EDID library'),
