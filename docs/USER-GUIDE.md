@@ -148,7 +148,10 @@ with the button top-left (it stays collapsed) for more space still.
   The palette has **Inputs**, **Stills** and **Other** tabs on LiveCore.
 - **Live thumbnails.** Where the device offers them (LiveCore inputs), the palette
   and the layers on the canvas show the actual picture on that input, refreshed a
-  few times a minute. openrcs turns the device's snapshot system on for you.
+  few times a minute. openrcs turns the device's snapshot system on for you. A
+  LiveCore's loaded frames and logos show their pictures the same way, from the
+  unit's still library; a slot holding only the empty still shows the unit's own
+  NO IMAGE card.
 - **Drag and resize** layers directly on each canvas, with every screen live at
   once, and use the **layout presets** — Fill, 2-up, 3-up, Quad, PiP, Stack — to
   arrange a screen's assigned sources into a common look in one click.
