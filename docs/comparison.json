@@ -2190,7 +2190,7 @@
        },
        "openrcs": {
         "state": "P",
-        "text": "format / rate, HDCP, black, test pattern (by number — the names are not yet recovered), brightness / contrast / gamma / RGB gain; no timing or type"
+        "text": "format / rate, HDCP, black, the sixteen test patterns and their colour channels, brightness / contrast / gamma / RGB gain; no timing or type"
        }
       },
       "livepremier": {

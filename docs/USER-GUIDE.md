@@ -336,8 +336,8 @@ the device:
 - **Inputs** — every input with its availability, active plug, live signal status
   and detected size, plus freeze and black.
 - **Outputs** — the physical outputs, their connected displays, format, size,
-  HDCP, a test pattern and output processing (brightness, contrast, gamma, gain).
-  On a LiveCore the patterns are listed by number — their names are not yet known. The format and
+  HDCP, a test pattern and the colour channels it is drawn in, and output
+  processing (brightness, contrast, gamma, gain). The format and
   rate lists are the device's own, named as its RCS names them — *HDTV 1080p*,
   *Computer 1920×1080 (16:9 1080p)*, *Internal rate* — and the table shows each
   output's format the same way.

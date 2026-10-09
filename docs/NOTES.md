@@ -630,8 +630,15 @@ unit's own readbacks and pushes, not from the surface:
   `recallScreenSteps` (its `protocol.js`, run over a socket) loaded slot 3 into
   bank A while `GCsta` 1 had bank B on air; program was untouched. Loading slot 1
   back left preview as it was. The old sequence was not fired at program.
-- **Not done:** the LiveCore pattern names (needs eyes on an output or the vendor
-  list), and no one has yet compared the monitor picture with the canvas by eye —
+- **Pattern names.** The vendor client's output page offers `OUpat` as sixteen
+  picture tiles with no words (Allan's screenshot): no pattern, V and H grey
+  scale, V and H colour bars, grid, SMPTE, burst, dotted border, circle, solid
+  colour, crosshatch, V and H gradient, the output's number, edge lines — sixteen
+  against 0..15, the first eight the Midra's own order. Its Channels row (All,
+  Red, Green, Blue) is `OUpco` 0..3. With nothing selected the page showed no
+  pattern and All while the unit read `OUpat` 0 and `OUpco` 0; the rest is the
+  tile order, not yet a value seen on the wire for each.
+- **Not done:** no one has compared the monitor picture with the canvas by eye —
   the evidence is the stored values and the update handshake.
 
 Mid-session, Companion loaded layouts M1, M2, M1 (10:16:45) while the test 4×2 was
@@ -665,7 +672,7 @@ variable table and the surface. Three things came out of it:
   library listing, which only the 4521 `{LEUpA}` frame provides.
 
 **To run on the NeXtage next time it is on the bench** (run on 2026-10-09 — the
-results are in the section above; 6 is still open):
+results are in the section above):
 
 1. *Keep the layout.* Multiviewer → M8 (empty on that unit, `MMmax[7]` 0) →
    Save. Load it back at the end.

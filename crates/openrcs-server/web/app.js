@@ -7689,7 +7689,7 @@ VIEWS.outputs = (() => {
   const N = () => outputCount();
   let sel = 0;
   function enter() {
-    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc', 'OUpat',
+    for (const m of ['OUava', 'OUena', 'OUuse', 'OUfst', 'OUfor', 'OUrat', 'OUbla', 'OUshs', 'OUsvs', 'OUhdc', 'OUpat', 'OUpco',
       'OCgam', 'OCbri', 'OCcon', 'OCgre', 'OCggr', 'OCgbl',
       'OSaoi', 'OSocp', 'OSash', 'OSasv', 'OSaph', 'OSapv',
       'OSsmh', 'OSsmv', 'OSSsh', 'OSSsv', 'OSSph', 'OSSpv', 'OSsro']) if (store.byMnem.has(m)) store.scan(m);
@@ -7814,7 +7814,8 @@ VIEWS.outputs = (() => {
         store.byMnem.has('OUrat') ? el('label', { class: 'field' }, 'Rate', enumSelect('OUrat', i, outputRateNames())) : null,
         toggleBtn('HDCP', 'OUhdc', i),
         toggleBtn('Black', 'OUbla', i, 'pgm'),
-        store.byMnem.has('OUpat') ? el('label', { class: 'field' }, 'Test pattern', enumSelect('OUpat', i, outputPatternNames())) : null),
+        store.byMnem.has('OUpat') ? el('label', { class: 'field' }, 'Test pattern', enumSelect('OUpat', i, outputPatternNames())) : null,
+        store.byMnem.has('OUpco') ? el('label', { class: 'field' }, 'Channels', enumSelect('OUpco', i, enumLabels('OUpco', PATTERN_CHANNELS))) : null),
       el('div', { class: 'sub-head' }, 'Output processing'),
       el('div', { class: 'grid2' },
         bind('Brightness', 'OCbri', i, 0, 255, 1),
@@ -7871,9 +7872,17 @@ const VIDEO_OUT_FORMATS = ['SDTV PAL 4/3', 'SDTV NTSC 4/3', 'EDTV 480p 4/3', 'ED
   'HDTV 720p', 'HDTV 1035i', 'HDTV 1080i', 'HDTV 1080p', 'HDTV 1080sF', 'DCDM 2048×1080',
   'SDTV PAL 16/9', 'SDTV NTSC 16/9', 'EDTV 480p 16/9', 'EDTV 576p 16/9'];
 
-// A Midra's OUpat / VOpat 0..9. A LiveCore's OUpat runs 0..15 over an enumeration
-// not yet recovered, so it is shown by number rather than filled in from this one.
-const outputPatternNames = () => enumLabels('OUpat', isMidra() ? TEST_PATTERNS : []);
+// A Midra's OUpat / VOpat 0..9. A LiveCore's OUpat 0..15 is a list of its own: the
+// vendor's Web RCS offers it as sixteen picture tiles in this order (read off its
+// output page on a NeXtage 16, 2026-10-09 — sixteen against the variable's 0..15),
+// with no words, so these names say what each tile shows. The first eight match
+// the Midra's. OUpco picks the channels the pattern is drawn in, in the order the
+// same page lists them.
+const outputPatternNames = () => enumLabels('OUpat', isMidra() ? TEST_PATTERNS : LIVECORE_TEST_PATTERNS);
+const LIVECORE_TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
+  'Grid', 'SMPTE', 'V burst', 'Dotted border', 'Circle', 'Colour', 'Crosshatch', 'V gradient',
+  'H gradient', 'Output number', 'Edge lines'];
+const PATTERN_CHANNELS = ['All', 'Red', 'Green', 'Blue'];
 const TEST_PATTERNS = ['Off', 'V grey scale', 'H grey scale', 'V colour bar', 'H colour bar',
   'Grid', 'SMPTE', 'V burst', 'Centring', 'Soft-edge centring'];
 

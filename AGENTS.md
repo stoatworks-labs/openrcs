@@ -327,7 +327,9 @@ std binary and may use crates. Keep the split.
 - **Enum tables in the UI are recovered, not guessed.** `VIDEO_OUT_MODES`,
   `VIDEO_OUT_SOURCES`, `VIDEO_OUT_FORMATS`, `TEST_PATTERNS` and `MEM_FILTERS` each
   came from a device's own string table and were confirmed against hardware by count
-  or by refusal. `OUfor` is deliberately still rendered as "Format N" because it has
+  or by refusal. `LIVECORE_TEST_PATTERNS` and `PATTERN_CHANNELS` came from the vendor
+  client's own picker, which shows tiles, not words — the order is the vendor's, the
+  names describe the tiles. `OUfor` is deliberately still rendered as "Format N" because it has
   not been solved — do not fill it in from a plausible slice of the format table.
 - **Draw the device's readback, not the staged value**, wherever the two can differ.
   The LiveCore output area of interest does differ, and the panel says so rather
