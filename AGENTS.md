@@ -295,7 +295,8 @@ std binary and may use crates. Keep the split.
   the only conversion points.
 - **A NeXtage drives eight multiviewer widgets, not twelve.** `MMmax` says so per
   saved memory; `nw()` reads it and falls back to the model. `MLupd` is written
-  0 then 1, as the vendor client does — the unit latches 1.
+  0 then 1, as the vendor client does — the unit latches 1, and a 1 over that
+  latch does nothing (NeXtage 16, 2026-10-09). Never drop the 0.
 
 ## Protocol facts worth not regressing
 

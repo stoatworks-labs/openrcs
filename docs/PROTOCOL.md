@@ -383,7 +383,8 @@ widgets 9–12 sat at zero. `MMouw`/`MMouh` record the raster a memory was saved
 
 `MLupd` (`MONITORING_UPDATE`) applies the layout. The vendor client writes it **0 and
 then 1** after each change; the unit latches 1, and `MLups` goes 1 and back to 0
-some 400 ms later. A memory load (`MMloa[memory, monitor]`) applies itself — the
+some 400 ms later. **The 0 is required:** a 1 written over the latched 1 is echoed
+and does nothing — no `MLups`, no redraw (NeXtage 16, 2026-10-09). A memory load (`MMloa[memory, monitor]`) applies itself — the
 unit pulses `MLupd` on its own. Note the index order: `MMsav[monitor, memory]` but
 `MMloa[memory, monitor]`. `MLfes`, the fullscreen source, is applied the same way.
 
@@ -391,9 +392,13 @@ A memory's name is `LBMMo[memory, 16]`, one character per index like every other
 label. The vendor client writes it a keystroke at a time and zeroes a character on
 backspace.
 
-What is verified: the encoding, read back from a layout the vendor client wrote, and
-the vendor client's sequences, captured on the wire. openrcs writing the encoding
-has been driven against the demo device only.
+What is verified: the encoding, read back from a layout the vendor client wrote; the
+vendor client's sequences, captured on the wire; and openrcs writing it, on a
+NeXtage 16 on 2026-10-09 — Quad, 4×2 and a dragged widget each stored exactly the
+values the encoding predicts and ran the unit's update, a layout memory saved from
+openrcs held the live layout field for field, and a load from openrcs applied
+itself. `MMres[memory]` (`MON_MEM_RESET`) empties a memory: `MMouw` and `MMmax`
+drop to 0.
 
 ## The vendor client's own link (TCP 4521)
 

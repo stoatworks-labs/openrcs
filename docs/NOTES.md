@@ -605,6 +605,39 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## Bench: the 2026-10-08 fixes on the NeXtage 16 — 2026-10-09
+
+The same unit, openrcs-server built from main (e385b3b) on port 8741 beside the
+vendor client, Companion (both modules) and a passive capture. Checked from the
+unit's own readbacks and pushes, not from the surface:
+
+- **Layout writes land as encoded.** Quad stored 32768/49152 positions and 32768
+  sizes, 4×2 stored 32768 + k·8192 by 32768/49152 at 16384×32768, and a drag of
+  240×120 output pixels stored 36864/36409 — each exactly, each followed by
+  `MLups` 1→0. The canvas redrew from the readback at the same place.
+- **The apply needs its 0.** With `MLupd` latched at 1, a widget's source changed
+  and a bare `0,1MLupd` was echoed and nothing ran; the next 0→1 ran at once and
+  took the pending source. The surface's Apply before 2026-10-08 wrote only 1, so
+  it worked the first time and never again.
+- **Memories.** A save to M8 held the live layout field for field (`MMouw` 1920,
+  `MMmax` 8); a label written from openrcs read back zero-padded and the unit
+  pushed it to the vendor client's link; the surface read the vendor-written
+  names (MVR, Mitti 1, …) correctly; a load of M1 from openrcs left the live
+  layout equal to M1. `MMres` emptied M8 again afterwards.
+- **Monitoring EDID.** MON 1, plug 2: present, valid, `EMhcd` 2148899320 — what
+  the vendor client read.
+- **Companion's load target.** With `PMprf` first set to 0, the module's own
+  `recallScreenSteps` (its `protocol.js`, run over a socket) loaded slot 3 into
+  bank A while `GCsta` 1 had bank B on air; program was untouched. Loading slot 1
+  back left preview as it was. The old sequence was not fired at program.
+- **Not done:** the LiveCore pattern names (needs eyes on an output or the vendor
+  list), and no one has yet compared the monitor picture with the canvas by eye —
+  the evidence is the stored values and the update handshake.
+
+Mid-session, Companion loaded layouts M1, M2, M1 (10:16:45) while the test 4×2 was
+up — someone wanted the monitor back. A bench test that takes over a shared
+monitor needs saying out loud first.
+
 ## Watching the vendor client set up a NeXtage 16 — 2026-10-08
 
 Allan set a NeXtage 16 (192.168.2.140) up from Analog Way's **AW Browser** while
@@ -631,8 +664,8 @@ variable table and the surface. Three things came out of it:
   display EDID (`EMred`/`EMhcd`/`EMval`). **Still open:** the unit's EDID
   library listing, which only the 4521 `{LEUpA}` frame provides.
 
-**To run on the NeXtage next time it is on the bench** (none of this has been
-driven against hardware yet; each step says what would settle it):
+**To run on the NeXtage next time it is on the bench** (run on 2026-10-09 — the
+results are in the section above; 6 is still open):
 
 1. *Keep the layout.* Multiviewer → M8 (empty on that unit, `MMmax[7]` 0) →
    Save. Load it back at the end.
@@ -659,7 +692,7 @@ Reads during the session went through a separate read-only connection that
 encodes gets exactly as `encode_get` does — a comma after every index. Its first
 version left that comma off; the unit answered all 77 lines `E13` and the capture
 shows nothing was applied (an accepted set is echoed, and none was). The
-openrcs writes in the new encoding have been driven against the demo only.
+openrcs writes in the new encoding met the unit the next morning (above).
 
 ## A layer resized on program never moved on the wall — 2026-09-17, at a show
 
