@@ -251,8 +251,8 @@ LivePremier simulator is worth knowing: these two *do* reproduce the
 recall-overwrites-the-take-time behaviour, so what you see on them is what the
 hardware does.
 
-`openrcs-server` adds a browser control surface over that engine (see below).
-Roadmap: package it as a system-tray app, then a standalone gateway (Pi or
+`openrcs-server` adds a browser control surface over that engine, and it ships
+as a system-tray app as well (see below). Roadmap: a standalone gateway (Pi or
 ESP32) between the processor and its clients. The protocol engine is
 `no_std`-friendly, so the same code backs all of them.
 

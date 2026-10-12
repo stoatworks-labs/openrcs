@@ -63,7 +63,7 @@ than forcing them into one shape.
 
 ## New in this release
 
-- **Layer memories:** a fourth memory bank next to master and screen. Capture one
+- **Layer memories:** a third memory bank next to master and screen. Capture one
   layer's whole property set and apply it to any screen, preset and layer, under the
   same category filter as a screen memory. No processor stores a single layer, so
   this bank lives in the browser: it survives a reload, travels in a show file, and
@@ -219,8 +219,10 @@ inspect thumbnail, recall and erase.
 
 ### Layer memories
 
-The third tab in Memories. Pick the layer to **capture from** (screen, program or
-preview, and which layer), then switch to **Capture** and tap a slot. The slot
+The **Layer** tab in Memories: the third on a LiveCore, after **Master** and
+**Screen**, and the second on a Midra, after **Presets**. Pick the layer to
+**capture from** (screen, program or preview, and which layer), then switch to
+**Capture** and tap a slot. The slot
 stores every property that layer has: 40 of them on a LiveCore, 27 on a Midra,
 read from the variable table your processor actually advertised rather than a
 fixed list.
