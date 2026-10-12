@@ -24,7 +24,7 @@ place is a class of bug not worth having.
 | **Speed Editor** | A DaVinci Resolve Speed Editor over WebHID: CAM keys, the wheel on opacity, position, size, T-bar. | ✓ | ✓ |
 | **EDID builder** | The Otter EDID editor, saving straight onto an input plug (256 bytes). | ✓ | ✓ |
 | **OSC input** | QLab, TouchOSC or a desk driving the processor over UDP. | ✓ | ✓ |
-| **HyperDecks** | Play, cue and record HyperDecks (and Mitti), with rules: play when on air, take or cut when the clip ends. | ✓ | ✓ |
+| **HyperDecks** | Play, cue and record HyperDecks, with rules: play when on air, take or cut when the clip ends. Not Mitti yet: its HyperDeck emulation rejects the CR LF this ends each command with (`103 unsupported`). | ✓ | ✓ |
 | **Matrix routing** | Patch the processor to a Videohub, Lightware or Turtle AV router; feed an input, send an output; plan on a placeholder. | ✓ | ✓ |
 | **Companion** | Press Bitfocus Companion buttons from a key, a cue, MIDI, OSC or a memory recall; its tablet page here. | ✓ | ✓ |
 | **Thumbnail relay** | Input thumbnails fetched once by the bridge for every page, as JPEG. | ✓ | — a Midra serves no pictures |
@@ -63,10 +63,13 @@ Videohub. What that proved, end to end through the real bridge:
 - a Videohub crosspoint taken through the patch and reported back;
 - a cue fired by timecode sent over OSC.
 
-Not exercised at all: a real Companion, a real Speed Editor, MIDI and LTC
-input (the Browser pane grants neither), the thumbnail relay against a real
-LiveCore's web server, and Tailscale serve / ZeroTier on a real host. Prove
-each on your own kit before a show — the take gate in Layer lock in particular.
+Not exercised at all: a real Companion, MIDI and LTC input (the Browser pane
+grants neither), the thumbnail relay against a real LiveCore's web server, and
+Tailscale serve / ZeroTier on a real host. Two have met real kit and don't work
+on it yet: a real Speed Editor, because Chrome can't complete the panel's
+handshake over WebHID, and Mitti, whose HyperDeck emulation rejects the CR LF
+the HyperDecks plugin ends each command with (`103 unsupported`). Prove each on
+your own kit before a show — the take gate in Layer lock in particular.
 
 ## Writing one
 

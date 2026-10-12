@@ -61,7 +61,7 @@ than forcing them into one shape.
 
 ![openrcs driving a Pulse2 (Midra): the nav shows only the views this unit supports, and Live offers a per-screen Freeze instead of a master fade](screenshots/midra.png)
 
-## New in this release
+## New in 0.4 and 0.5
 
 - **Layer memories:** a third memory bank next to master and screen. Capture one
   layer's whole property set and apply it to any screen, preset and layer, under the
@@ -403,9 +403,10 @@ Pulse 4K, Eikos 4K, QuickMatrix 4K) and **Alta 4K** (Zenith 100 / 200). It speak
 a different protocol from the two families above, the vendor's published AWJ,
 and openrcs drives it through a surface of its own, plus the Connection view it
 shares with everything else. None of the Midra/LiveCore views apply to these
-processors, so the nav doesn't offer them. LivePremier gets **Screens** and
-**Presets**; Midra 4K and Alta 4K get those two with more on them, plus
-**Layers** and **Inputs**.
+processors, so the nav doesn't offer them. LivePremier gets **Screens**,
+**Presets**, **Cues**, **Plan** and the **Inspector**; Midra 4K and Alta 4K get
+those with more on them, plus **Show**, **Layers**, **Inputs**, **Outputs**,
+**Multiviewer**, **Stills**, **Audio**, **Setup** and **System**.
 
 - **Screens:** every screen (and, on a Midra 4K or Alta 4K, every auxiliary)
   the processor has in service, with the transition state it's holding, which

@@ -72,9 +72,9 @@ std binary and may use crates. Keep the split.
   the Rust.
 - **Do not commit binaries or device firmware.** `.gitignore` covers the
   obvious cases; keep it that way.
-- **Be precise about validation.** The LiveCore codec is confirmed against
-  device behaviour; the Midra table is not yet exercised against a device. Do
-  not overstate this.
+- **Be precise about validation.** The LiveCore and Midra codecs are confirmed
+  against device behaviour (a NeXtage 16 and a Pulse2); the per-variable ranges
+  are still guidance, not a guarantee. Do not overstate this.
 - **The platforms differ.** Midra terminates commands with `\r\n`, LiveCore
   with `\n`, the PLS300 with nothing. This is not cosmetic and is easy to
   regress; `tests/pls300.rs` pins the guide's own spellings.
@@ -102,9 +102,9 @@ std binary and may use crates. Keep the split.
 - **Midra 4K / Alta 4K paths are hardware-verified; openrcs's surface for them
   is simulator-only.** Every path in `mng.rs` was answered by a Pulse 4K on
   3.3.10, and take, cut, recall and subscription were fired at it by a separate
-  harness. The surface itself — the same two views, plus auxiliaries and the
-  aux and master banks — has only been driven against the vendor's Midra 4K
-  (3.2.29) and Alta 4K (1.3.7) simulators. Do not describe it as more.
+  harness. The surface itself — every one of its views, auxiliaries and the
+  aux and master banks included — has only been driven against the vendor's
+  Midra 4K (3.2.29) and Alta 4K (1.3.7) simulators. Do not describe it as more.
 - **An `x`-prefixed property is a trigger, not a flag** — `xTake` stays `true`
   after firing, and writing `true` again fires again. Never diff-then-skip a
   write on one.

@@ -19,8 +19,8 @@ the public internet cannot do that half:
 
 So the demo replaces the transport, not the app. `web/app.js` looks for
 `globalThis.OPENRCS_DEMO_DEVICE` and uses it in place of the WebSocket if it is
-there; `device.js` installs one. Everything above the transport — all nineteen
-views — is the same code the bridge server serves.
+there; `device.js` installs one. Everything above the transport — every view —
+is the same code the bridge server serves.
 
 ## What's here
 
@@ -38,11 +38,12 @@ views — is the same code the bridge server serves.
 
 ## The fixture is recorded, not written
 
-`fixtures.json` holds 1,014 variable definitions and 3,797 values, all captured
-from `openrcs-server` connected to a real LiveCore device session — driven into
-a show-like state first (two screens, four layers each, six master and five
-screen memories), then every view visited so each one's own requests populated
-the bridge's cache.
+`fixtures.json` holds 1,014 variable definitions and 3,813 values. 3,797 of them
+were captured from `openrcs-server` connected to a real LiveCore device session —
+driven into a show-like state first (two screens, four layers each, six master
+and five screen memories), then every view visited so each one's own requests
+populated the bridge's cache. The other 16 are four loaded stills (`LSval`,
+`LSusd`, `LSdwi`, `LSdhe`), added afterwards so the Stills tab has something on it.
 
 Hand-authoring that would be a guess about what the device does, and guesses
 drift away from the protocol without anything failing loudly. If the fixture
@@ -89,6 +90,7 @@ python3 demo/serve-demo.py --dir demo/dist --port 4291
 `dist/` is committed on purpose: assembling it means recording a device
 session, which a build container cannot do. Cloudflare publishes what is
 already in the repo, with no build command — see `wrangler.toml` at the root.
+A push to `main` deploys it (`.github/workflows/deploy.yml`); by hand:
 
 ```sh
 cf-run npx wrangler deploy

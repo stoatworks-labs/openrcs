@@ -97,9 +97,10 @@ Concrete device capabilities not yet given a dedicated surface:
 
 ## Open questions on hardware
 
-- **Thumbnails for anything but inputs.** The LiveCore serves `capture_in_N` only;
-  screens, outputs and previews 404 even with their snapshot slots enabled, and a
-  Midra serves no HTTP at all.
+- **Thumbnails for anything but inputs and stills.** The LiveCore serves
+  `capture_in_N` under its snapshots, and a thumbnail for each frame and logo slot
+  beside its still library; screens, outputs and previews 404 even with their
+  snapshot slots enabled, and a Midra serves no HTTP at all.
 - **Cut & Fill** — `PE_FLAGS_MASK_CUT_N_FILL` and `PRmcv` are known, but the rest of
   the RCS's Cut & Fill panel has no obvious mnemonics.
 - **The LiveCore per-output area of interest does not read back.** `OSaoi` accepts
@@ -135,8 +136,10 @@ resolution) is served over its own HTTP server, and the Workspace now shows the
 real picture on each input in the source palette and on the layers themselves.
 Confirmed on a NeXtage 16. Two limits found on hardware: the files are named
 `.bmp` but are PNGs, and **only inputs** are served — `capture_out_N` and every
-other spelling 404 even with the matching snapshot slots enabled, so screens,
-outputs and stills still have no thumbnail. A Midra serves no HTTP at all.
+other spelling 404 even with the matching snapshot slots enabled, so screens and
+outputs still have no thumbnail. Frames and logos do, beside the still library
+(`/assets/Stills/thumbnails/`), and the Workspace shows those too. A Midra serves
+no HTTP at all.
 
 ### Stage as a true canvas — *Pixelflow* — **shipped, v1 (Wall)**
 The Wall view places each screen at its real output position (`OSpoh`/`OSpov`,
@@ -161,10 +164,11 @@ The Keys view runs multi-action macros on one tap. Next: colour/label per key,
 and mapping to the device's own shotbox keys where present.
 
 ### Multiviewer designer — *LivePremier, Event Master* — **shipped, v1**
-The Multiviewer view is a drag/resize layout editor over `MONITORING_LAYOUT`: up
-to 12 widgets per monitoring output, each with a source, OSD label and free
-geometry, plus grid presets (quad / 3×3 / 4×3 / single), a fullscreen mode, apply
-(`MLupd`) and 8 layout memories (`MON_MEM`). Next: per-widget borders/labels and
+The Multiviewer view is a drag/resize layout editor over `MONITORING_LAYOUT`: the
+widgets the unit drives (twelve in the table, eight on a NeXtage), each with a
+source, OSD label and free geometry, plus grid presets (quad / 4×2 / 3×3 / 4×3 /
+single, offered where they fit), a fullscreen mode, apply (`MLupd`) and 8 named
+layout memories (`MON_MEM`). Next: per-widget borders/labels and
 placing the two monitor outputs in a screen (`MONITORING_SCREEN`).
 
 ### Tally & GPIO — *Event Master*
@@ -180,8 +184,8 @@ bridge.**
 ### Operator ergonomics
 - **Offline / plan mode** — **shipped, v1.** The Plan view stages every edit into
   a local overlay (reads preview the staged values) so a whole look or config is
-  built with no device attached, then pushed on connect. Next: seed a plan from
-  the device's current state, and per-scope push.
+  built with no device attached, then pushed on connect. **Seed from look**
+  starts one from the current look. Next: per-scope push.
 - **Confidence & undo** — **shipped, v1.** An instant cache-based ring of 'look'
   snapshots in the Shows view, auto-armed before each take, one-click revert.
   Next: snapshot other scopes, and a visible revert countdown.

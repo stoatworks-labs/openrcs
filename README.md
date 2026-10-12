@@ -118,7 +118,7 @@ a `GCupd` update, and openrcs never sent one. Now it sends one after every burst
 of layer writes, as the vendor client does, so a resize or a source change on
 program or preview lands straight away.
 
-Two things this release added need a word on what is and isn't proven. The
+Two things v0.5.0 added need a word on what is and isn't proven. The
 Midra **video out** (its three plug modes, its screen sources and its area of
 interest) is confirmed on a Pulse2, including watching the SDI plug move between
 outputs as the mode changes. The LiveCore **per-output area of interest** isn't:
