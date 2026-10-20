@@ -11248,7 +11248,9 @@ const PLUS = (() => {
         break;
       }
       case 'plus':
-        if (m.what) lastPlus.set(m.what, m);
+        // An event (a panel's key press) is not state: replaying the last one
+        // to a listener that arrives late would press the key again.
+        if (m.what && !m.event) lastPlus.set(m.what, m);
         for (const fn of plusListeners) fn(m);
         break;
     }
@@ -11349,6 +11351,9 @@ const PLUS = (() => {
         const l = leases.get(full);
         return {
           want(on = true) { l.wanted = on; if (bridged()) store.send({ t: 'lease', name: full, want: on }); else { l.holder = on; for (const fn of l.listeners) fn(on); } },
+          // Have it now, from whichever page holds it; that page waits in line
+          // and has it back when this one lets go (the Speed Editor's Take over).
+          take() { l.wanted = true; if (bridged()) store.send({ t: 'lease', name: full, want: true, take: true }); else { l.holder = true; for (const fn of l.listeners) fn(true); } },
           held: () => l.holder,
           onChange(fn) { l.listeners.add(fn); },
         };

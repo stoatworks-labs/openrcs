@@ -322,6 +322,12 @@ ZeroTier, and a setup file. They run on LiveCore and Midra, but none has met a
 processor yet. What each one does, how far each is proven, the OSC address
 space and how to write your own: [docs/PLUGINS.md](docs/PLUGINS.md).
 
+The Speed Editor plugs into the machine the server runs on, and the server
+holds it. Chrome can't get a real panel past its handshake over WebHID, so the
+page no longer tries. The server's handshake is the one LivePremier Plus has run
+on a real panel over USB on macOS; openrcs's own build has only met a fake
+panel so far, and nothing has tried it on Windows, Linux or Bluetooth.
+
 The bridge keeps the plugins' shared data in `plugin-data.json` next to its
 config, so every open page sees the same layer groups, decks and routers.
 
@@ -406,7 +412,7 @@ want raw control.
 
 ```bash
 cargo test                        # no hardware needed
-cargo build --no-default-features # no_std
+cargo build --no-default-features # no_std (and a server with no USB panel support)
 
 # Read-only probe against a device:
 cargo run --example probe -- <device-ip>:10500 livecore

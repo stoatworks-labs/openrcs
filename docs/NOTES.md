@@ -605,6 +605,135 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## The Speed Editor moved into the bridge — 2026-10-20
+
+The WebHID port (2026-09-24) could never have worked on a real panel: LivePremier
+Plus found on its first panel that Chrome reads every feature report at the
+largest declared length (33) and the panel refuses its 10-byte challenge read
+that way (`0xE0005000`). LPP moved the panel to its server on node-hid (e25b85e),
+proved it on the panel over USB on macOS (35c8abe: CUT repeatedly, CAM 1–3, wheel
+on opacity, battery, replug) and then into a supervised device host (5ae0b3a).
+I ported the server half to Rust on the `hidapi` crate.
+
+Decisions:
+- **In-process, on a thread of its own**, not a separate device-host process as
+  LPP did. LPP's reasons were a Node native addon and keeping the app's own
+  `package.json` empty; here the bridge is one binary, and hidapi is a cargo
+  feature. The thread is started by the first page that asks and owns the HID
+  handle; dropping the `Link` lets the panel go.
+- **The driver lease is the existing plus.rs lease**, `speed-editor.driver`, plus
+  a new `take` flag. LPP's was an HTTP heartbeat that a background tab let lapse
+  (it had to go to 120 s); here it is the page's websocket, so it doesn't lapse.
+  Reports go to the holder only (`PlusEvent::To`), so the page never filters.
+- **Reports cross as JSON number arrays**, not base64: no extra crate, and none
+  of LPP's quoted-base64 bug (35c8abe) to have.
+- **WebHID dropped, not kept as a fallback.** Never proven anywhere, proven
+  broken on macOS.
+- **hidapi backends:** C on macOS (what node-hid runs), Rust `windows-native` and
+  `linux-native-basic-udev` elsewhere. The default C backend for Windows needs
+  clang-cl to cross-compile with cargo-xwin, which this Mac hasn't got (`llvm-lib`
+  not found); the Rust one makes the same `IOCTL_HID_GET_FEATURE` call at the
+  caller's length and pads writes the same way, and needs nothing. The Linux C
+  backend needs libudev at build time, which zigbuild has no sysroot for.
+- **The page now sets the wheel to RELATIVE on every fresh handshake**, as LPP's
+  surface does. The WebHID version never did and assumed it.
+
+Proven: `cargo test` against a fake panel that refuses a wrong-length read; the
+page half against a fake bridge (`plugin.test.mjs`); the real bridge on macOS with
+no panel (hidapi scanned, two pages shared the lease, Take over, hand-back on
+close). All six release triples build (`cargo build` ×2 Mac, `cargo zigbuild` ×2
+Linux, `cargo xwin` ×2 Windows), needing only system libraries. **Not proven:**
+any real panel through openrcs; anything on Windows, Linux or Bluetooth.
+Allan's Speed Editor is paired to this Mac over Bluetooth and was not connected
+on 2026-10-20.
+
+**The Linux packages ship the udev rule** (`packaging/linux/`, same day). The
+server's `.deb`/`.rpm` install it as `70-openrcs-speed-editor.rules`, the tray
+app's as `70-openrcs-launcher-speed-editor.rules`: both packages can be
+installed at once, and dpkg refuses a second package that owns the same path. A
+postinstall reloads the rules and triggers `hidraw`, and swallows any failure.
+`uaccess` follows the seat's active login, so on a headless box (the appliance
+shape the server `.deb` is for) it gives the panel to nobody; the guide gives a
+`GROUP=` rule for that. Checked: the nfpm step run verbatim with nfpm 2.41.1 on
+a dummy binary, both arches, contents and scripts read back; the launcher's
+config parsed by tauri-utils 2.10.1. **Not checked:** Tauri's Linux bundler
+(it only runs on Linux), and any install on a Linux machine.
+
+## HyperDecks: Mitti refused every command, and LivePremier Plus's later fixes — 2026-10-20
+
+The link (`web/plugins/hyperdeck/link.js`, `pump()`) ended every command with CR LF.
+Mitti's HyperDeck emulation answers `103 unsupported` to any command that ends in `\r`,
+and only `device info` gets through. So a Mitti deck connected, showed its model, and
+never got a clip list or a transport state. LivePremier Plus found this on a real Mitti
+2.8.18 on 2026-09-29 (its d0093db) and went to LF, which a real HyperDeck takes too. The
+port had copied the link from before that fix, and the v0.9.0 and v0.10.0 release notes
+listed it as a known issue.
+
+The link ends commands with LF now. `link.test.mjs` runs it over a socket against a
+stand-in that refuses CR as Mitti does, and fails if the link goes back to CR LF (I
+checked).
+
+Then I tried a **real Mitti 2.8.19** on Allan's Mac, launched for the test and quit
+afterwards:
+
+- **A raw probe.** `transport info`, `clips count`, `clips get` and `slot info` ending
+  in CR LF all got `103 unsupported`, while `device info` answered. Ended in LF, they
+  answered. 2.8.19 behaves exactly as 2.8.18 did.
+- **The test's real-deck mode** (`HYPERDECK_AT=127.0.0.1:9993 HYPERDECK_PROFILE=mitti`).
+  Connection info, notify, device info, clips and transport all came back through the
+  link, with nothing refused.
+- **A real `openrcs-server` and a page.** I pointed the bridge at a closed port so the
+  views would show. The deck went to *connected*, with model Mitti and transport
+  stopped, and **stop** was answered OK.
+
+Mitti's playlist was empty, so a real clip list, play and the rules have only met the
+stand-in. I couldn't fill it: its file dialog runs in another process that I couldn't
+drive, and a `.mitti2` file is an NSKeyedArchiver plist too big to fake. Mitti's
+spacing (`protocol version:1.11`, `loop : false`) is as LivePremier Plus recorded it,
+and the parser trims both.
+
+New on 2.8.19: a bare `slot info` gets **no answer at all**, not even a 103, while
+`slot info: slot id: 1` answers 202 at once. The link sent `slot info` on every connect,
+so against Mitti it waited out `REPLY_TIMEOUT_MS` (3 s) before the `transport info`
+queued behind it went out. Nothing broke. The first transport state was 3 s late, and
+the disk never showed.
+
+**Fixed later the same day**, upstream first (LivePremier Plus 34045e0, automitti
+f2b2a9f) and then here. The link asks for the transport first, then for
+`slot info: slot id: <the transport's slot id>` (`slotQuery` in `protocol.js`, which uses
+1 when the deck says `none` or doesn't answer). Blackmagic's *HyperDeck Ethernet
+Protocol* (December 2024) says the bare form means the selected slot, so a two-slot
+HyperDeck gets asked about the same slot as before. That comes from the document; no
+deck has confirmed it.
+
+What the real Mitti said when I asked by hand (read-only, LF-ended): nothing in 8 s to
+`slot info` or to `slot info: slot id: 0`; `202 … status: mounted` (`MITTI_DISK`) to
+`slot id: 1`; `202 … status: empty` to `slot id: 2`; and `slot count: 1` in
+`device info`. The test's real-deck mode now waits for the `202` too. Against Mitti
+2.8.19 it got all six replies (`500`, `209`, `204`, `205`, `208`, `202`) in 11 ms,
+sending `slot info: slot id: 1` and no bare form. The stand-in in `link.test.mjs` now
+says nothing to a bare `slot info` either, and the slot test fails on the old link (I
+checked). **Not re-run after this change:** the real bridge and page. The link was
+driven over a plain socket standing in for `host.link()`.
+
+LivePremier Plus's other fixes since the port, checked here the same day:
+
+- **Thumbnail relay byte count** (LPP 6091d57). LPP counted a frame as sent before it
+  answered 304 with no body. `Plus::snapshot` keeps no byte count, and the route never
+  answers 304, so there's nothing to miscount.
+- **"Switched off" for a missing dependency** (6091d57). LPP's routes said "switched
+  off" for a plugin that was on but needed one that was off. No plugin here declares a
+  dependency, and the bridge doesn't refuse plugin routes at all. The plugins that use
+  another's service (`host.use('groups')`, `host.use('locks')`) already name the plugin
+  they need.
+- **A second CUT doing nothing** (LPP 35c8abe, awj-surface ff32c1d). The AWJ surface
+  engine dropped a write equal to the mirror's value, and the switcher leaves `xCut`
+  true, so every CUT after the first was dropped. The mnemonic surface has no such
+  engine. The Speed Editor, MIDI, OSC and Keys all call `doTake`/`doCut`, and
+  `store.set`, `Hub::set` and OSC `/set` all send every write without looking at the
+  cache. A Midra take pulses `GCtak` 0 then 1, and a LiveCore cut writes `GCtba` every
+  time.
+
 ## A memory recalled into a preview that was still taking — 2026-10-20
 
 LivePremier Plus found it first (7bacc2b, 4c0bb43, 8e3206e): the processor

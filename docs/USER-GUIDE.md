@@ -130,6 +130,59 @@ Memories and the command line can each **pop out** into a window of their own.
 Everything about each plugin, and how far each is proven (which today means
 fixtures and fakes, not hardware), is in [PLUGINS.md](PLUGINS.md).
 
+### The Speed Editor
+
+A DaVinci Resolve Speed Editor drives the surface from its keys and wheel: CAM
+1–9 put an input on the selected layer, the eight keys top left pick layer 1–8,
+SOURCE and TIMELINE pick screen 1 or 2, CUT cuts, DIS and STOP/PLAY take, TRANS
+flips between editing preview and program, and SNAP is shift. JOG, SHTL and
+SCRL set what the wheel moves: opacity, position H, position V, or with SNAP
+held, the T-bar, size H and size V.
+
+Plug it into **the machine openrcs-server runs on**, by USB. The server holds
+the panel and the page only gets its keys, so it works from any browser at any
+address, but a panel plugged into the laptop you're browsing from does nothing
+unless that laptop is also the one running the server. Quit DaVinci Resolve
+first, or both will act on every key.
+
+Open **Setup → Speed Editor** and press **Start**. The server opens the panel,
+answers its handshake and keeps answering it, and the page says when it's
+connected (and the battery level). Only one page drives the panel at a time.
+Start it on a second page and that page waits its turn, showing **Another page
+is driving it** and a **Take over** button that moves the panel to it at once;
+when it stops or closes, the first page has the panel back. **Stop** puts the
+lamps out and lets the panel go, and nothing holds it while no page is driving
+it. A page you reload carries on driving.
+
+On Linux the server reads the panel through `/dev/hidraw`, which usually only
+root can open. The `.deb` and `.rpm` packages, the server's and the tray app's
+alike, install a udev rule that gives the panel to whoever is logged in at the
+machine's own screen and keyboard, and apply it to a panel that's already
+plugged in. From the `.tar.gz`, add the rule yourself, then unplug the panel
+and plug it back in:
+
+```
+# /etc/udev/rules.d/70-openrcs-speed-editor.rules
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", MODE="0660", TAG+="uaccess"
+```
+
+That rule follows the desktop login, so on a box nobody is logged in at, with
+the server started over SSH or as a service, it gives the panel to no one but
+root. There, add a rule that names a group the server's user is in instead
+(`plugdev` on Debian and Ubuntu), and replug:
+
+```
+# /etc/udev/rules.d/71-openrcs-speed-editor-group.rules
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", MODE="0660", GROUP="plugdev"
+```
+
+How far it's proven: the handshake is the one LivePremier Plus has run on a real
+panel over USB on macOS (CUT, CAM keys, the wheel, the battery level and a
+replug). openrcs's own build has been tested against a fake panel and run with
+no panel plugged in, and hasn't met a real one yet, on any platform. Windows,
+Linux (the packaged udev rule included) and Bluetooth are untried. Try it on your own panel before a show, and
+shout if it misbehaves.
+
 ## Workspace
 
 ![The working page: sources, live screens and memories on one page](screenshots/workspace.png)

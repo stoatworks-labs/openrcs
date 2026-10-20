@@ -56,8 +56,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: web modules parse, command language holds
+      - name: web modules parse; command language, deck link, Speed Editor page and preview hold tests pass
         run: |
           find crates/openrcs-server/web -name '*.js' -print0 | xargs -0 -n1 node --check
           node crates/openrcs-server/web/plugins/console/lang.test.mjs
+          node crates/openrcs-server/web/plugins/hyperdeck/link.test.mjs
+          node crates/openrcs-server/web/plugins/speed-editor/plugin.test.mjs
           node crates/openrcs-server/web/awj-hold.test.mjs
