@@ -54,6 +54,8 @@ crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   src/hub.rs            one TCP link to the device + state cache + broadcast
   src/main.rs           HTTP/WS, the browser JSON protocol
   src/plus.rs           the plugins' half: shared data, leases, TCP links, OSC, thumbnail relay
+  src/hid.rs            USB HID traits + the hidapi backend (the `hid` feature, on by default)
+  src/speed_editor.rs   the Speed Editor held by the bridge: handshake, renewal, replug
   src/remote.rs         remote access: tailscale serve, tailnet/ZeroTier listeners
   web/                  vanilla ES-module SPA, no build step
   web/plugins/<id>/     one folder per plugin (docs/PLUGINS.md); PLUGIN_INDEX in app.js lists them
@@ -356,6 +358,32 @@ std binary and may use crates. Keep the split.
 - **OSC semantic verbs run on a page, not in the bridge.** `/set` and `/raw` are
   the bridge's; everything else is forwarded to the page holding the
   `osc-input.actions` lease. Do not re-implement a take in Rust.
+- **The Speed Editor is held by the bridge, never the page.** WebHID cannot
+  read its 10-byte challenge: Chrome reads every feature report at the length
+  of the largest one the panel declares (33), and the panel refuses that
+  (`0xE0005000`, found by LivePremier Plus on a real panel). hidapi reads at
+  the length asked: `Device::get_feature(id, len)` is always called with the
+  report's own length, and the fake panel in `speed_editor.rs` refuses any
+  other, so a regression fails `cargo test`. Do not bring WebHID back.
+- **One page drives the panel.** It is the `speed-editor.driver` lease: the
+  panel is open only while it has a holder (`Plus::follow_panel`), its reports
+  go to the holder alone (`PlusEvent::To`), and writes from any other page are
+  dropped. Take over is `lease_take` — the taker goes to the front, the old
+  holder waits in line. The lease is the page's socket, not a heartbeat, so a
+  background tab keeps it. The mapping stays in the page; the bridge decodes
+  nothing but the battery.
+- **The panel is opened shared** (`set_open_exclusive(false)` on macOS, which
+  otherwise seizes it), and nothing touches HID until a page asks: no scan
+  before `watch`, no open without a driver.
+- **A plugin note with `event: true` is not replayed** to a listener that
+  arrives late (`lastPlus` in app.js). A panel's key press is an event; replayed,
+  it is a second press.
+- **hidapi's backends:** the C library on macOS, the crate's own Rust backends
+  on Windows (`windows-native`) and Linux (`linux-native-basic-udev`), so the
+  Windows and Linux builds need no C toolchain and no libudev and still
+  cross-compile with `cargo xwin` / `cargo zigbuild`. Built without the `hid`
+  feature the panel says it is unavailable. The Rust backends have never met a
+  real panel; say so wherever they are described.
 - **Links are per page** (the key carries `PAGE_ID`): HyperDeck, LW3 and Turtle
   pair each reply with the command before it.
 - **HyperDeck commands end in LF, not CR LF.** Mitti's emulation answers `103
@@ -380,6 +408,7 @@ cargo clippy --all-targets        # must be clean
 cargo build --no-default-features # no_std must keep building
 node crates/openrcs-server/web/plugins/console/lang.test.mjs   # the command language
 node crates/openrcs-server/web/plugins/hyperdeck/link.test.mjs # the deck link, against a Mitti stand-in
+node crates/openrcs-server/web/plugins/speed-editor/plugin.test.mjs   # the Speed Editor's page half
 ```
 
 The surface itself is checked in a browser against the demo (`demo/build-demo.sh`,

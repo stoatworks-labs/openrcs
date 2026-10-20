@@ -21,7 +21,7 @@ place is a class of bug not worth having.
 | **Command line** | `Take Screen 1`, `Recall Master 5`, `Sel Sc 1 La 1 Thru 3`, `Source 4`, `Width 1920/2` — short forms, arithmetic, `!` for a raw line. | ✓ | ✓ |
 | **Timecode** | Fire cues from MIDI Time Code, LTC on an audio input, or timecode sent over OSC. | ✓ | ✓ |
 | **MIDI mapping** | A MIDI controller firing any action; a fader riding a T-bar. Learn by moving the control. | ✓ | ✓ |
-| **Speed Editor** | A DaVinci Resolve Speed Editor over WebHID: CAM keys, the wheel on opacity, position, size, T-bar. | ✓ | ✓ |
+| **Speed Editor** | A DaVinci Resolve Speed Editor plugged into the machine openrcs runs on: CAM keys, the wheel on opacity, position, size, T-bar. The bridge holds the panel; one page drives it, with Take over. | ✓ | ✓ |
 | **EDID builder** | The Otter EDID editor, saving straight onto an input plug (256 bytes). | ✓ | ✓ |
 | **OSC input** | QLab, TouchOSC or a desk driving the processor over UDP. | ✓ | ✓ |
 | **HyperDecks** | Play, cue and record HyperDecks and decks that emulate one, such as Mitti, with rules: play when on air, take or cut when the clip ends. | ✓ | ✓ |
@@ -65,11 +65,9 @@ Videohub. What that proved, end to end through the real bridge:
 
 Not exercised at all: a real Companion, MIDI and LTC input (the Browser pane
 grants neither), the thumbnail relay against a real LiveCore's web server, and
-Tailscale serve / ZeroTier on a real host. One has met real kit and doesn't
-work on it yet: a real Speed Editor, because Chrome can't complete the panel's
-handshake over WebHID.
+Tailscale serve / ZeroTier on a real host.
 
-Mitti used to be the second. Its HyperDeck emulation answers `103 unsupported`
+Mitti didn't work at first. Its HyperDeck emulation answers `103 unsupported`
 to a command ending in CR LF, and that was how the HyperDecks plugin ended every
 one. It ends them with LF now (LivePremier Plus's fix), and a real Mitti 2.8.19
 has answered it through a real bridge and page: connected, its model and
@@ -79,6 +77,56 @@ play and the rules have still only met a stand-in that answers as Mitti does
 
 Prove each on your own kit before a show — the take gate in Layer lock in
 particular.
+
+### The Speed Editor, and why it moved into the bridge
+
+The first port drove the panel from the page over WebHID, and a real panel
+never got past the handshake in Chrome. Chrome reads every feature report at
+the length of the biggest one the panel declares (33 bytes), and the panel
+won't hand over its 10-byte challenge at that length (`0xE0005000` on macOS).
+A page can't ask for less. LivePremier Plus found this on a real panel and
+moved the panel into its server, where hidapi reads at the length it's asked
+for. That version has driven a real panel over USB on macOS: CUT again and
+again, CAM 1–3 into preview, the wheel on opacity, the battery level and a
+replug.
+
+openrcs now does the same thing in Rust (`src/speed_editor.rs`, on the
+`hidapi` crate). The bridge finds the panel by vendor and product id, opens it
+shared, answers its challenge and renews the answer at half its lease, and
+finds it again after a replug. The page keeps the mapping, gets the panel's
+reports and sends back its lamps. One page drives the panel at a time: Start
+asks for the `speed-editor.driver` lease, a second page that starts waits in
+line, and **Take over** moves the panel to it at once. The panel's only open
+while some page holds that lease, so DaVinci Resolve can have it the rest of
+the time. The lease lasts as long as the page's connection, so a tab in the
+background keeps it (LivePremier Plus's was a heartbeat, which a background tab
+in Chrome let lapse).
+
+WebHID is gone rather than kept as a fallback. It's never got past the
+handshake on the one platform it was tried on, and a fallback that fails at
+the handshake would only move the confusion somewhere else. The cost is that
+the panel has to be plugged into the machine openrcs-server runs on, not the
+one the page is open on.
+
+How far openrcs's own version is proven:
+
+- **Tested against a fake panel** (`cargo test`) that refuses a feature read
+  at any length but the report's own, as the real one does: the handshake,
+  renewal, a refused answer retried, a replug, the panel opened only while a
+  page holds the lease, reports to the driver alone, lamps from the driver
+  alone, Take over and hand-back. The answer to the challenge matches, for
+  eight challenges, the one LivePremier Plus's code gave and a real panel
+  accepted.
+- **Tested against a fake bridge** (`plugin.test.mjs`): the page turns
+  reports into writes, CUT fires on every press, a page that lost the panel
+  ignores it, the lamps go out before the lease is let go.
+- **Run through a real bridge on macOS, with no panel:** hidapi started and
+  scanned, two pages shared the lease, Take over moved it, and closing the
+  page that took it handed it back.
+- **Not yet run against a real Speed Editor**, on any platform. Windows and
+  Linux use hidapi's own Rust backends there (the C library on macOS), and no
+  version of this, LivePremier Plus's included, has met a panel on either.
+  Bluetooth hasn't been tried. The first real panel is the next test.
 
 ## Writing one
 
@@ -126,9 +174,19 @@ hook must check the platform itself when it matters.
 - **Shared data.** `host.shared(key, init)` → `{ get, set, update, watch }`,
   stored by the bridge in `plugin-data.json` beside its config and handed to
   every open page. In the hosted demo, this browser's localStorage.
-- **Leases.** `host.lease(name)` → `{ want, held, onChange }`. The bridge grants
-  a lease to one page at a time and hands it on when that page closes. Use one
-  for anything that must happen once however many pages are open.
+- **Leases.** `host.lease(name)` → `{ want, take, held, onChange }`. The bridge
+  grants a lease to one page at a time and hands it on when that page closes.
+  Use one for anything that must happen once however many pages are open.
+  `take()` has it now, from whoever holds it; that page waits in line and gets
+  it back when this one lets go (the Speed Editor's Take over).
+- **USB panels.** `host.bridge({ t: 'hid', id, op })` and `host.onBridge(fn)`
+  reach a panel the bridge holds. The Speed Editor (`id` `speed-editor`) is the
+  only one so far: `watch` starts the bridge looking for it, `write` sends
+  output reports, honoured only from the page holding `speed-editor.driver`.
+  Its state arrives as `{ what: 'speed-editor', state, driven }` and its input
+  reports, to the driver alone, as `{ what: 'speed-editor.report', event: true,
+  r: [bytes] }`. A second panel would be a second file beside
+  `src/speed_editor.rs` on the traits in `src/hid.rs`.
 - **Links.** `host.link(kind, host, port)` → `{ open, send, close, onData,
   onStatus }`: a TCP connection the bridge holds for this page (a browser has
   no raw TCP). One per page, deliberately — these protocols pair each reply

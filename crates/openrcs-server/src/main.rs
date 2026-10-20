@@ -13,9 +13,11 @@
 //! serves the UI unconfigured and waits to be pointed at something from the
 //! Setup view, then remembers that across restarts.
 
+mod hid;
 mod hub;
 mod plus;
 mod remote;
+mod speed_editor;
 mod tailnet;
 
 use std::net::SocketAddr;
@@ -66,8 +68,22 @@ enum ClientMsg {
     },
     /// Write one plugin's shared value. Every open page is told.
     Kv { k: String, v: serde_json::Value },
-    /// Ask for (or give up) a named lease.
-    Lease { name: String, want: bool },
+    /// Ask for (or give up) a named lease. `take` moves it to this page at
+    /// once — the Speed Editor's Take over.
+    Lease {
+        name: String,
+        want: bool,
+        #[serde(default)]
+        take: bool,
+    },
+    /// A USB panel the bridge holds (`id` is `speed-editor`): `watch` starts
+    /// looking for it, `write` sends output reports from the page driving it.
+    Hid {
+        id: String,
+        op: String,
+        #[serde(default)]
+        reports: Vec<Vec<u8>>,
+    },
     /// A TCP link held by the bridge for a plugin: `open`, `send` or `close`.
     Ext {
         op: String,
@@ -530,6 +546,7 @@ async fn client(socket: WebSocket, app: Arc<App>) {
         || send(&mut tx, &ServerMsg::Kvsnap { items: app.plus.kv_snapshot() }).await.is_err()
         || send(&mut tx, &ServerMsg::Plus { body: serde_json::json!({ "what": "osc", "status": app.plus.osc_status() }) }).await.is_err()
         || send(&mut tx, &ServerMsg::Plus { body: serde_json::json!({ "what": "remote", "status": app.remote.get().map(|r| r.status()).unwrap_or_default(), "appliance": app.tailnet }) }).await.is_err()
+        || send(&mut tx, &ServerMsg::Plus { body: app.plus.panel_note() }).await.is_err()
     {
         return;
     }
@@ -553,6 +570,7 @@ async fn client(socket: WebSocket, app: Arc<App>) {
                         Ok(PlusEvent::Ext { key, ev, data }) => Some(ServerMsg::Ext { key, ev, data }),
                         Ok(PlusEvent::Action { to, name, args }) => (to == me).then_some(ServerMsg::Action { name, args }),
                         Ok(PlusEvent::Note(body)) => Some(ServerMsg::Plus { body }),
+                        Ok(PlusEvent::To { to, body }) => (to == me).then_some(ServerMsg::Plus { body }),
                         Err(_) => None,
                     };
                     if let Some(msg) = msg {
@@ -736,7 +754,18 @@ fn handle_client_msg(app: &Arc<App>, txt: &str, me: ClientId) {
         }
         ClientMsg::Raw { d } => hub.raw(d),
         ClientMsg::Kv { k, v } => app.plus.kv_set(k, v),
-        ClientMsg::Lease { name, want } => app.plus.lease(name, me, want),
+        ClientMsg::Lease { name, want, take } => {
+            if want && take {
+                app.plus.lease_take(name, me);
+            } else {
+                app.plus.lease(name, me, want);
+            }
+        }
+        ClientMsg::Hid { id, op, reports } => match (id.as_str(), op.as_str()) {
+            ("speed-editor", "watch") => app.plus.panel_watch(),
+            ("speed-editor", "write") => app.plus.panel_write(me, reports),
+            _ => eprintln!("hid: unknown {id:?} {op:?}"),
+        },
         ClientMsg::Ext { op, key, host, port, data } => match op.as_str() {
             "open" => app.plus.link_open(key, host, port, me),
             "send" => app.plus.link_send(&key, data),
@@ -847,6 +876,17 @@ mod tests {
         assert_eq!(back.device.as_deref(), Some("192.0.2.10:10500"));
         assert_eq!(back.platform.as_deref(), Some("midra"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_panel_messages_parse_and_an_old_lease_message_still_does() {
+        let old: ClientMsg = serde_json::from_str(r#"{"t":"lease","name":"hyperdeck.rules","want":true}"#).unwrap();
+        assert!(matches!(old, ClientMsg::Lease { want: true, take: false, .. }));
+        let take: ClientMsg = serde_json::from_str(r#"{"t":"lease","name":"speed-editor.driver","want":true,"take":true}"#).unwrap();
+        assert!(matches!(take, ClientMsg::Lease { take: true, .. }));
+        let write: ClientMsg = serde_json::from_str(r#"{"t":"hid","id":"speed-editor","op":"write","reports":[[2,1,0,0,0],[4,1]]}"#).unwrap();
+        assert!(matches!(write, ClientMsg::Hid { ref reports, .. } if reports == &vec![vec![2, 1, 0, 0, 0], vec![4, 1]]));
+        assert!(serde_json::from_str::<ClientMsg>(r#"{"t":"hid","id":"speed-editor","op":"write","reports":[[256]]}"#).is_err(), "a byte is a byte");
     }
 
     #[test]

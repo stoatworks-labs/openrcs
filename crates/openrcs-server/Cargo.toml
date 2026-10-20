@@ -23,3 +23,16 @@ rust-embed = "8"
 # The thumbnail relay (plus.rs): a LiveCore serves its input snapshots as
 # PNGs; the bridge fetches each once for every page and hands out a JPEG.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# The Speed Editor link (hid.rs, speed_editor.rs): a USB panel held by the
+# bridge, because a page cannot complete the panel's handshake over WebHID.
+# The C hidapi on macOS, which is what node-hid drives the panel with in
+# LivePremier Plus; the crate's own Rust backends on Windows (hid.dll, the same
+# calls at the same lengths as the C one) and Linux (hidraw), so neither needs
+# a C toolchain or libudev and both cross-compile like the rest. Optional:
+# built without `hid`, the panel says it is unavailable and nothing else
+# notices.
+hidapi = { version = "2.6", optional = true, default-features = false, features = ["linux-native-basic-udev", "windows-native"] }
+
+[features]
+default = ["hid"]
+hid = ["dep:hidapi"]

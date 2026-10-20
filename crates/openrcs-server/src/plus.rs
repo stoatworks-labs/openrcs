@@ -18,6 +18,12 @@
 //!   has its own connection: these protocols pair each reply with the command
 //!   before it, and two pages' commands on one socket would cross.
 //!
+//! * **USB panels.** A page cannot complete a DaVinci Resolve Speed Editor's
+//!   handshake over WebHID (`speed_editor.rs` says why), so the bridge holds
+//!   the panel. Its input reports go to the one page holding the
+//!   `speed-editor.driver` lease, that page's lamps come back, and the panel is
+//!   open only while somebody holds it. The mapping stays in the page.
+//!
 //! And OSC: a UDP listener, off until a page turns it on, that writes
 //! variables itself and forwards everything that needs the surface's own
 //! logic (a take, a cue GO) to the page holding the `osc-input.actions` lease.
@@ -29,7 +35,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -38,7 +44,9 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout, Duration};
 
+use crate::hid;
 use crate::hub::Hub;
+use crate::speed_editor;
 
 pub type ClientId = u64;
 
@@ -46,6 +54,14 @@ pub type ClientId = u64;
 pub const OSC_ACTIONS_LEASE: &str = "osc-input.actions";
 /// The shared key the OSC plugin writes its settings to.
 pub const OSC_CONFIG_KEY: &str = "osc-input.config";
+/// The lease a page holds to drive the Speed Editor: one page acts on the
+/// panel at a time, and the panel is open only while somebody holds it.
+pub const SPEED_EDITOR_LEASE: &str = "speed-editor.driver";
+/// What a page's notes about the panel are called (`{what: …}`).
+const SPEED_EDITOR_NOTE: &str = "speed-editor";
+/// The most output reports one message may carry, and the longest of them.
+const PANEL_WRITE_MAX: usize = 16;
+const PANEL_REPORT_MAX: usize = 64;
 
 /// Anything larger is not plugin state; refuse it rather than grow the file.
 const KV_VALUE_MAX: usize = 1 << 20;
@@ -62,6 +78,8 @@ pub enum PlusEvent {
     Action { to: ClientId, name: String, args: Vec<Value> },
     /// Anything else a plugin's page wants to hear: `{what: …}`.
     Note(Value),
+    /// A note for one client only: a panel's input reports, to its driver.
+    To { to: ClientId, body: Value },
 }
 
 struct Link {
@@ -96,6 +114,8 @@ pub struct Plus {
     /// mutex, held across the fetch, so ten pages asking at once cause one
     /// request to the processor rather than ten.
     snaps: tokio::sync::Mutex<HashMap<u32, Snap>>,
+    /// The Speed Editor, if one is plugged in here (speed_editor.rs).
+    speed_editor: speed_editor::Link,
 }
 
 /// How long a relayed thumbnail is served before it is fetched again. The
@@ -107,6 +127,12 @@ const SNAP_QUALITY: u8 = 70;
 
 impl Plus {
     pub fn start(hub: Arc<Hub>, kv_path: PathBuf) -> Arc<Self> {
+        Self::start_with(hub, kv_path, hid::system(), speed_editor::Timing::default())
+    }
+
+    /// As `start`, with the Speed Editor reached through `hid` — a fake panel
+    /// in the tests.
+    pub fn start_with(hub: Arc<Hub>, kv_path: PathBuf, hid: Result<hid::Opener, String>, timing: speed_editor::Timing) -> Arc<Self> {
         let kv = match std::fs::read_to_string(&kv_path) {
             Ok(s) => serde_json::from_str::<Map<String, Value>>(&s).unwrap_or_else(|e| {
                 eprintln!("ignoring unreadable {}: {e}", kv_path.display());
@@ -114,16 +140,25 @@ impl Plus {
             }),
             Err(_) => Map::new(),
         };
-        let plus = Arc::new(Self {
-            hub,
-            kv: Mutex::new(kv),
-            kv_path,
-            tx: broadcast::channel(1024).0,
-            leases: Mutex::new(HashMap::new()),
-            links: Mutex::new(HashMap::new()),
-            next: AtomicU64::new(1),
-            osc: Mutex::new(OscState::default()),
-            snaps: tokio::sync::Mutex::new(HashMap::new()),
+        let plus = Arc::new_cyclic(|me: &Weak<Self>| {
+            let me = me.clone();
+            let on_event: speed_editor::OnEvent = Arc::new(move |ev| {
+                if let Some(plus) = me.upgrade() {
+                    plus.panel_event(ev);
+                }
+            });
+            Self {
+                hub,
+                kv: Mutex::new(kv),
+                kv_path,
+                tx: broadcast::channel(1024).0,
+                leases: Mutex::new(HashMap::new()),
+                links: Mutex::new(HashMap::new()),
+                next: AtomicU64::new(1),
+                osc: Mutex::new(OscState::default()),
+                snaps: tokio::sync::Mutex::new(HashMap::new()),
+                speed_editor: speed_editor::Link::new(hid, timing, on_event),
+            }
         });
         plus.apply_osc_config();
         plus
@@ -186,6 +221,7 @@ impl Plus {
         if name.len() > 128 {
             return;
         }
+        let panel = name == SPEED_EDITOR_LEASE;
         let changed = {
             let mut leases = self.leases.lock().unwrap();
             let queue = leases.entry(name.clone()).or_default();
@@ -207,6 +243,30 @@ impl Plus {
         };
         if let Some(holder) = changed {
             let _ = self.tx.send(PlusEvent::Lease { name, holder });
+        }
+        if panel {
+            self.follow_panel();
+        }
+    }
+
+    /// Take a lease from whoever holds it — **Take over**, for an operator who
+    /// has walked to another machine. The page it was taken from stays in line
+    /// and has it back when this one lets go.
+    pub fn lease_take(&self, name: String, client: ClientId) {
+        if name.len() > 128 {
+            return;
+        }
+        let holder = {
+            let mut leases = self.leases.lock().unwrap();
+            let queue = leases.entry(name.clone()).or_default();
+            queue.retain(|&c| c != client);
+            queue.insert(0, client);
+            Some(client)
+        };
+        let panel = name == SPEED_EDITOR_LEASE;
+        let _ = self.tx.send(PlusEvent::Lease { name, holder });
+        if panel {
+            self.follow_panel();
         }
     }
 
@@ -270,6 +330,67 @@ impl Plus {
     /// Tell every page something (`{what: …}`), as the OSC status is told.
     pub fn note(&self, body: Value) {
         let _ = self.tx.send(PlusEvent::Note(body));
+    }
+
+    // ---- the Speed Editor ----
+
+    /// What every page is told about the panel: its state, and whether some
+    /// page drives it (a page knows from its own lease whether that is itself).
+    pub fn panel_note(&self) -> Value {
+        self.panel_note_of(self.speed_editor.state())
+    }
+
+    fn panel_note_of(&self, state: speed_editor::State) -> Value {
+        json!({
+            "what": SPEED_EDITOR_NOTE,
+            "state": state,
+            "driven": self.lease_holder(SPEED_EDITOR_LEASE).is_some(),
+        })
+    }
+
+    /// A page wants to see the panel: start looking for it, and tell everyone
+    /// what was found.
+    pub fn panel_watch(&self) {
+        self.speed_editor.watch();
+        self.note(self.panel_note());
+    }
+
+    /// Lamps and the wheel's mode, from the page driving the panel. Any other
+    /// page's are dropped: it lost the panel to a Take over, and its own idea
+    /// of what is lit is no longer the operator's.
+    pub fn panel_write(&self, client: ClientId, reports: Vec<Vec<u8>>) {
+        if self.lease_holder(SPEED_EDITOR_LEASE) != Some(client) {
+            return;
+        }
+        let reports: Vec<Vec<u8>> = reports
+            .into_iter()
+            .filter(|r| !r.is_empty() && r.len() <= PANEL_REPORT_MAX)
+            .take(PANEL_WRITE_MAX)
+            .collect();
+        if !reports.is_empty() {
+            self.speed_editor.write(reports);
+        }
+    }
+
+    /// The panel is open while some page holds the driver lease, and only then.
+    fn follow_panel(&self) {
+        self.speed_editor.want(self.lease_holder(SPEED_EDITOR_LEASE).is_some());
+        self.note(self.panel_note());
+    }
+
+    /// From the panel's thread: its state to everyone, its reports to the driver.
+    fn panel_event(&self, ev: speed_editor::Event) {
+        match ev {
+            speed_editor::Event::State(state) => self.note(self.panel_note_of(state)),
+            speed_editor::Event::Report(bytes) => {
+                if let Some(to) = self.lease_holder(SPEED_EDITOR_LEASE) {
+                    // An event, not state: the page must not replay it to a
+                    // listener that arrives late, or a key is pressed twice.
+                    let body = json!({ "what": "speed-editor.report", "event": true, "r": bytes });
+                    let _ = self.tx.send(PlusEvent::To { to, body });
+                }
+            }
+        }
     }
 
     // ---- the thumbnail relay ----
@@ -660,6 +781,93 @@ mod tests {
         let jpeg = super::to_jpeg(&png).unwrap();
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
         assert!(super::to_jpeg(b"not a picture").is_err());
+    }
+
+    /// The bridge's half of the Speed Editor, against a fake panel: the driver
+    /// lease opens and closes it, only the driver hears its keys and lights its
+    /// lamps, and Take over moves all of that to another page.
+    #[tokio::test]
+    async fn the_panel_follows_the_driver_lease_and_answers_only_its_holder() {
+        use crate::speed_editor::{fake, Timing};
+        use std::time::{Duration, Instant};
+
+        fn until(what: &str, check: impl Fn() -> bool) {
+            let end = Instant::now() + Duration::from_secs(3);
+            while !check() {
+                assert!(Instant::now() < end, "timed out waiting for: {what}");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        /// The next report the bridge sent, and who to.
+        fn next_report(rx: &mut tokio::sync::broadcast::Receiver<super::PlusEvent>) -> (super::ClientId, Vec<u64>) {
+            let end = Instant::now() + Duration::from_secs(3);
+            loop {
+                match rx.try_recv() {
+                    Ok(super::PlusEvent::To { to, body }) if body["what"] == "speed-editor.report" => {
+                        let bytes = body["r"].as_array().unwrap().iter().map(|b| b.as_u64().unwrap()).collect();
+                        return (to, bytes);
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        assert!(Instant::now() < end, "no report");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
+            }
+        }
+
+        let panel = fake::panel();
+        let plugged = std::sync::Arc::new(std::sync::Mutex::new(vec![panel.clone()]));
+        let timing = Timing { scan: Duration::from_millis(10), retry: Duration::from_millis(20), read_ms: 2 };
+        let dir = std::env::temp_dir().join(format!("openrcs-panel-test-{}", std::process::id()));
+        let plus = super::Plus::start_with(crate::hub::Hub::start(None), dir.join("plugin-data.json"), Ok(fake::backend(plugged)), timing);
+        let mut rx = plus.subscribe();
+        let lease = super::SPEED_EDITOR_LEASE;
+
+        plus.panel_watch();
+        until("found", || plus.speed_editor.state().present);
+        assert_eq!(panel.lock().unwrap().opens, 0, "watching opens nothing");
+        assert_eq!(plus.panel_note()["driven"], false);
+
+        plus.lease(lease.into(), 1, true);
+        until("answered", || plus.speed_editor.state().authed);
+        plus.lease(lease.into(), 2, true);
+        assert_eq!(plus.lease_holder(lease), Some(1), "the second page waits in line");
+        assert_eq!(plus.panel_note()["driven"], true);
+
+        fake::press(&panel, &[0x0f]);
+        assert_eq!(next_report(&mut rx), (1, vec![4, 0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+
+        plus.panel_write(2, vec![vec![2, 1, 0, 0, 0]]);
+        plus.panel_write(1, vec![vec![2, 2, 0, 0, 0], vec![], vec![0; 65]]);
+        until("the driver's lamp", || !panel.lock().unwrap().written.is_empty());
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(panel.lock().unwrap().written, vec![vec![2, 2, 0, 0, 0]], "only the driver's, and only well-formed");
+
+        plus.lease_take(lease.into(), 2);
+        assert_eq!(plus.lease_holder(lease), Some(2));
+        fake::press(&panel, &[0x33]);
+        assert_eq!(next_report(&mut rx).0, 2, "taken over");
+
+        plus.client_gone(2);
+        assert_eq!(plus.lease_holder(lease), Some(1), "the page it was taken from has it back");
+        assert!(plus.speed_editor.state().connected, "and the panel stayed open");
+
+        plus.client_gone(1);
+        until("let go", || !panel.lock().unwrap().open);
+        until("says so", || !plus.speed_editor.state().connected);
+        assert_eq!(plus.panel_note()["driven"], false);
+    }
+
+    #[tokio::test]
+    async fn without_hid_the_panel_says_why() {
+        let dir = std::env::temp_dir().join(format!("openrcs-nohid-test-{}", std::process::id()));
+        let plus = super::Plus::start_with(crate::hub::Hub::start(None), dir.join("plugin-data.json"), Err("no HID here".into()), Default::default());
+        plus.lease(super::SPEED_EDITOR_LEASE.into(), 1, true);
+        let note = plus.panel_note();
+        assert_eq!(note["state"]["available"], false);
+        assert_eq!(note["state"]["reason"], "no HID here");
+        assert_eq!(note["state"]["connected"], false);
     }
 
     #[test]

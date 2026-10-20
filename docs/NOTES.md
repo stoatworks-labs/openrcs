@@ -605,6 +605,48 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## The Speed Editor moved into the bridge — 2026-10-20
+
+The WebHID port (2026-09-24) could never have worked on a real panel: LivePremier
+Plus found on its first panel that Chrome reads every feature report at the
+largest declared length (33) and the panel refuses its 10-byte challenge read
+that way (`0xE0005000`). LPP moved the panel to its server on node-hid (e25b85e),
+proved it on the panel over USB on macOS (35c8abe: CUT repeatedly, CAM 1–3, wheel
+on opacity, battery, replug) and then into a supervised device host (5ae0b3a).
+I ported the server half to Rust on the `hidapi` crate.
+
+Decisions:
+- **In-process, on a thread of its own**, not a separate device-host process as
+  LPP did. LPP's reasons were a Node native addon and keeping the app's own
+  `package.json` empty; here the bridge is one binary, and hidapi is a cargo
+  feature. The thread is started by the first page that asks and owns the HID
+  handle; dropping the `Link` lets the panel go.
+- **The driver lease is the existing plus.rs lease**, `speed-editor.driver`, plus
+  a new `take` flag. LPP's was an HTTP heartbeat that a background tab let lapse
+  (it had to go to 120 s); here it is the page's websocket, so it doesn't lapse.
+  Reports go to the holder only (`PlusEvent::To`), so the page never filters.
+- **Reports cross as JSON number arrays**, not base64: no extra crate, and none
+  of LPP's quoted-base64 bug (35c8abe) to have.
+- **WebHID dropped, not kept as a fallback.** Never proven anywhere, proven
+  broken on macOS.
+- **hidapi backends:** C on macOS (what node-hid runs), Rust `windows-native` and
+  `linux-native-basic-udev` elsewhere. The default C backend for Windows needs
+  clang-cl to cross-compile with cargo-xwin, which this Mac hasn't got (`llvm-lib`
+  not found); the Rust one makes the same `IOCTL_HID_GET_FEATURE` call at the
+  caller's length and pads writes the same way, and needs nothing. The Linux C
+  backend needs libudev at build time, which zigbuild has no sysroot for.
+- **The page now sets the wheel to RELATIVE on every fresh handshake**, as LPP's
+  surface does. The WebHID version never did and assumed it.
+
+Proven: `cargo test` against a fake panel that refuses a wrong-length read; the
+page half against a fake bridge (`plugin.test.mjs`); the real bridge on macOS with
+no panel (hidapi scanned, two pages shared the lease, Take over, hand-back on
+close). All six release triples build (`cargo build` ×2 Mac, `cargo zigbuild` ×2
+Linux, `cargo xwin` ×2 Windows), needing only system libraries. **Not proven:**
+any real panel through openrcs; anything on Windows, Linux or Bluetooth.
+Allan's Speed Editor is paired to this Mac over Bluetooth and was not connected
+on 2026-10-20.
+
 ## HyperDecks: Mitti refused every command, and LivePremier Plus's later fixes — 2026-10-20
 
 The link (`web/plugins/hyperdeck/link.js`, `pump()`) ended every command with CR LF.
