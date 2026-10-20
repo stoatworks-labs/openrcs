@@ -1,17 +1,26 @@
 /*
- * AWJ: hold a recall into PREVIEW while that destination's take is running.
+ * AWJ: hold a recall while that destination's take is running.
  *
  * ## The failure this exists for
  *
  * On LivePremier, Midra 4K and Alta 4K the processor resolves `PREVIEW`
- * against the transition state, and while a take is in flight the buffer it
- * calls preview is the one arriving on program — the same DOWN/UP suffix rule
- * the views use for `buffers()`. So a memory recalled to preview mid-take
- * lands in the picture that is fading up and rides the take onto program. No
- * error, no warning; the wrong look is simply on air. Seen on the Midra 4K
- * simulator 3.2.29 (Pulse 4K), 2026-10-20: a 3 s take of memory 2, memory 3
- * recalled to preview 0.6 s in, memory 3 on program when it landed. The Cues
- * view walked into it with any autofollow wait shorter than the take time.
+ * against the transition state — and on Midra 4K and Alta 4K `PROGRAM` too;
+ * LivePremier's has not been looked at — so while a take is in flight the
+ * buffer it calls preview is the one arriving on program, and the one it calls
+ * program is the one leaving: the same DOWN/UP suffix rule the views use for
+ * `buffers()`. No error, no warning either way; the wrong look is simply on
+ * air.
+ *
+ * - A memory recalled to preview mid-take lands in the picture fading up and
+ *   rides the take onto program. Midra 4K simulator 3.2.29 (Pulse 4K),
+ *   2026-10-20: a 3 s take of memory 2, memory 3 recalled to preview 0.6 s
+ *   in, memory 3 on program when it landed. The Cues view walked into it with
+ *   any autofollow wait shorter than the take time.
+ * - A memory recalled straight to program mid-take lands in the picture
+ *   fading out, so the cut is gone when the take lands: memory 3 to program
+ *   0.6 s into that take, and memory 2 on program, memory 3 on preview at the
+ *   end. Midra 4K 3.2.29 and Alta 4K 1.3.7 simulators, and the vendor's own
+ *   Web RCS does the same.
  *
  * ## What this does about it
  *
@@ -19,14 +28,19 @@
  * processor reports in flight (`saw`) — and `whenSettled(ids)` is a promise
  * that those destinations' takes have landed, or null when none of them is
  * mid-take (then the caller sends at once, exactly as before). A recall made
- * mid-take is not refused: it waits, and goes into the new preview the moment
- * the take lands.
+ * mid-take, to either side, is not refused: it waits, and goes the moment the
+ * take lands, when preview and program are the buffers they say. A cut made
+ * mid-take is late by what was left of the take, which is the better of the
+ * three ways out: refused, the operator presses again no sooner; and cutting
+ * the take first does not stick on either simulator, since an `xCut`
+ * mid-take lands at once and the running take's own end then flips the
+ * buffers back, old program and all (`xTakeAbort` does nothing at all).
  *
  * It does not wait for ever. Past the take time plus `HOLD_GRACE_MS` (a T-bar
  * parked half way, a status that never arrived) the promise answers
- * `{ok: false}` and the caller must NOT send. Sending late into the arriving
- * buffer is the one outcome this exists to prevent, so "gave up" means "did
- * not send", never "sent anyway".
+ * `{ok: false}` and the caller must NOT send. Sending late into a buffer that
+ * is still moving is the one outcome this exists to prevent, so "gave up"
+ * means "did not send", never "sent anyway".
  *
  * The cue queue on top of it holds a whole cue, recall and take together, so
  * a cue's own TAKE can never go ahead of its recall, and keeps GO order.
@@ -234,10 +248,10 @@ export function createTakeGuard({ state, takeMs, poll = () => {}, onChange = () 
 /**
  * The cue queue: fire cues in GO order, and never into a take.
  *
- * - **A cue that recalls into PREVIEW on a destination mid-take waits** for
- *   that take to land, then runs whole — recall and take together. Holding
- *   only the recall would let the cue's own TAKE go first and take the
- *   previous preview to air.
+ * - **A cue that recalls into a destination mid-take waits** for that take
+ *   to land, then runs whole — recall and take together. Holding only the
+ *   recall would let the cue's own TAKE go first and take the previous
+ *   preview to air. A Cut straight to program waits the same way.
  * - **Cues run in the order GO was pressed.** One fired while an earlier cue
  *   is waiting, or is between its recall and its TAKE, queues behind it and
  *   asks the guard only once that cue's TAKE has gone, which is what puts its
@@ -247,8 +261,8 @@ export function createTakeGuard({ state, takeMs, poll = () => {}, onChange = () 
  *   so. There is no "fire anyway".
  * - **`stop()` cancels whatever is still waiting.** It has not touched the
  *   processor yet.
- * - A cue with no preview targets (a Cut straight to program) is never held,
- *   though it still keeps its place in the order.
+ * - A cue with no targets is never held, though it still keeps its place in
+ *   the order.
  *
  * @param {object} o
  * @param {(ids: string[], onHeld: () => void) => (Promise<{ok: boolean, message?: string}>|null)} o.hold
@@ -327,9 +341,10 @@ export function createCueQueue({ hold, onWaiting = () => {}, onWarning = () => {
 
   return {
     /**
-     * `job` is `{targets, run, ...}`: the destinations it recalls into
-     * preview, and `run()` — the writes, now — which returns a promise that
-     * its TAKE has gone, or nothing when it has no take still to send.
+     * `job` is `{targets, run, ...}`: the destinations it recalls into,
+     * preview or program, and `run()` — the writes, now — which returns a
+     * promise that its TAKE has gone, or nothing when it has no take still
+     * to send.
      */
     fire(job) {
       if (pending) return queue(job, pending, null);

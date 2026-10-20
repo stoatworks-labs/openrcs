@@ -4397,11 +4397,13 @@ function awjLiveRow(what = 'changes') {
 
 // ---------- AWJ: the preview hold ----------
 // A memory recalled to PREVIEW while that destination's take is running lands
-// in the buffer fading up and rides the take onto program (awj-hold.js has the
-// whole story; seen on the Midra 4K simulator). The guard hears every take this
-// page sends and every transition the processor reports, through the store; the
-// Cues and Presets views ask it before they recall into a preview. While live
-// updates are off it reads a guarded destination itself, five times a second.
+// in the buffer fading up and rides the take onto program; one recalled to
+// PROGRAM lands in the buffer fading out and is gone when the take lands
+// (awj-hold.js has the whole story; seen on the Midra 4K and Alta 4K
+// simulators). The guard hears every take this page sends and every transition
+// the processor reports, through the store; the Cues and Presets views ask it
+// before they recall, to either side. While live updates are off it reads a
+// guarded destination itself, five times a second.
 let awjHoldSubs = false;   // the transitions are subscribed for the hold, live updates or not
 awjGuard = createTakeGuard({
   state(id) {
@@ -4421,12 +4423,12 @@ awjGuard = createTakeGuard({
   },
 });
 /**
- * Ask the hold about a recall into these destinations' preview: null to send
- * now, or a promise that answers `{ok}` — send on ok, drop on not. `onHeld` is
- * told when a take is what it waits for. With nothing pushing take state to
- * this page (live updates off, no take of its own running) the cache can miss
- * a take started at the front panel or another client, so the destinations
- * are read first: a few milliseconds on a LAN, and only then.
+ * Ask the hold about a recall into these destinations, to preview or program:
+ * null to send now, or a promise that answers `{ok}` — send on ok, drop on
+ * not. `onHeld` is told when a take is what it waits for. With nothing pushing
+ * take state to this page (live updates off, no take of its own running) the
+ * cache can miss a take started at the front panel or another client, so the
+ * destinations are read first: a few milliseconds on a LAN, and only then.
  */
 function awjHoldFor(ids, onHeld = () => {}) {
   if (!ids.length) return null;
@@ -6502,10 +6504,12 @@ VIEWS.lpshow = (() => {
 // the processor it was written for.
 //
 // Cues go through the preview hold (awj-hold.js): a cue that would recall into
-// a preview still mid-take waits for that take to land and then goes whole,
-// recall and take together, and a GO pressed meanwhile queues behind it. With
-// any autofollow wait shorter than the take time, the next cue used to land in
-// the buffer fading up (Midra 4K simulator, 2026-10-20). A Cut is never held.
+// a destination still mid-take waits for that take to land and then goes
+// whole, recall and take together, and a GO pressed meanwhile queues behind
+// it. With any autofollow wait shorter than the take time, the next cue used
+// to land in the buffer fading up (Midra 4K simulator, 2026-10-20). A Cut
+// waits too: mid-take, program is the buffer fading out, and a cut sent then
+// never reached air (Midra 4K and Alta 4K simulators, the same day).
 VIEWS.lpcues = (() => {
   const key = () => `openrcs.lpcues.${store.meta?.host || 'device'}`;
   let loadedFor = null;
@@ -6537,16 +6541,20 @@ VIEWS.lpcues = (() => {
   // thing it had to say — a cue waiting, sent late, given up on or cancelled.
   let notice = null;
   const named = (job) => `Cue ${cues.indexOf(job.c) + 1 || '?'} · ${job.c.label}`;
-  // A GO that was never sent is not the last cue fired, so GO sends it again.
+  // A GO or a Cut that was never sent is not the last cue fired, so "Last
+  // fired" goes back to where it was before it: GO sends a GO's cue again.
   function unfire(job) {
     clearFollow();
     const i = cues.indexOf(job.c);
-    if (job.go && i >= 0 && cur === i) { cur = i - 1; persist(); }
+    if (i < 0 || cur !== i || job.how === 'arm') return;
+    cur = job.go ? i - 1 : job.was;
+    persist();
   }
+  const again = (job) => (job.go ? 'GO sends it again' : `press ${job.how === 'cut' ? 'Cut' : 'Arm'} again`);
   const queue = createCueQueue({
     hold: (ids, onHeld) => awjHoldFor(ids, onHeld),
     onWaiting: (job, ids) => { job.waited = true; notice = { text: `${named(job)}: waiting for ${ids.join(', ')} to finish its take` }; },
-    onWarning: (job, msg) => { notice = { bad: true, text: `${named(job)} was not sent: ${msg}. Nothing was recalled; GO sends it again.` }; unfire(job); },
+    onWarning: (job, msg) => { notice = { bad: true, text: `${named(job)} was not sent: ${msg}. Nothing was recalled; ${again(job)}.` }; unfire(job); },
     onCancel: (job) => { notice = { text: `${named(job)} cancelled before anything was sent.` }; unfire(job); },
     onChange: () => store.notify(),
   });
@@ -6582,23 +6590,27 @@ VIEWS.lpcues = (() => {
     const dests = destsOf(c);
     if (!dests.length) return;
     const job = {
-      c, go: how === 'go',
-      // A Cut is not held: it is the operator saying "on air, now".
-      targets: how === 'cut' ? [] : dests.map(d => d.id),
+      c, how, go: how === 'go',
+      was: cur,                  // "Last fired" before a Cut, which moves it after this
+      // A Cut waits as well. It is the operator saying "on air, now", but sent
+      // mid-take it lands in the picture fading out and never reaches air; it
+      // goes the moment the take lands instead (NOTES, 2026-10-20, has why
+      // not refuse it or cut the take first).
+      targets: dests.map(d => d.id),
       run() {
         if (!cues.includes(c)) return null;              // deleted while it waited
-        if (job.waited) notice = { text: `${named(job)}: sent once the take had landed` };
+        if (job.waited) notice = { text: `${named(job)}: ${how === 'cut' ? 'cut to program' : 'sent'} once the take had landed` };
         const done = send(c, how === 'cut' ? 'PROGRAM' : 'PREVIEW', how === 'go');
         if (job.go) { const i = cues.indexOf(c); if (i === cur) startFollow(i); }
         return done;
       },
     };
+    if (!queue.busy()) notice = null;   // a notice about a cue long gone
     queue.fire(job);
   }
   function go(i) {
     if (i < 0 || i >= cues.length) return;
     clearFollow();
-    if (!queue.busy()) notice = null;
     cur = i; persist();
     fire(cues[i], 'go');
     store.notify();
@@ -6671,7 +6683,7 @@ VIEWS.lpcues = (() => {
           el('label', { class: 'field' }, 'Autofollow', el('input', { type: 'checkbox', checked: dFollow, onchange: (e) => { dFollow = e.target.checked; } })),
           el('label', { class: 'field' }, 'Wait s', el('input', { class: 'num', type: 'number', min: 0, max: 600, step: 0.5, value: (dWait / 1000).toFixed(1), onchange: (e) => { dWait = Math.round((+e.target.value || 0) * 1000); } })),
           el('button', { class: 'btn primary', onclick: addCue }, 'Add')),
-        el('div', { class: 'hint pad', text: 'Go loads the memory to preview and takes it a quarter of a second later, over the destination’s own take time; Cut loads it straight to program. A Go or Arm while that destination is still taking waits for the take to land, so the memory goes into the new preview rather than the picture fading up, and a GO pressed meanwhile queues behind it; past the take time plus 3 s it gives up and sends nothing. Autofollow counts from when a cue is sent. The list is kept in this browser for this processor; the device has no sequencer of its own.' })));
+        el('div', { class: 'hint pad', text: 'Go loads the memory to preview and takes it a quarter of a second later, over the destination’s own take time; Cut loads it straight to program. A Go, Arm or Cut while that destination is still taking waits for the take to land, so the memory goes into the new preview or program rather than the picture fading up or the one fading out, and a GO pressed meanwhile queues behind it; past the take time plus 3 s it gives up and sends nothing. Autofollow counts from when a cue is sent. The list is kept in this browser for this processor; the device has no sequencer of its own.' })));
   }
   return { enter, render };
 })();
@@ -7396,10 +7408,11 @@ VIEWS.lppresets = (() => {
     if (awjDialect() === 'mng') mngSaveFilters.reset();
   }
 
-  // A recall into a preview whose take is still running would land in the
-  // picture fading up (awj-hold.js), so it waits for the take to land — per
-  // destination, so one screen's take does not hold another's recall. `held`
-  // says what is waiting, what went late, and what was not sent at all.
+  // A recall into a destination whose take is still running would land in the
+  // picture fading up (to preview) or the one fading out (to program), so it
+  // waits for the take to land (awj-hold.js) — per destination, so one
+  // screen's take does not hold another's recall. `held` says what is waiting,
+  // what went late, and what was not sent at all.
   let held = null;
   function recall(slot) {
     const b = bank();
@@ -7419,12 +7432,9 @@ VIEWS.lppresets = (() => {
         for (const d of u.dests) D.refresh(d);
         setTimeout(() => { for (const d of u.dests) D.refresh(d); }, 300);
       };
-      // Straight to program is never held: it is not the case that rides a take.
-      const what = `${b.label} ${slot} into ${b.targets === 'none' ? 'every' : u.dests[0].id} preview`;
+      const what = `${b.label} ${slot} into ${b.targets === 'none' ? 'every' : u.dests[0].id} ${to.toLowerCase()}`;
       let waited = false;
-      const wait = to === 'PREVIEW'
-        ? awjHoldFor(u.dests.map(d => d.id), () => { waited = true; held = { text: `${what}: held until the take lands` }; store.notify(); })
-        : null;
+      const wait = awjHoldFor(u.dests.map(d => d.id), () => { waited = true; held = { text: `${what}: held until the take lands` }; store.notify(); });
       if (!wait) { go(); continue; }
       wait.then((r) => {
         if (r.ok) { go(); if (waited) held = { text: `${what}: sent ${(r.waitedMs / 1000).toFixed(1)} s later, once the take had landed` }; }
