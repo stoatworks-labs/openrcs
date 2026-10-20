@@ -1,0 +1,9 @@
+# DaVinci Resolve Speed Editor (USB 1edb:da0e), for openrcs-server.
+#
+# The server opens the panel's /dev/hidraw node itself, and hidraw nodes are
+# root-only out of the box. uaccess hands the node to the user logged in at
+# the machine's own screen and keyboard; MODE keeps it from everyone else.
+#
+# The .deb and .rpm packages install this to /usr/lib/udev/rules.d. From the
+# tarball, copy it to /etc/udev/rules.d and replug the panel.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", MODE="0660", TAG+="uaccess"
