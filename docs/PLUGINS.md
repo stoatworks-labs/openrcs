@@ -71,7 +71,10 @@ Mitti didn't work at first. Its HyperDeck emulation answers `103 unsupported`
 to a command ending in CR LF, and that was how the HyperDecks plugin ended every
 one. It ends them with LF now (LivePremier Plus's fix), and a real Mitti 2.8.19
 has answered it through a real bridge and page: connected, its model and
-transport read, and a stop answered. Its playlist was empty, so a clip list,
+transport read, and a stop answered. Mitti also never answers a bare
+`slot info`, which held every connect for 3 s. The link now asks
+`slot info: slot id: N`, which the real Mitti answered through the link over a
+plain socket (not yet through the bridge). Its playlist was empty, so a clip list,
 play and the rules have still only met a stand-in that answers as Mitti does
 (`web/plugins/hyperdeck/link.test.mjs`). No real HyperDeck has been run at all.
 

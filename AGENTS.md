@@ -391,6 +391,11 @@ std binary and may use crates. Keep the split.
   `hyperdeck/link.js` sends `\n` (LivePremier Plus d0093db). `link.test.mjs`
   fails if it goes back. A real Mitti 2.8.19 has answered it, with an empty
   playlist only (NOTES, 2026-10-20).
+- **HyperDeck `slot info` is asked by number** (`slotQuery`), once the
+  transport has named the slot. A real Mitti 2.8.19 never answers the bare
+  form, and with one command in flight that held every connect for
+  `REPLY_TIMEOUT_MS` (LivePremier Plus 34045e0). `link.test.mjs` fails if it
+  goes back.
 - **Plugin data is the show's and lives in the bridge** (`plugin-data.json`,
   keys `<plugin>.<name>`); the hosted demo falls back to localStorage. Cues,
   Keys, the layer bank and working areas are still per-browser localStorage,

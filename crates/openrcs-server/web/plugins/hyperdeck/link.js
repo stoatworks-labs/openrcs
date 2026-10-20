@@ -14,7 +14,7 @@
  *   — unless we sent the stop or goto in the last moment.
  */
 
-import { ReplyParser, isAsync, isError, readTransport, readClips, readDevice, readSlot, clipPosition, COMMANDS, RECORD_COMMANDS, profileOf } from './protocol.js';
+import { ReplyParser, isAsync, isError, readTransport, readClips, readDevice, readSlot, clipPosition, slotQuery, COMMANDS, RECORD_COMMANDS, profileOf } from './protocol.js';
 
 const REPLY_TIMEOUT_MS = 3000;
 const PLAY_POLL_MS = 250;
@@ -57,8 +57,10 @@ export class DeckLink {
     if (this.profile.notify) void this.request('notify: transport: true slot: true');
     void this.request('device info');
     void this.refreshClips();
-    void this.request('slot info');
-    void this.request('transport info');
+    // The transport first: its `slot id` is the slot to ask about. Asked
+    // bare, Mitti never answers, and everything queued behind it waited out
+    // REPLY_TIMEOUT_MS on every connect (LivePremier Plus 34045e0).
+    void this.request('transport info').then(() => this.request(slotQuery(this.transport.slot)));
     this.schedulePoll();
   }
   schedulePoll() {

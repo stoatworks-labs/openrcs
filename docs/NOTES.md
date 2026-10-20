@@ -680,12 +680,29 @@ drive, and a `.mitti2` file is an NSKeyedArchiver plist too big to fake. Mitti's
 spacing (`protocol version:1.11`, `loop : false`) is as LivePremier Plus recorded it,
 and the parser trims both.
 
-New on 2.8.19, and not fixed: a bare `slot info` gets **no answer at all**, not even a
-103, while `slot info: slot id: 1` answers 202 at once. The link sends `slot info` on
-every connect, so against Mitti it waits out `REPLY_TIMEOUT_MS` (3 s) before the
-`transport info` queued behind it goes out. Nothing breaks; the first transport state
-is just late. The link is LivePremier Plus's (and automitti's), so the fix belongs
-there first.
+New on 2.8.19: a bare `slot info` gets **no answer at all**, not even a 103, while
+`slot info: slot id: 1` answers 202 at once. The link sent `slot info` on every connect,
+so against Mitti it waited out `REPLY_TIMEOUT_MS` (3 s) before the `transport info`
+queued behind it went out. Nothing broke. The first transport state was 3 s late, and
+the disk never showed.
+
+**Fixed later the same day**, upstream first (LivePremier Plus 34045e0, automitti
+f2b2a9f) and then here. The link asks for the transport first, then for
+`slot info: slot id: <the transport's slot id>` (`slotQuery` in `protocol.js`, which uses
+1 when the deck says `none` or doesn't answer). Blackmagic's *HyperDeck Ethernet
+Protocol* (December 2024) says the bare form means the selected slot, so a two-slot
+HyperDeck gets asked about the same slot as before. That comes from the document; no
+deck has confirmed it.
+
+What the real Mitti said when I asked by hand (read-only, LF-ended): nothing in 8 s to
+`slot info` or to `slot info: slot id: 0`; `202 … status: mounted` (`MITTI_DISK`) to
+`slot id: 1`; `202 … status: empty` to `slot id: 2`; and `slot count: 1` in
+`device info`. The test's real-deck mode now waits for the `202` too. Against Mitti
+2.8.19 it got all six replies (`500`, `209`, `204`, `205`, `208`, `202`) in 11 ms,
+sending `slot info: slot id: 1` and no bare form. The stand-in in `link.test.mjs` now
+says nothing to a bare `slot info` either, and the slot test fails on the old link (I
+checked). **Not re-run after this change:** the real bridge and page. The link was
+driven over a plain socket standing in for `host.link()`.
 
 LivePremier Plus's other fixes since the port, checked here the same day:
 
