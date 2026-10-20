@@ -647,6 +647,18 @@ any real panel through openrcs; anything on Windows, Linux or Bluetooth.
 Allan's Speed Editor is paired to this Mac over Bluetooth and was not connected
 on 2026-10-20.
 
+**The Linux packages ship the udev rule** (`packaging/linux/`, same day). The
+server's `.deb`/`.rpm` install it as `70-openrcs-speed-editor.rules`, the tray
+app's as `70-openrcs-launcher-speed-editor.rules`: both packages can be
+installed at once, and dpkg refuses a second package that owns the same path. A
+postinstall reloads the rules and triggers `hidraw`, and swallows any failure.
+`uaccess` follows the seat's active login, so on a headless box (the appliance
+shape the server `.deb` is for) it gives the panel to nobody; the guide gives a
+`GROUP=` rule for that. Checked: the nfpm step run verbatim with nfpm 2.41.1 on
+a dummy binary, both arches, contents and scripts read back; the launcher's
+config parsed by tauri-utils 2.10.1. **Not checked:** Tauri's Linux bundler
+(it only runs on Linux), and any install on a Linux machine.
+
 ## HyperDecks: Mitti refused every command, and LivePremier Plus's later fixes — 2026-10-20
 
 The link (`web/plugins/hyperdeck/link.js`, `pump()`) ended every command with CR LF.

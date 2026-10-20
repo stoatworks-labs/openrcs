@@ -133,6 +133,16 @@ jobs:
           contents:
             - src: ./openrcs-server
               dst: /usr/bin/openrcs-server
+            # hidraw is root-only out of the box; this lets the desktop user's
+            # server open a Speed Editor. The launcher's .deb ships the same
+            # rule under another name, since dpkg won't let two packages own
+            # one file.
+            - src: ../packaging/linux/70-openrcs-speed-editor.rules
+              dst: /usr/lib/udev/rules.d/70-openrcs-speed-editor.rules
+              file_info:
+                mode: 0644
+          scripts:
+            postinstall: ../packaging/linux/postinstall.sh
           EOF
           ( cd dist && nfpm package -f nfpm.yaml -p deb && nfpm package -f nfpm.yaml -p rpm )
           rm -f dist/nfpm.yaml

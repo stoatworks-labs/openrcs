@@ -155,7 +155,10 @@ lamps out and lets the panel go, and nothing holds it while no page is driving
 it. A page you reload carries on driving.
 
 On Linux the server reads the panel through `/dev/hidraw`, which usually only
-root can open. Give your user access with a udev rule, then unplug the panel
+root can open. The `.deb` and `.rpm` packages, the server's and the tray app's
+alike, install a udev rule that gives the panel to whoever is logged in at the
+machine's own screen and keyboard, and apply it to a panel that's already
+plugged in. From the `.tar.gz`, add the rule yourself, then unplug the panel
 and plug it back in:
 
 ```
@@ -163,11 +166,21 @@ and plug it back in:
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", MODE="0660", TAG+="uaccess"
 ```
 
+That rule follows the desktop login, so on a box nobody is logged in at, with
+the server started over SSH or as a service, it gives the panel to no one but
+root. There, add a rule that names a group the server's user is in instead
+(`plugdev` on Debian and Ubuntu), and replug:
+
+```
+# /etc/udev/rules.d/71-openrcs-speed-editor-group.rules
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1edb", ATTRS{idProduct}=="da0e", MODE="0660", GROUP="plugdev"
+```
+
 How far it's proven: the handshake is the one LivePremier Plus has run on a real
 panel over USB on macOS (CUT, CAM keys, the wheel, the battery level and a
 replug). openrcs's own build has been tested against a fake panel and run with
 no panel plugged in, and hasn't met a real one yet, on any platform. Windows,
-Linux and Bluetooth are untried. Try it on your own panel before a show, and
+Linux (the packaged udev rule included) and Bluetooth are untried. Try it on your own panel before a show, and
 shout if it misbehaves.
 
 ## Workspace

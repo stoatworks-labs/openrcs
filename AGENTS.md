@@ -60,6 +60,7 @@ crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   web/                  vanilla ES-module SPA, no build step
   web/plugins/<id>/     one folder per plugin (docs/PLUGINS.md); PLUGIN_INDEX in app.js lists them
 protocol/*.json         source of truth for the variable tables
+packaging/linux/        the Speed Editor udev rule + postinstall, in both .deb/.rpm pairs
 docs/PROTOCOL.md        the wire protocol
 docs/comparison.json    feature parity vs the vendor RCS, per family; edit this
 docs/COMPARISON.md      GENERATED from it by scripts/gen-comparison.py
