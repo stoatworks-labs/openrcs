@@ -49,13 +49,21 @@ function fakeClock() {
   };
 }
 
-// ---- a pretend processor: one take time per destination, pushes its state changes
+// ---- a pretend processor: one take time per destination, pushes its state changes.
+// It keeps which memory each buffer holds and resolves PREVIEW and PROGRAM the
+// way the simulators do, by the transition's suffix: mid-take, program is the
+// buffer leaving air and preview the one arriving.
 function fakeDevice(clock, { takeMs = 3000, pushes = true } = {}) {
   const st = new Map();          // id -> { transition, moving }
   const times = new Map();
+  const bufs = new Map();        // id -> { UP, DOWN }: the memory each buffer holds
   const log = [];
   let guard = null;
   const set = (id, v) => { st.set(id, v); if (pushes && guard) guard.saw(`DeviceObject/transition/$screen/@items/${id.slice(1)}/status/@props/transition`); };
+  const side = (id, to) => {
+    const pgm = (st.get(id)?.transition || 'AT_DOWN').endsWith('UP') ? 'UP' : 'DOWN';
+    return to === 'PROGRAM' ? pgm : pgm === 'UP' ? 'DOWN' : 'UP';
+  };
   const dev = {
     log, st,
     attach(g) { guard = g; },
@@ -74,7 +82,12 @@ function fakeDevice(clock, { takeMs = 3000, pushes = true } = {}) {
       clock.setTimeout(() => set(id, { transition: `EFFECT_FROM_${from.slice(3)}`, moving: true }), 5);
       if (!parked) clock.setTimeout(() => set(id, { transition: to, moving: false }), dev.takeMs(id));
     },
-    recall(id, slot) { log.push(`recall ${id} M${slot}`); },
+    recall(id, slot, to = 'PREVIEW') {
+      log.push(`recall ${id} M${slot}${to === 'PROGRAM' ? ' to program' : ''}`);
+      bufs.set(id, { ...bufs.get(id), [side(id, to)]: slot });
+    },
+    /** The memories on program and preview now. */
+    onAir(id) { const b = bufs.get(id) || {}; return { program: b[side(id, 'PROGRAM')], preview: b[side(id, 'PREVIEW')] }; },
   };
   return dev;
 }
@@ -127,6 +140,37 @@ function rig(opts = {}) {
   await clock.advance(100);
   assert.equal(guard.whenSettled(['S2']), null);
   assert.ok(guard.whenSettled(['S1', 'S2']), 'a master over both waits for S1');
+}
+
+// ---- a recall straight to program mid-take. Sent at once it lands in the buffer
+// fading out, and the cut is gone when the take lands — what the Midra 4K and
+// Alta 4K simulators did, and what the Cues and Presets views used to do.
+{
+  const { clock, dev } = rig();
+  dev.rest('S1');
+  dev.recall('S1', 1, 'PROGRAM'); dev.recall('S1', 2);
+  dev.take('S1');
+  await clock.advance(600);
+  dev.recall('S1', 3, 'PROGRAM');
+  await clock.advance(3000);
+  assert.deepEqual(dev.onAir('S1'), { program: 2, preview: 3 }, 'the cut never reached air');
+}
+// …held, it goes the moment the take lands, and stays.
+{
+  const { clock, dev, guard } = rig();
+  dev.rest('S1');
+  dev.recall('S1', 1, 'PROGRAM'); dev.recall('S1', 2);
+  dev.take('S1');
+  await clock.advance(600);
+  const p = guard.whenSettled(['S1']);
+  assert.ok(p, 'held mid-take, to program as to preview');
+  p.then((r) => { if (r.ok) dev.recall('S1', 3, 'PROGRAM'); });
+  await clock.advance(2399);
+  assert.deepEqual(dev.onAir('S1'), { program: 1, preview: 2 }, 'nothing sent mid-take');
+  await clock.advance(1);
+  assert.deepEqual(dev.onAir('S1'), { program: 3, preview: 1 }, 'on air as the take landed');
+  await clock.advance(5000);
+  assert.deepEqual(dev.onAir('S1'), { program: 3, preview: 1 });
 }
 
 // ---- a T-bar parked half way: give up after the take time + HOLD_GRACE_MS, and say so
@@ -260,12 +304,14 @@ function cueRig(opts = {}) {
     onWarning: (job, msg) => warnings.push([job.n, msg]),
     onCancel: (job) => cancelled.push(job.n),
   });
-  // A cue as the Cues view builds it: recall, then the take a quarter of a second later.
-  const cue = (n, { take = true, targets = ['S1'] } = {}) => ({
-    n, targets: take ? targets : [],
+  // A cue as the Cues view builds it: recall to preview, then the take a quarter
+  // of a second later — or a Cut, straight to program with no take. Both hold
+  // for their destinations.
+  const cue = (n, { cut = false, targets = ['S1'] } = {}) => ({
+    n, targets,
     run() {
-      dev.recall('S1', n);
-      if (!take) return null;
+      dev.recall('S1', n, cut ? 'PROGRAM' : 'PREVIEW');
+      if (cut) return null;
       return new Promise((res) => clock.setTimeout(() => { dev.take('S1'); res(); }, 250));
     },
   });
@@ -349,20 +395,53 @@ function cueRig(opts = {}) {
   assert.deepEqual(dev.log, ['recall S1 M8', 'take S1', 'recall S1 M9']);
 }
 
-// A Cut (no preview targets) is never held, but keeps its place behind a waiting cue.
+// A Cut waits for a running take like any cue, goes to air as it lands, and
+// keeps its place behind a GO — then waits for the take that GO started.
 {
-  const { clock, dev, q, cue } = cueRig();
+  const { clock, dev, q, cue, waited } = cueRig();
   dev.rest('S1');
-  assert.equal(q.fire(cue(10, { take: false })).waiting, false);
-  assert.deepEqual(dev.log, ['recall S1 M10'], 'nothing running: straight out');
+  assert.equal(q.fire(cue(10, { cut: true })).waiting, false);
+  assert.deepEqual(dev.log, ['recall S1 M10 to program'], 'nothing running: straight out');
+  dev.recall('S1', 9);
   dev.take('S1');
-  assert.equal(q.fire(cue(11, { take: false })).waiting, false, 'a cut is not held by a take');
+  await clock.advance(600);
+  assert.equal(q.fire(cue(11, { cut: true })).waiting, true, 'a cut is held by a take');
+  await clock.advance(2399);
+  assert.equal(dev.log.length, 3, 'nothing sent mid-take');
+  await clock.advance(1);
+  assert.deepEqual(dev.log.slice(3), ['recall S1 M11 to program']);
+  assert.deepEqual(dev.onAir('S1'), { program: 11, preview: 10 });
   q.fire(cue(12));
-  q.fire(cue(13, { take: false }));
+  q.fire(cue(13, { cut: true }));
   await clock.advance(1000);
-  assert.deepEqual(dev.log, ['recall S1 M10', 'take S1', 'recall S1 M11']);
+  assert.deepEqual(dev.log.slice(4), ['recall S1 M12', 'take S1'], 'the cut did not go into the take ahead of it');
   await clock.advance(2500);
-  assert.deepEqual(dev.log.slice(3), ['recall S1 M12', 'take S1', 'recall S1 M13']);
+  assert.deepEqual(dev.log.slice(4), ['recall S1 M12', 'take S1', 'recall S1 M13 to program']);
+  assert.deepEqual(dev.onAir('S1'), { program: 13, preview: 11 });
+  assert.deepEqual(waited, [11, 13]);
+}
+
+// A Cut into a T-bar left half way gives up, sends nothing and says so; Hold cancels a waiting one.
+{
+  const { clock, dev, q, cue, warnings } = cueRig();
+  dev.rest('S1');
+  dev.take('S1', { parked: true });
+  q.fire(cue(14, { cut: true }));
+  await clock.advance(3000 + HOLD_GRACE_MS);
+  assert.deepEqual(dev.log, ['take S1']);
+  assert.deepEqual(warnings.map(([n]) => n), [14]);
+  assert.match(warnings[0][1], /still mid-take/);
+}
+{
+  const { clock, dev, q, cue, cancelled } = cueRig();
+  dev.rest('S1');
+  dev.take('S1');
+  q.fire(cue(15, { cut: true }));
+  await clock.advance(500);
+  assert.equal(q.stop(), 1);
+  assert.deepEqual(cancelled, [15]);
+  await clock.advance(10000);
+  assert.deepEqual(dev.log, ['take S1'], 'nothing sent once the take landed');
 }
 
 // A hold that only checks first (live updates off: read, then decide) is not a wait.

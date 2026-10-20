@@ -605,6 +605,80 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## A cut made while a take was running — 2026-10-20
+
+The open item from the preview hold (further down, same date): a memory recalled
+straight to PROGRAM while that destination's take is running lands in the
+buffer fading out. Proved again before deciding anything, on fresh private
+copies of the vendor simulators (Midra 4K 3.2.29 as a Pulse 4K on AWJ 10681,
+web 3041; Alta 4K 1.3.7 as a Zenith 200 on 10682, web 3042). Screen 1, memories
+1–3 differing only in layer 1's source, take time 3.0 s, M1 on program and M2 on
+preview, TAKE at 0:
+
+| at +0.6 s | Midra 4K | Alta 4K |
+|---|---|---|
+| M3 to PROGRAM | loads the outgoing buffer; M2 on program, M3 on preview when the take lands | same |
+| `xCut` alone | `AT_*` within 5 ms, then the take's own end (+3.0 s) flips it back: M1 on program again | same, +3.0 s |
+| `xCut`, then M3 to PROGRAM | M3 on air at 0.6 s, then M1 back on program at +3.2 s, M3 on preview | same, +2.9 s |
+| `xTakeAbort` | accepted and echoed; the take runs to its end | same |
+| wait for `AT_*`, then M3 to PROGRAM | M3 on program, M1 on preview, and it stays | not run |
+
+**The vendor's Web RCS does nothing about it.** In its own UI on the Midra sim,
+Take and then screen memory 3 to program 4 ms later: the same outcome, with no
+refusal and no warning. Its Take Cut pressed 0.6 s into a take: `AT_UP` at once,
+then `AT_DOWN` 3.1 s after the take began, with the old program back. Its bundle
+(3.2.29) has an in-transition test (`EFFECT_FROM_*`) and uses it only to style
+the Take button; it never writes `xTakeAbort`. It pulses every trigger `false`
+then `true`.
+
+**Three ways out; Allan picked the hold.** Hold the cut until the take lands,
+late by whatever is left of the take. Cut the running take first (`xCut`, then
+recall): the table says that puts the old program back on air a few seconds
+later, on both sims. Or refuse with a message: the operator presses again, and
+no sooner than the hold would have sent it. LivePremier Plus never holds a Cut,
+so this is where openrcs and LPP part.
+
+**The fix reuses the preview hold whole.** A cue's Cut is now a job with
+targets, like a Go, so it waits for that destination's take, keeps its place
+behind a GO (and so waits for the take that GO started), gives up after the take
+time + 3 s without sending anything, and **Hold** cancels it. A Cut that never
+went puts "Last fired" back where it was and says "press Cut again". Presets "to
+program" asks `awjHoldFor` exactly as "to preview" does. And any new Go, Arm or
+Cut clears the cue notice when nothing is waiting, not only a Go: a Cut that went
+at once used to leave the previous cue's "cut once the take had landed" on
+screen. The fake device in `awj-hold.test.mjs` now keeps which memory each
+buffer holds and resolves PROGRAM and PREVIEW by the suffix, so the tests assert
+what ends up on air, not just the order of the writes.
+
+**Verified after the fix**, openrcs 0.11.0 plus this change, run from the
+worktree, live updates off, a watcher on a second socket:
+
+- Midra, Cues: GO M2, then Cut M3 pressed 0.35 s into the take. It said
+  "waiting for S1 to finish its take"; the take landed at +3.07 s and the recall
+  to PROGRAM went 1 ms after `AT_UP`. M3 on program, M1 on preview.
+- Midra, Presets "to program" on S1 during a 10 s take from a second client:
+  the read caught it, "held until the take lands", sent 1 ms after `AT_UP`
+  ("sent 6.4 s later"). M3 on program, M1 on preview.
+- Midra, Cues: Cut 6.3 s into a 10 s take from a second client: went 0 ms after
+  `AT_UP`.
+- Midra, Cues: T-bar parked half way from a second client, then Cut. It waited,
+  gave up at 13.0 s (the page still had the earlier 10 s take time cached, and
+  the deadline is only ever lengthened), nothing reached the device, and "Last
+  fired" went back to "Nothing fired yet".
+- Midra, Cues: Cut 5.9 s into a 10 s take, Hold 0.7 s later: "cancelled before
+  anything was sent", and nothing was sent when the take landed.
+- Alta, Cues: GO M2, Cut M3 0.6 s later, in both directions (`EFFECT_FROM_DOWN`
+  to `AT_UP`, and `EFFECT_FROM_UP` to `AT_DOWN`): the cut went 1–2 ms after the
+  landing, M3 on program and M1 on preview. A Cut at rest went at once.
+
+**Not run:** LivePremier (same code, and nobody has checked how it resolves
+PROGRAM mid-take either), a master memory cut, an auxiliary.
+
+**Still exposed:** openrcs's own **Cut** (Screens, Show, Cut all) pressed while a
+take is running sends `xCut`, and on both sims the take's end then puts the old
+program back. Holding it wouldn't help, since a cut after the take lands swaps
+the buffers again, so it needs its own decision. Not touched.
+
 ## The Speed Editor moved into the bridge — 2026-10-20
 
 The WebHID port (2026-09-24) could never have worked on a real panel: LivePremier
@@ -778,10 +852,11 @@ padlock to press):
 - Cues: the whole cue waits, so its own TAKE can't overtake its recall; a GO
   pressed meanwhile queues behind it, in order; **Hold** cancels a waiting cue,
   and a cue that was never sent steps "Last fired" back so GO sends it again;
-  **Cut** is never held. Autofollow now counts from when a cue is sent, not from
-  when GO was pressed.
+  **Cut** is never held (changed the same day: "A cut made while a take was
+  running"). Autofollow now counts from when a cue is sent, not from when GO was
+  pressed.
 - Presets: held per destination, so a take on S1 doesn't hold S2's recall. A
-  recall to program is never held.
+  recall to program is never held (changed the same day, as above).
 - **Live updates off was a hole of its own.** The page hears nothing then, so a
   take started anywhere else was invisible: in the first test of a T-bar parked
   from a second client, the page's cache said `AT_DOWN`, the sim was at
@@ -819,7 +894,8 @@ padlock to press):
   landed M2 was on program and M3 on preview; the cut never really reached air.
   Same through Presets "to program" mid-take. It is a different failure from the
   one fixed here, and holding a Cut is a decision (LPP doesn't), so it is left
-  as it was.
+  as it was. **Fixed the same day**: Allan picked holding it ("A cut made while
+  a take was running").
 - Editing "preview" layers on Show or Layers mid-take edits the arriving buffer,
   by the same suffix rule.
 - Recalls from Companion, the front panel or another browser are not this page's

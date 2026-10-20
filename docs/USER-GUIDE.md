@@ -500,9 +500,9 @@ those with more on them, plus **Show**, **Layers**, **Inputs**, **Outputs**,
   LivePremier, and on Midra 4K and Alta 4K the **Screen** (200), **Aux** (200)
   and **Master** (50) banks as chips. Pick preview or program, pick the
   destination (or every one in service), and tap a slot to recall it; a slot the
-  device reports as empty can't be recalled. A recall to preview on a
-  destination that's still taking waits for the take to land, as a cue does,
-  and says so under the bank. With a single destination selected,
+  device reports as empty can't be recalled. A recall on a destination that's
+  still taking, to preview or to program, waits for the take to land, as a cue
+  does, and says so under the bank. With a single destination selected,
   the slot on its program is outlined red and the one on its preview green. On
   Midra 4K and Alta 4K the bank also writes: **Save** stores the chosen
   destination's program or preview into a slot, **Label** names one, and
@@ -538,9 +538,10 @@ those with more on them, plus **Show**, **Layers**, **Inputs**, **Outputs**,
   recall and take together, and a GO pressed meanwhile queues behind it. If the
   take hasn't landed by its take time plus 3 seconds (a T-bar left half way),
   the cue isn't sent at all, the list says so, and GO sends it again. **Hold**
-  cancels a cue that's still waiting. **Cut** is never held, but a cut made
-  while a take is running loads the side fading out, so it's gone when the take
-  lands: let the take finish first.
+  cancels a cue that's still waiting. **Cut** waits the same way: a memory cut
+  to program while a take is running would load the side fading out, and be
+  gone when the take lands, so the cut goes the moment the take lands instead,
+  late by whatever was left of the take. If it gives up, press Cut again.
 - **Plan** (every AWJ family): with plan mode on, every value you set on the
   other pages is staged here instead of written, reads show the staged values
   so the look previews as you build it, and **Push** writes the lot when a

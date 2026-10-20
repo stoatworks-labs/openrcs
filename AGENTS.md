@@ -169,15 +169,23 @@ std binary and may use crates. Keep the split.
   slot number first and refuses when any is occupied; `USE_EXISTING_MEMORIES`
   writes no bank slot. Never fire a master save without handling this.
 - **A recall into PREVIEW mid-take loads the buffer fading up**, and rides the
-  take to air: the processor resolves `PREVIEW` against the transition state
-  (Midra 4K and Alta 4K simulators, 2026-10-20). Every AWJ recall to preview goes
-  through `awjHoldFor` (`web/awj-hold.js`): it waits for that destination's take
-  to land and, past the take time + 3 s, sends nothing and says so. The Cues view
-  runs cues through `createCueQueue`, which holds the whole cue and keeps GO
-  order. A new recall path must ask it too. A recall straight to program is
-  never held, though it lands in the buffer fading out (NOTES, same date). The
-  guard learns of takes from `store.pset` and of transitions from `pval`/`psnap`,
-  so an AWJ write that bypasses `store.pset` is a take the hold can't see.
+  take to air; **one into PROGRAM loads the buffer fading out**, and is gone when
+  the take lands. The processor resolves both against the transition state
+  (Midra 4K and Alta 4K simulators, 2026-10-20; the vendor's Web RCS does the
+  same). Every AWJ recall, to either side, goes through `awjHoldFor`
+  (`web/awj-hold.js`): it waits for that destination's take to land and, past
+  the take time + 3 s, sends nothing and says so. That includes a cue's Cut and
+  Presets "to program": held, not refused (a decision; NOTES, 2026-10-20). The
+  Cues view runs cues through `createCueQueue`, which holds the whole cue and
+  keeps GO order. A new recall path must ask it too. The guard learns of takes
+  from `store.pset` and of transitions from `pval`/`psnap`, so an AWJ write that
+  bypasses `store.pset` is a take the hold can't see.
+- **Never cut a running take to make room for a recall.** On both simulators an
+  `xCut` mid-take lands at once and then the running take's own end flips the
+  buffers back, old program and all, about the take time after it began; the
+  vendor's Take Cut button does the same. `xTakeAbort` is accepted and does
+  nothing. openrcs's own Cut button pressed mid-take walks into this; it is not
+  fixed (NOTES, same date).
 - **Step Back is an edit undo here**, not LiveCore's return to the previous
   look: `xStepBack` reverts the last change to layer settings and moves nothing
   after a take (simulator, 2026-09-15). Say so wherever it is offered.
