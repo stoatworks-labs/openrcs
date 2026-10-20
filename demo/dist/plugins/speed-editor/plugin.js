@@ -1,10 +1,20 @@
 /*
- * Speed Editor — a DaVinci Resolve Speed Editor driving the processor, over
- * WebHID from the page itself.
+ * Speed Editor — a DaVinci Resolve Speed Editor driving the processor.
  *
- * Ported from LivePremier Plus. The panel's protocol — the challenge/answer
- * handshake, the reports, the lamps — is awj-surface's, vendored as
- * speed-editor.js. The layout is LivePremier Plus's, on openrcs's verbs:
+ * The panel is held by the bridge, not the page (src/speed_editor.rs has the
+ * detail). The first port opened it from the page over WebHID, and WebHID
+ * cannot complete the panel's handshake: Chrome reads every feature report at
+ * the length of the largest one the panel declares, and the panel refuses a
+ * read of its 10-byte challenge at that length — found on a real panel by
+ * LivePremier Plus, which moved it to its server and proved it there. So the
+ * bridge finds the panel, answers its challenge and keeps the answer renewed,
+ * finds it again after a replug, and passes its reports through; this page
+ * turns them into writes and sends back the lamps. The mapping stays here, as
+ * it does in LivePremier Plus, because the store and the take are here.
+ *
+ * Ported from LivePremier Plus. The protocol tables are awj-surface's,
+ * vendored as speed-editor.js (the handshake itself now runs in the bridge).
+ * The layout is LivePremier Plus's, on openrcs's verbs:
  *
  *   CAM 1–9           put that input on the selected layer
  *   SMART INSRT … OUT  (the eight keys top left) select layer 1–8
@@ -16,85 +26,120 @@
  *   JOG / SHTL / SCRL the wheel moves opacity / position H / position V —
  *                     shifted: the T-bar / size H / size V
  *
- * WebHID: Chromium only, a secure context only (localhost, or HTTPS through
- * the Remote access plugin), and choosing the panel needs a click; after that
- * the browser remembers it. Quit Resolve first — both would hear every key.
- * The handshake lapses; it is redone at half its stated lease.
+ * One page drives it. Start asks the bridge for the `speed-editor.driver`
+ * lease; the bridge opens the panel only while some page holds it, sends its
+ * keys to the holder alone and drops lamps from anyone else. A second page
+ * that starts waits in line and has the panel when the first stops or closes;
+ * Take over moves it at once. The lease lasts as long as the page's socket, so
+ * a tab in the background keeps it.
  *
- * Never yet run against a panel on openrcs. The protocol code is the same
- * that LivePremier Plus runs; this file's mapping onto LiveCore/Midra
- * variables is fixture-tested only.
+ * Any browser, any address: the page never touches the panel. The panel has
+ * to be plugged into the machine openrcs-server runs on. Quit DaVinci Resolve
+ * first — both would hear every key.
+ *
+ * Proven how far: docs/PLUGINS.md. The bridge's half is tested against a fake
+ * panel; this file's mapping onto LiveCore/Midra variables is fixture-tested
+ * only.
  */
 
-import { VENDOR_ID, PRODUCT_ID, KEY_BY_CODE, KEY_BY_NAME, authenticate, decodeReport, ledReport, jogLedReport } from './speed-editor.js';
+import { KEY_BY_CODE, KEY_BY_NAME, JOG_MODE, decodeReport, ledReport, jogLedReport, jogModeReport } from './speed-editor.js';
 
-const FILTERS = [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }];
+const ID = 'speed-editor';
 const LAYER_KEYS = ['smart-insert', 'append', 'ripple-owr', 'close-up', 'place-on-top', 'src-owr', 'in', 'out'];
 const JOG_FACES = ['jog', 'shtl', 'scrl'];
 const UNITS = 512;       // wheel units per step, as awj-surface sizes them
+const STARTED_KEY = 'openrcs.speed-editor.started';
 
 export default {
   id: 'speed-editor',
   name: 'Speed Editor',
-  description: 'A DaVinci Resolve Speed Editor driving the surface over WebHID — CAM keys put inputs on the selected layer, the wheel rides opacity, position, size and the T-bar.',
+  description: 'A DaVinci Resolve Speed Editor, plugged into the machine openrcs runs on, driving the surface — CAM keys put inputs on the selected layer, the wheel rides opacity, position, size and the T-bar.',
   setup(host) {
     const { el, store } = host;
-    const hid = () => navigator.hid;
     const sel = { screen: 0, layer: 0, bus: 'pvw', shift: false };
-    let device = null, authed = false, authTimer = null, error = '', held = new Set(), face = 'jog', residue = 0, leds = 0, battery = null;
+    const lease = host.lease('driver');
+    // The bridge's word on the panel: { state: {available, present, connected,
+    // authed, battery, handshakes, …}, driven }.
+    let server = null;
+    let started = false, looked = false;
+    let held = new Set(), face = 'jog', residue = 0, leds = -1;
     const activity = [];
     const log = (t) => { activity.unshift(`${new Date().toLocaleTimeString()}  ${t}`); activity.length = Math.min(activity.length, 30); host.notify(); };
 
-    const io = (d) => ({
-      sendFeature: (bytes) => d.sendFeatureReport(bytes[0], bytes.subarray(1)),
-      getFeature: async (id, length) => {
-        const view = await d.receiveFeatureReport(id);
-        const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-        if (bytes.length >= length && bytes[0] === id) return bytes;
-        const out = new Uint8Array(bytes.length + 1); out[0] = id; out.set(bytes, 1); return out;
-      },
-    });
-    const send = (bytes) => { if (device?.opened) device.sendReport(bytes[0], bytes.subarray(1)).catch(() => {}); };
+    const st = () => server?.state ?? null;
+    const driving = () => started && lease.held();
+    const live = () => driving() && !!st()?.authed;
+    // Per tab, not per browser: a reload carries on driving, a second tab of
+    // the surface does not join the queue by itself.
+    const remember = (on) => { try { if (on) sessionStorage.setItem(STARTED_KEY, '1'); else sessionStorage.removeItem(STARTED_KEY); } catch { /* private mode */ } };
+    const remembered = () => { try { return sessionStorage.getItem(STARTED_KEY) === '1'; } catch { return false; } };
 
-    async function choose() {
-      error = '';
-      if (!hid()) { error = window.isSecureContext ? 'This browser has no WebHID — use Chrome or Edge.' : 'This page is not a secure context, so WebHID is hidden. Use http://localhost here, or HTTPS (Remote access plugin).'; host.notify(); return; }
-      try { const [d] = await hid().requestDevice({ filters: FILTERS }); if (d) await open(d); } catch (err) { error = `Could not choose the panel: ${err.message}`; host.notify(); }
+    // ---- the bridge ----
+    // Output reports, batched: one render can light several lamps at once.
+    let outbox = [];
+    function send(bytes) {
+      if (!live()) return;
+      if (!outbox.length) queueMicrotask(flush);
+      outbox.push([...bytes]);
     }
-    async function reconnect() {
-      if (!hid() || device) return;
-      try { const d = (await hid().getDevices()).find(x => x.vendorId === VENDOR_ID && x.productId === PRODUCT_ID); if (d) await open(d); } catch { /* none granted */ }
+    function flush() {
+      while (outbox.length) host.bridge({ t: 'hid', id: ID, op: 'write', reports: outbox.splice(0, 16) });
     }
-    async function open(d) {
-      try { if (!d.opened) await d.open(); } catch (err) { error = `Could not open the panel: ${err.message}. Is DaVinci Resolve running? Quit it and try again.`; host.notify(); return; }
-      device = d; d.addEventListener('inputreport', onReport); log(`opened ${d.productName || 'Speed Editor'}`);
-      await auth();
-    }
-    async function auth(attempt = 1) {
-      clearTimeout(authTimer);
-      if (!device) return;
-      try {
-        const lease = await authenticate(io(device));
-        if (!authed) log(`authenticated (lease ${lease} s)`);
-        authed = true; error = '';
-        send(jogLedReport(1 << (JOG_FACES.indexOf(face) === 1 ? 1 : JOG_FACES.indexOf(face) === 2 ? 2 : 0)));
-        lamps();
-        authTimer = setTimeout(() => auth(), (lease || 600) * 500);
-      } catch (err) {
-        authed = false; log(`authentication failed: ${err.message}`);
-        if (attempt < 3) authTimer = setTimeout(() => auth(attempt + 1), 15000);
-        else error = 'The panel would not authenticate. Unplug it, plug it back in, and choose it again.';
-      }
+    const watch = () => { if (host.bridged()) host.bridge({ t: 'hid', id: ID, op: 'watch' }); };
+
+    function absorb(next) {
+      const was = st(), now = next.state;
+      server = next;
+      if (was && was.present !== now.present) log(now.present ? `${now.product || 'panel'} plugged in` : 'panel unplugged');
+      if (was && now.error && now.error !== was.error) log(now.error);
+      if (now.authed && !was?.authed) log(`authenticated (lease ${now.lease} s)`);
+      // A fresh handshake: a panel that has been unplugged has forgotten its
+      // lamps and its wheel's mode.
+      if (driving() && now.authed && now.handshakes !== was?.handshakes) reset();
+      // A bridge that restarted is looking for nothing until asked again.
+      if (now.available && !now.watching && (started || looked)) watch();
       host.notify();
     }
-    function drop() {
-      clearTimeout(authTimer);
-      if (device) { device.removeEventListener('inputreport', onReport); device.close().catch(() => {}); }
-      device = null; authed = false;
+
+    host.onBridge((m) => {
+      if (m.what === ID) absorb(m);
+      else if (m.what === `${ID}.report` && driving()) onReport(Uint8Array.from(m.r || []));
+    });
+
+    lease.onChange((isHolder) => {
+      if (!started) return;
+      if (isHolder) { log('driving the panel from this page'); if (st()?.authed) reset(); }
+      else log(server?.driven ? 'another page has the panel' : 'no longer driving the panel');
+      host.notify();
+    });
+
+    function start() {
+      if (!host.bridged()) return;
+      started = true;
+      remember(true);
+      held = new Set();
+      residue = 0;
+      lease.want(true);
+      log('started');
     }
-    if (hid()) {
-      hid().addEventListener('connect', (e) => { if (e.device.vendorId === VENDOR_ID && e.device.productId === PRODUCT_ID && !device) open(e.device); });
-      hid().addEventListener('disconnect', (e) => { if (e.device === device) { log('panel unplugged'); drop(); host.notify(); } });
+    function stop() {
+      // Lamps out while this page may still write them: the bridge drops
+      // writes from a page that no longer holds the lease.
+      if (live()) { send(ledReport(0)); send(jogLedReport(0)); flush(); }
+      started = false;
+      remember(false);
+      lease.want(false);
+      sel.shift = false;
+      log('stopped');
+    }
+
+    /** The panel as this page wants it: every lamp right, the wheel reporting movement. */
+    function reset() {
+      leds = -1;
+      residue = 0;
+      send(jogModeReport(JOG_MODE.RELATIVE));
+      send(jogLedReport(1 << KEY_BY_NAME.get(face).jogLed));
+      lamps();
     }
 
     // ---- what the keys do ----
@@ -106,7 +151,7 @@ export default {
       if (sel.shift) on('snap');
       const src = store.val('PRinp', sel.screen, ctx(), sel.layer) || 0;
       if (src >= 1 && src <= 9) on(`cam${src}`);
-      if (bits !== leds) { leds = bits >>> 0; send(ledReport(leds)); }
+      if (bits !== leds) { leds = bits; send(ledReport(bits)); }
     }
     function press(name) {
       const cam = /^cam(\d)$/.exec(name);
@@ -149,13 +194,9 @@ export default {
       host.placeLayer(s, c, l, r);
     }
 
-    function onReport(ev) {
-      const bytes = new Uint8Array(ev.data.byteLength + 1);
-      bytes[0] = ev.reportId;
-      bytes.set(new Uint8Array(ev.data.buffer, ev.data.byteOffset, ev.data.byteLength), 1);
+    function onReport(bytes) {
       const r = decodeReport(bytes);
-      if (!r) return;
-      if (r.type === 'battery') { battery = r; host.notify(); return; }
+      if (!r || r.type === 'battery') return;   // the bridge keeps the battery level
       if (r.type === 'jog') {
         residue += r.value;
         const steps = Math.trunc(residue / UNITS);
@@ -166,39 +207,55 @@ export default {
       for (const name of held) if (!now.has(name) && name === 'snap') sel.shift = false;
       for (const name of now) {
         if (held.has(name)) continue;
-        if (JOG_FACES.includes(name)) { face = name; residue = 0; send(jogLedReport(1 << [0, 1, 2][JOG_FACES.indexOf(name)])); continue; }
+        if (JOG_FACES.includes(name)) { face = name; residue = 0; send(jogLedReport(1 << KEY_BY_NAME.get(name).jogLed)); continue; }
         press(name);
       }
       held = now;
       lamps();
       host.notify();
     }
-    store.subscribe(() => { if (authed) lamps(); });
+    store.subscribe(() => { if (live()) lamps(); });
 
     host.view('speededitor', 'Speed Editor', {
-      enter() { reconnect(); },
+      enter() { looked = true; watch(); },
       render() {
-        const status = !device ? 'No panel connected.' : authed
-          ? `${device.productName || 'Speed Editor'} — connected${battery ? `, battery ${battery.level}%${battery.charging ? ' (charging)' : ''}` : ''}`
-          : `${device.productName || 'Speed Editor'} — waiting for the handshake…`;
+        const s = st();
+        const name = s?.product || 'Speed Editor';
+        const battery = s?.battery ? `, battery ${s.battery.level}%${s.battery.charging ? ' (charging)' : ''}` : '';
+        const status = !host.bridged() ? 'The hosted demo has no bridge, so no panel.'
+          : !s ? 'Asking the bridge…'
+          : !s.available ? (s.reason || 'This build has no USB panel support.')
+          : !s.present && !s.connected ? 'No panel. Plug it into the machine openrcs runs on, by USB.'
+          : !s.connected ? (driving() ? `${name} — opening…` : `${name} — found. Press Start to use it.`)
+          : !s.authed ? `${name} — waiting for the handshake…`
+          : `${name} — connected${battery}.`;
+        const elsewhere = !!server?.driven && !lease.held();
         return el('div', {},
           el('div', { class: 'view-head' }, el('h1', { text: 'Speed Editor' }),
             el('span', { class: 'hint', text: status })),
           el('div', { class: 'panel' },
             el('div', { class: 'row' },
-              device ? el('button', { class: 'btn ghost', onclick: () => { drop(); host.notify(); } }, 'Disconnect') : el('button', { class: 'btn primary', onclick: choose }, 'Choose panel…'),
+              started
+                ? el('button', { class: 'btn ghost', onclick: () => stop() }, 'Stop')
+                : el('button', { class: 'btn primary', onclick: () => start(), disabled: !host.bridged() || s?.available === false }, 'Start'),
+              elsewhere ? el('span', { class: 'chip bad' }, 'Another page is driving it') : null,
+              elsewhere && started ? el('button', { class: 'btn', onclick: () => lease.take() }, 'Take over') : null,
               el('span', { class: 'chip on' }, `Screen ${sel.screen + 1}`),
               el('span', { class: 'chip on' }, host.layerName(sel.layer, sel.screen)),
               el('span', { class: 'chip ' + (sel.bus === 'pgm' ? 'bad' : 'on') }, sel.bus === 'pgm' ? 'PROGRAM' : 'preview'),
               sel.shift ? el('span', { class: 'chip bad' }, 'SHIFT') : null,
               el('span', { class: 'hint', text: `wheel: ${face.toUpperCase()}` })),
-            error ? el('div', { class: 'hint pad bad', text: error }) : null,
-            el('div', { class: 'hint pad', text: 'CAM 1–9: input on the selected layer · the eight keys top left: layer 1–8 · SOURCE / TIMELINE: screen 1 / 2 · CUT: cut · DIS, STOP/PLAY: take · TRANS: edit preview ⇄ program · SNAP: shift · JOG / SHTL / SCRL: opacity / position H / position V — shifted: T-bar / size H / size V. Quit DaVinci Resolve first.' })),
+            s?.error && s.available ? el('div', { class: 'hint pad bad', text: s.error }) : null,
+            el('div', { class: 'hint pad', text: 'CAM 1–9: input on the selected layer · the eight keys top left: layer 1–8 · SOURCE / TIMELINE: screen 1 / 2 · CUT: cut · DIS, STOP/PLAY: take · TRANS: edit preview ⇄ program · SNAP: shift · JOG / SHTL / SCRL: opacity / position H / position V — shifted: T-bar / size H / size V.' }),
+            el('div', { class: 'hint pad', text: 'The panel plugs into the machine openrcs runs on, not the one this page is on. One page drives it at a time; a second that starts waits its turn, or takes over. Quit DaVinci Resolve first — both would hear every key.' })),
           el('div', { class: 'panel' }, el('h2', 'Activity'),
             activity.length ? el('div', { class: 'mono', style: 'font-size:12px;white-space:pre-line', text: activity.join('\n') }) : el('div', { class: 'empty-state', text: 'Nothing yet.' })));
       },
     }, { section: 'Setup' });
 
-    reconnect();
+    // A page reloaded while it was driving the panel carries on (a plugin
+    // switched on or off reloads it), as the WebHID version reopened a panel
+    // the browser remembered.
+    if (remembered() && host.bridged()) start();
   },
 };

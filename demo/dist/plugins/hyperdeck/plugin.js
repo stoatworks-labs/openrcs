@@ -22,8 +22,11 @@
  * Rules run on one page only — the `rules` lease — or a clip ending would
  * take once per open page. Every page can still drive a deck by hand.
  *
- * Never run against a real deck from openrcs. The protocol and link are
- * LivePremier Plus's, proven there against a simulator and against Mitti.
+ * The protocol and link are LivePremier Plus's, proven there against a
+ * simulator and against Mitti. From openrcs, a real Mitti 2.8.19 has
+ * connected, been read and answered a stop through the bridge (2026-10-20),
+ * with an empty playlist: a clip list, play and the rules have not met a real
+ * deck, and no real HyperDeck has been run at all.
  */
 
 import { DeckLink } from './link.js';
@@ -235,7 +238,7 @@ export default {
               el('label', { class: 'field' }, 'Port', el('input', { type: 'number', value: draft.port, style: 'width:80px', oninput: e => { draft.port = +e.target.value; } })),
               el('label', { class: 'field' }, 'Kind', host.enumSelect2(draft.profile, PROFILES.map(p => [p.id, p.label]), v => { draft.profile = v; host.notify(); })),
               el('button', { class: 'btn', onclick: addDeck }, 'Add')),
-            el('div', { class: 'hint pad', text: 'Mitti: switch on HyperDeck control in its preferences; its cues are the clips. Never yet run against a real deck from openrcs — prove it on yours before a show.' })),
+            el('div', { class: 'hint pad', text: 'Mitti: switch on HyperDeck control in its preferences; its cues are the clips. A real Mitti has answered openrcs, but only with an empty playlist, and a real HyperDeck never has — prove it on yours before a show.' })),
           log.length ? el('div', { class: 'panel' }, el('h2', 'Activity'), el('div', { class: 'mono', style: 'font-size:12px;white-space:pre-line', text: log.join('\n') })) : null);
       },
     }, { section: 'Program' });

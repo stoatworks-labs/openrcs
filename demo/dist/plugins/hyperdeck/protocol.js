@@ -1,6 +1,9 @@
 /*
  * Vendored from livepremier-plus plugins/hyperdeck/protocol.js — same author,
  * same MIT licence. Pure: no I/O. Change it there and copy it here.
+ *
+ * The ⚠️ below is upstream's. In openrcs a real Mitti 2.8.19 has since
+ * answered the link (docs/NOTES.md, 2026-10-20); a real HyperDeck has not.
  */
 /*
  * The Blackmagic HyperDeck Ethernet Protocol — the words, with no socket.
@@ -228,6 +231,16 @@ export function readSlot(fields) {
   if ('recording time' in fields) out.recordingTime = int(fields['recording time']);
   return out;
 }
+
+/**
+ * The `slot info` line for the active slot, asked by its number. The bare
+ * `slot info` means the same thing in Blackmagic's protocol ("the currently
+ * selected slot"), but a real Mitti 2.8.19 sends no reply to it at all — not
+ * even `103` — and none to `slot id: 0`, while `slot info: slot id: 1`
+ * answers at once. The number is the transport's `slot id`; 1 when the deck
+ * has not said, or says `none`.
+ */
+export const slotQuery = (slot) => `slot info: slot id: ${Number.isInteger(slot) && slot > 0 ? slot : 1}`;
 
 /**
  * Where the playhead is in its clip, in seconds either way — or nulls when
