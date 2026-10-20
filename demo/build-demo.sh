@@ -18,7 +18,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 web="$here/../crates/openrcs-server/web"
 dist="$here/dist"
 
-for f in app.js style.css; do
+for f in app.js awj-hold.js style.css; do
   [ -f "$web/$f" ] || { echo "missing $web/$f" >&2; exit 1; }
 done
 [ -f "$here/fixtures.json" ] || { echo "missing demo/fixtures.json — record it first" >&2; exit 1; }
@@ -44,14 +44,15 @@ version="v$(awk '
 ' "$here/../Cargo.toml")"
 [ "$version" = "v" ] && { echo "no version in Cargo.toml" >&2; exit 1; }
 
-stamp="$(cat "$web/app.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
+stamp="$(cat "$web/app.js" "$web/awj-hold.js" "$web/style.css" "$here/device.js" "$here/demo.css" \
               "$here/demo-footer.js" "$here/support-footer.js" "$here"/fixtures*.json \
               $(find "$web/plugins" -type f ! -name '*.test.mjs' | sort) \
          | shasum -a 256 | cut -c1-8)"
 
 rm -rf "$dist"
 mkdir -p "$dist"
-cp "$web/app.js" "$web/style.css" "$dist/"
+# app.js imports awj-hold.js; without it the page loads nothing at all.
+cp "$web/app.js" "$web/awj-hold.js" "$web/style.css" "$dist/"
 # The plugins are part of the surface: app.js imports each one from
 # plugins/<id>/plugin.js. Tests stay behind.
 (cd "$web" && find plugins -type f ! -name '*.test.mjs' ! -name '.*' | while read -r f; do

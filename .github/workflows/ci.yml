@@ -60,3 +60,4 @@ jobs:
         run: |
           find crates/openrcs-server/web -name '*.js' -print0 | xargs -0 -n1 node --check
           node crates/openrcs-server/web/plugins/console/lang.test.mjs
+          node crates/openrcs-server/web/awj-hold.test.mjs

@@ -1,5 +1,7 @@
 // openrcs control surface — vanilla ES module, no build step.
 
+import { createTakeGuard, createCueQueue } from './awj-hold.js';
+
 // ---------- tiny DOM helper ----------
 // Events go on as handler properties (n.onclick = fn), not through
 // addEventListener: a render patches the live tree rather than replacing it
@@ -368,6 +370,9 @@ const commitGroups = () => { if (store.byMnem.has('GCupd')) store.set('GCupd', [
 //   snapshotUrl(n, tick)        — where to fetch input n's thumbnail, or null
 //                                 for the processor's own URL.
 const HOOKS = { beforeTake: new Set(), afterSet: new Set(), layerLabel: new Set(), midraRecall: new Set(), snapshotUrl: new Set() };
+// AWJ: the take guard (awj-hold.js), built with the dialects below. The store
+// tells it every take this page sends and every transition state it hears.
+let awjGuard = null;
 // A bulk write — a memory re-applied, a show restored, a locked layer held
 // through a take — is not an operator's edit, and a layer-group gang must not
 // follow it: it would apply a recall's changes twice over. Everything written
@@ -532,11 +537,12 @@ class Store {
         for (const [mn, i, v] of m.items) this.state.set(keyOf(mn, i), v);
         break;
       case 'psnap':
-        for (const [path, v] of m.items) this.paths.set(path, v);
+        for (const [path, v] of m.items) { this.paths.set(path, v); awjGuard?.saw(path); }
         break;
       case 'pval':
         this.paths.set(m.p, m.v);
         this.pushLog('rx', `${m.p} = ${JSON.stringify(m.v)}`);
+        awjGuard?.saw(m.p);
         break;
       case 'perr':
         // E12 is how the device says "no such path on this build", which the
@@ -652,6 +658,7 @@ class Store {
     }
     this.send({ t: 'pset', p: path, v });
     this.pushLog('tx', `${path} = ${JSON.stringify(v)}`);
+    awjGuard?.sent(path, v);
   }
   planPathList() { return [...this.planPaths].map(([path, v]) => ({ path, v })); }
   unplanPath(path) { this.planPaths.delete(path); this._persistPlan(); this.notify(); }
@@ -4204,7 +4211,10 @@ const AWJ_DIALECTS = {
     take: (d) => store.pset(LP.take(d.n), true),
     cut: (d) => store.pset(LP.cut(d.n), true),
     refresh(d) { store.pget(LP.transition(d.n)); store.pget(LP.takeStatus(d.n)); },
+    // What the preview hold reads while a take runs with live updates off.
+    pollTake(d) { this.refresh(d); store.pget(LP.takeTime(d.n, true)); store.pget(LP.takeTime(d.n, false)); },
     subscriptions: () => [LP.SUB_SCREENS],
+    takeSubscriptions: () => [LP.SUB_SCREENS],
     // Which memory a buffer holds is published in the bank on this model,
     // keyed by letter, and this surface does not read it yet.
     showsMemory: false,
@@ -4248,12 +4258,16 @@ const AWJ_DIALECTS = {
       store.pget(MNG.memoryId(d, 'UP'));
       store.pget(MNG.memoryId(d, 'DOWN'));
     },
+    // What the preview hold reads while a take runs with live updates off. The
+    // take time too: a recall overwrites it with the memory's own.
+    pollTake(d) { store.pget(MNG.transition(d)); store.pget(MNG.takeTime(d)); },
     // Transitions for every destination, plus the memory bookkeeping of each
     // one in service — a recall made anywhere then shows up here too.
     subscriptions() {
       return [MNG.SUB_TRANSITIONS, MNG.SUB_TALLIES, MNG.SUB_QUICK_PRESET,
         ...this.destinations().flatMap(d => ['UP', 'DOWN'].map(b => MNG.bufferStatus(d, b)))];
     },
+    takeSubscriptions: () => [MNG.SUB_TRANSITIONS],
     // The device's emergency key. Its switch is a flag, not a trigger: true
     // puts the mode's content on every destination the filter includes,
     // false takes it off again.
@@ -4364,7 +4378,12 @@ let awjLive = false;
 let awjViewSubs = () => [];
 function awjApplySubs() {
   if (!isAwj()) return;
-  store.psub(awjLive ? [...new Set([...awj().subscriptions(), ...awjViewSubs()])] : []);
+  // While the preview hold is guarding a take the transitions are pushed even
+  // with live updates off: a tab in the background runs the hold's own reads
+  // at the browser's pace, once a second and then once a minute, and a push is
+  // not throttled.
+  const holding = awjGuard?.guarded().length ? awj().takeSubscriptions() : [];
+  store.psub(awjLive ? [...new Set([...awj().subscriptions(), ...awjViewSubs()])] : holding);
 }
 function setAwjLive(on) { awjLive = on; awjApplySubs(); store.notify(); }
 function awjLiveRow(what = 'changes') {
@@ -4374,6 +4393,52 @@ function awjLiveRow(what = 'changes') {
     el('span', { class: 'hint', text: awjLive
       ? `The device is pushing ${what} to this bridge.`
       : 'This processor tells a client nothing until asked to. Until this is on, what you see is what was last read.' }));
+}
+
+// ---------- AWJ: the preview hold ----------
+// A memory recalled to PREVIEW while that destination's take is running lands
+// in the buffer fading up and rides the take onto program (awj-hold.js has the
+// whole story; seen on the Midra 4K simulator). The guard hears every take this
+// page sends and every transition the processor reports, through the store; the
+// Cues and Presets views ask it before they recall into a preview. While live
+// updates are off it reads a guarded destination itself, five times a second.
+let awjHoldSubs = false;   // the transitions are subscribed for the hold, live updates or not
+awjGuard = createTakeGuard({
+  state(id) {
+    const d = awjDest(id);
+    if (!d || !isAwj()) return {};
+    return { transition: awj().transition(d), moving: !!awj().inFlight(d) };
+  },
+  takeMs(id) {
+    const d = awjDest(id);
+    return d && isAwj() ? Math.max(0, ...awj().takeTimes(d).filter(Number.isFinite)) * 100 : 0;
+  },
+  poll(id) { const d = awjDest(id); if (d && isAwj() && !awjLive) awj().pollTake(d); },
+  onChange() {
+    const on = awjGuard.guarded().length > 0;
+    if (on !== awjHoldSubs) { awjHoldSubs = on; if (!awjLive) awjApplySubs(); }
+    store.notify();
+  },
+});
+/**
+ * Ask the hold about a recall into these destinations' preview: null to send
+ * now, or a promise that answers `{ok}` — send on ok, drop on not. `onHeld` is
+ * told when a take is what it waits for. With nothing pushing take state to
+ * this page (live updates off, no take of its own running) the cache can miss
+ * a take started at the front panel or another client, so the destinations
+ * are read first: a few milliseconds on a LAN, and only then.
+ */
+function awjHoldFor(ids, onHeld = () => {}) {
+  if (!ids.length) return null;
+  const now = awjGuard.whenSettled(ids);
+  if (now) { onHeld(); return now; }
+  if (awjLive || awjHoldSubs) return null;
+  return awjGuard.fresh(ids).then(() => {
+    const w = awjGuard.whenSettled(ids);
+    if (!w) return { ok: true, waitedMs: 0 };
+    onHeld();
+    return w;
+  });
 }
 
 // AWJ writes from a drag: the same 40 ms gate as the mnemonic side, keyed by path.
@@ -6435,6 +6500,12 @@ VIEWS.lpshow = (() => {
 // program; per-cue autofollow with a wait chains them. Neither Web RCS has a
 // sequencer, so this is the surface's own; it lives in this browser, keyed by
 // the processor it was written for.
+//
+// Cues go through the preview hold (awj-hold.js): a cue that would recall into
+// a preview still mid-take waits for that take to land and then goes whole,
+// recall and take together, and a GO pressed meanwhile queues behind it. With
+// any autofollow wait shorter than the take time, the next cue used to land in
+// the buffer fading up (Midra 4K simulator, 2026-10-20). A Cut is never held.
 VIEWS.lpcues = (() => {
   const key = () => `openrcs.lpcues.${store.meta?.host || 'device'}`;
   let loadedFor = null;
@@ -6451,10 +6522,36 @@ VIEWS.lpcues = (() => {
   // Draft for the add row.
   let dBank = null, dSlot = 1, dDest = null, dLabel = '', dFollow = false, dWait = 3000;
 
-  // Autofollow: after a cue with follow, a timer fires the next. Any manual
-  // action cancels it, so a hold is just leaving follow off.
+  // Autofollow: after a cue with follow has been sent, a timer fires the next.
+  // Any manual action cancels it, so a hold is just leaving follow off.
   let followTimer = null, followFrom = -1;
   function clearFollow() { if (followTimer) { clearTimeout(followTimer); followTimer = null; followFrom = -1; } }
+  function startFollow(i) {
+    const c = cues[i];
+    if (!c || !c.follow || i + 1 >= cues.length) return;
+    followFrom = i;
+    followTimer = setTimeout(() => { followTimer = null; followFrom = -1; goNext(); }, Math.max(0, c.wait || 0));
+  }
+
+  // The queue: GO order, and never a recall into a take. `notice` is the last
+  // thing it had to say — a cue waiting, sent late, given up on or cancelled.
+  let notice = null;
+  const named = (job) => `Cue ${cues.indexOf(job.c) + 1 || '?'} · ${job.c.label}`;
+  // A GO that was never sent is not the last cue fired, so GO sends it again.
+  function unfire(job) {
+    clearFollow();
+    const i = cues.indexOf(job.c);
+    if (job.go && i >= 0 && cur === i) { cur = i - 1; persist(); }
+  }
+  const queue = createCueQueue({
+    hold: (ids, onHeld) => awjHoldFor(ids, onHeld),
+    onWaiting: (job, ids) => { job.waited = true; notice = { text: `${named(job)}: waiting for ${ids.join(', ')} to finish its take` }; },
+    onWarning: (job, msg) => { notice = { bad: true, text: `${named(job)} was not sent: ${msg}. Nothing was recalled; GO sends it again.` }; unfire(job); },
+    onCancel: (job) => { notice = { text: `${named(job)} cancelled before anything was sent.` }; unfire(job); },
+    onChange: () => store.notify(),
+  });
+  const waitingOn = (c) => queue.waiting().find(w => w.job.c === c)?.ids || null;
+  const queuedBehind = (c) => queue.queued().some(job => job.c === c);
 
   const bankOf = (c) => D().banks.find(b => b.kind === c.bank) || D().banks[0];
   const destsOf = (c) => {
@@ -6463,32 +6560,54 @@ VIEWS.lpcues = (() => {
     const d = awjDest(c.dest);
     return d && D().destinations().some(x => x.id === d.id) ? [d] : [];
   };
-  /** Recall the cue's memory: to preview and take it (`take`), or straight to program. */
-  function fire(c, take) {
+  /**
+   * The cue's writes, now: recall its memory to preview (`to` PREVIEW, and
+   * take it a quarter of a second later when `take`) or straight to program.
+   * Returns a promise that the take has gone, or null when there is none.
+   */
+  function send(c, to, take) {
     const b = bankOf(c), dests = destsOf(c);
-    if (!dests.length) return;
-    if (b.targets === 'none') D().recall(b, c.slot, null, take ? 'PREVIEW' : 'PROGRAM');
-    else for (const d of dests) D().recall(b, c.slot, d, take ? 'PREVIEW' : 'PROGRAM');
-    // The recall is silent and lands a few tens of milliseconds later; the
-    // take waits for it, and every touched destination is read back after.
-    if (take) setTimeout(() => { for (const d of dests) D().take(d); }, 250);
+    if (!dests.length) return null;
+    if (b.targets === 'none') D().recall(b, c.slot, null, to);
+    else for (const d of dests) D().recall(b, c.slot, d, to);
     const re = () => { for (const d of dests) D().refresh(d); };
     setTimeout(re, 400); setTimeout(re, 1500);
+    if (!take) return null;
+    // The recall is silent and lands a few tens of milliseconds later; the
+    // take waits for it.
+    return new Promise((done) => setTimeout(() => { for (const d of dests) D().take(d); done(); }, 250));
+  }
+  /** Through the queue: `go` (preview + take), `arm` (preview only) or `cut` (program). */
+  function fire(c, how) {
+    const dests = destsOf(c);
+    if (!dests.length) return;
+    const job = {
+      c, go: how === 'go',
+      // A Cut is not held: it is the operator saying "on air, now".
+      targets: how === 'cut' ? [] : dests.map(d => d.id),
+      run() {
+        if (!cues.includes(c)) return null;              // deleted while it waited
+        if (job.waited) notice = { text: `${named(job)}: sent once the take had landed` };
+        const done = send(c, how === 'cut' ? 'PROGRAM' : 'PREVIEW', how === 'go');
+        if (job.go) { const i = cues.indexOf(c); if (i === cur) startFollow(i); }
+        return done;
+      },
+    };
+    queue.fire(job);
   }
   function go(i) {
     if (i < 0 || i >= cues.length) return;
     clearFollow();
-    fire(cues[i], true); cur = i; persist();
-    const c = cues[i];
-    if (c.follow && cur + 1 < cues.length) {
-      followFrom = i;
-      followTimer = setTimeout(() => { followTimer = null; followFrom = -1; goNext(); }, Math.max(0, c.wait || 0));
-    }
+    if (!queue.busy()) notice = null;
+    cur = i; persist();
+    fire(cues[i], 'go');
     store.notify();
   }
   function goNext() { go(cur + 1 < cues.length ? cur + 1 : cur); }
-  function hold() { clearFollow(); store.notify(); }
-  function arm(i) { clearFollow(); const c = cues[i]; const b = bankOf(c); for (const d of destsOf(c)) { if (b.targets === 'none') { D().recall(b, c.slot, null, 'PREVIEW'); break; } D().recall(b, c.slot, d, 'PREVIEW'); } setTimeout(() => { for (const d of destsOf(c)) D().refresh(d); }, 400); store.notify(); }
+  // Hold stops autofollow, and cancels a cue still waiting for a take: it has
+  // not touched the processor yet.
+  function hold() { clearFollow(); queue.stop(); store.notify(); }
+  function arm(i) { clearFollow(); fire(cues[i], 'arm'); store.notify(); }
   function addCue() {
     const b = D().banks.find(x => x.kind === dBank) || D().banks[0];
     const label = dLabel.trim() || (b.targets === 'none' ? `Master ${dSlot}` : `${dDest || ''} · ${b.label.toLowerCase()} ${dSlot}`);
@@ -6505,11 +6624,13 @@ VIEWS.lpcues = (() => {
     const b = bankOf(c);
     const valid = D().presetValid(b, c.slot);
     const target = `${b.label} ${c.slot}${b.targets === 'none' ? '' : ' on ' + (c.dest || '?')}${valid === false ? ' (empty)' : ''}`;
-    return el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i ? ' following' : '') },
+    const waits = waitingOn(c), behind = queuedBehind(c);
+    return el('div', { class: 'cue' + (i === cur ? ' current' : '') + (followFrom === i || waits || behind ? ' following' : '') },
       el('span', { class: 'cue-n', text: i + 1 }),
       el('div', { class: 'cue-main' },
         el('input', { class: 'cue-label-in', type: 'text', value: c.label, onchange: (e) => patch(c, 'label', e.target.value) }),
-        el('div', { class: 'cue-target', text: target + (c.follow ? ` · auto ${(c.wait / 1000).toFixed(1)} s` : '') }),
+        el('div', { class: 'cue-target', text: target + (c.follow ? ` · auto ${(c.wait / 1000).toFixed(1)} s` : '')
+          + (waits ? ` · waiting for ${waits.join(', ')} to finish its take` : behind ? ' · queued behind an earlier cue' : '') }),
         el('input', { class: 'cue-notes-in', type: 'text', placeholder: 'notes', value: c.notes || '', onchange: (e) => patch(c, 'notes', e.target.value) })),
       el('label', { class: 'cue-follow', title: 'Autofollow to the next cue after the wait' },
         el('input', { type: 'checkbox', checked: !!c.follow, onchange: (e) => patch(c, 'follow', e.target.checked) }), ' auto ',
@@ -6517,7 +6638,7 @@ VIEWS.lpcues = (() => {
       el('div', { class: 'cue-acts' },
         el('button', { class: 'btn ghost small', title: 'Load to preview only', onclick: () => arm(i) }, 'Arm'),
         el('button', { class: 'btn pgm small', title: 'Load to preview and take', onclick: () => go(i) }, 'Go'),
-        el('button', { class: 'btn ghost small', title: 'Straight to program, no transition', onclick: () => { clearFollow(); fire(c, false); cur = i; persist(); store.notify(); } }, 'Cut'),
+        el('button', { class: 'btn ghost small', title: 'Straight to program, no transition', onclick: () => { clearFollow(); fire(c, 'cut'); cur = i; persist(); store.notify(); } }, 'Cut'),
         el('button', { class: 'btn ghost small', onclick: () => move(i, -1) }, '▲'),
         el('button', { class: 'btn ghost small', onclick: () => move(i, 1) }, '▼'),
         el('button', { class: 'btn ghost small', onclick: () => del(i) }, '✕')));
@@ -6536,9 +6657,10 @@ VIEWS.lpcues = (() => {
       el('div', { class: 'panel' },
         el('div', { class: 'row wrap' },
           el('button', { class: 'btn pgm big', disabled: !next, onclick: goNext }, next ? `GO  ${cur + 2} · ${next.label}` : 'GO (end of list)'),
-          el('button', { class: 'btn ghost', disabled: !followTimer, onclick: hold }, 'Hold'),
-          el('button', { class: 'btn ghost', onclick: () => { clearFollow(); cur = -1; persist(); store.notify(); } }, 'Reset to top'),
+          el('button', { class: 'btn ghost', disabled: !followTimer && !queue.busy(), title: 'Stop autofollow, and cancel a cue still waiting for a take to land', onclick: hold }, 'Hold'),
+          el('button', { class: 'btn ghost', onclick: () => { clearFollow(); queue.stop(); notice = null; cur = -1; persist(); store.notify(); } }, 'Reset to top'),
           el('span', { class: 'hint', text: cur >= 0 ? `Last fired: ${cur + 1} · ${cues[cur]?.label ?? ''}` : 'Nothing fired yet.' })),
+        notice ? el('div', { class: 'hint pad' + (notice.bad ? ' bad' : ''), text: notice.text }) : null,
         cues.length ? el('div', { class: 'cue-list' }, ...cues.map(cueRow)) : el('div', { class: 'hint pad', text: 'No cues yet. Add one below: a master memory, or a screen or auxiliary memory on one destination.' })),
       el('div', { class: 'panel' }, el('h2', 'Add a cue'),
         el('div', { class: 'row wrap' },
@@ -6549,7 +6671,7 @@ VIEWS.lpcues = (() => {
           el('label', { class: 'field' }, 'Autofollow', el('input', { type: 'checkbox', checked: dFollow, onchange: (e) => { dFollow = e.target.checked; } })),
           el('label', { class: 'field' }, 'Wait s', el('input', { class: 'num', type: 'number', min: 0, max: 600, step: 0.5, value: (dWait / 1000).toFixed(1), onchange: (e) => { dWait = Math.round((+e.target.value || 0) * 1000); } })),
           el('button', { class: 'btn primary', onclick: addCue }, 'Add')),
-        el('div', { class: 'hint pad', text: 'Go loads the memory to preview and takes it a quarter of a second later, over the destination’s own take time; Cut loads it straight to program. The list is kept in this browser for this processor; the device has no sequencer of its own.' })));
+        el('div', { class: 'hint pad', text: 'Go loads the memory to preview and takes it a quarter of a second later, over the destination’s own take time; Cut loads it straight to program. A Go or Arm while that destination is still taking waits for the take to land, so the memory goes into the new preview rather than the picture fading up, and a GO pressed meanwhile queues behind it; past the take time plus 3 s it gives up and sends nothing. Autofollow counts from when a cue is sent. The list is kept in this browser for this processor; the device has no sequencer of its own.' })));
   }
   return { enter, render };
 })();
@@ -7274,26 +7396,43 @@ VIEWS.lppresets = (() => {
     if (awjDialect() === 'mng') mngSaveFilters.reset();
   }
 
+  // A recall into a preview whose take is still running would land in the
+  // picture fading up (awj-hold.js), so it waits for the take to land — per
+  // destination, so one screen's take does not hold another's recall. `held`
+  // says what is waiting, what went late, and what was not sent at all.
+  let held = null;
   function recall(slot) {
     const b = bank();
     const D = awj();
-    if (b.targets === 'none') {
-      D.recall(b, slot, null, target);
-      const all = D.destinations();
-      for (const d of all) D.refresh(d);
-      setTimeout(() => { for (const d of all) D.refresh(d); }, 300);
-      return;
-    }
-    const dests = dest === null ? candidates(b) : [awjDest(dest)];
+    const to = target;
     // Recalls are silent — the device answers a write with nothing — so the
     // surface reads the affected destination back rather than assuming it
     // landed. Twice: the load takes a few tens of milliseconds, and a read
     // that arrives inside that window sees the buffer's old memory.
-    for (const d of dests) {
-      D.recall(b, slot, d, target);
-      D.refresh(d);
+    const units = b.targets === 'none'
+      ? [{ dests: D.destinations(), send: () => D.recall(b, slot, null, to) }]
+      : (dest === null ? candidates(b) : [awjDest(dest)]).map(d => ({ dests: [d], send: () => D.recall(b, slot, d, to) }));
+    held = null;
+    for (const u of units) {
+      const go = () => {
+        u.send();
+        for (const d of u.dests) D.refresh(d);
+        setTimeout(() => { for (const d of u.dests) D.refresh(d); }, 300);
+      };
+      // Straight to program is never held: it is not the case that rides a take.
+      const what = `${b.label} ${slot} into ${b.targets === 'none' ? 'every' : u.dests[0].id} preview`;
+      let waited = false;
+      const wait = to === 'PREVIEW'
+        ? awjHoldFor(u.dests.map(d => d.id), () => { waited = true; held = { text: `${what}: held until the take lands` }; store.notify(); })
+        : null;
+      if (!wait) { go(); continue; }
+      wait.then((r) => {
+        if (r.ok) { go(); if (waited) held = { text: `${what}: sent ${(r.waitedMs / 1000).toFixed(1)} s later, once the take had landed` }; }
+        else held = { bad: true, text: `${what} was not sent: ${r.message}. Recall it again.` };
+        store.notify();
+      });
     }
-    setTimeout(() => { for (const d of dests) D.refresh(d); }, 300);
+    store.notify();
   }
 
   // A write is silent, so the slot and the destinations it touches are read
@@ -7414,6 +7553,7 @@ VIEWS.lppresets = (() => {
           ? el('div', { class: 'hint pad', text: `A master save from ${target.toLowerCase()} also stores every screen and auxiliary in service into its own bank, at the same slot number as the master. Slots already in use block the save.` })
           : null,
         blocked ? el('div', { class: 'hint bad pad', text: blocked }) : null,
+        mode === 'recall' && held ? el('div', { class: 'hint pad' + (held.bad ? ' bad' : ''), text: held.text }) : null,
         mode === 'save' && awjDialect() === 'mng' ? mngSaveFilters.panel(b, dest !== null ? awjDest(dest) : null) : null,
         mode === 'recall' && awjDialect() === 'mng' && b.targets !== 'aux' ? (() => {
           const screens = D.destinations().filter(d => d.kind === 'screen');

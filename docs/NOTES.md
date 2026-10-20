@@ -605,6 +605,116 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## A memory recalled into a preview that was still taking — 2026-10-20
+
+LivePremier Plus found it first (7bacc2b, 4c0bb43, 8e3206e): the processor
+resolves `PREVIEW` against the transition state, and while a take is running the
+buffer it calls preview is the one arriving on program. So a memory recalled to
+preview mid-take loads into the picture fading up and rides the take to air. The
+AWJ Cues view recalled to preview and took a quarter of a second later without
+asking whether the destination was still taking, and the Presets view recalled
+at once. Same bug, here.
+
+**Proven before anything changed**, on private copies of the vendor simulators
+(sessions copied into a scratchpad, ports of their own): Midra 4K 3.2.29 as a
+Pulse 4K on AWJ 10671, and Alta 4K 1.3.7 as a Zenith 200 on 10672. Take time
+3.0 s; screen 1 memories 1–3 differ only in layer 1's source (inputs 1–3).
+
+- At the device, from a second socket: M1 on program, M2 on preview, TAKE, then
+  M3 recalled to PREVIEW 0.6 s in. M3 loaded into UP while `EFFECT_FROM_DOWN`
+  ran, and it was M3 on program when the take landed; M2 never reached air. The
+  Alta did the same the other way round (`EFFECT_FROM_UP`, DOWN).
+- Through openrcs's own Cues view (0.10.0, a watcher on a second socket): cue 2
+  (M2, autofollow 1.0 s), then cue 3 (M3). Cue 3's recall went into UP at +1.0 s,
+  mid-fade, and its TAKE at +1.25 s was swallowed by the take already running,
+  which landed once. End state M3 on program and **M1** on preview; it should
+  be M3 and M2.
+- A second `xTake` during a take does not start another one. The running take
+  landed 3.85 s after it began, against 3.0 s, so it looks as if it restarts the
+  clock. I didn't chase it.
+
+**The fix is LPP's hold without its padlock** (`web/awj-hold.js`, ported from
+`plugins/preview-lock/core.js` and `src/core/cuestack.js`; openrcs has no vendor
+padlock to press):
+
+- The store tells a guard every take this page sends (`xTake` on either object
+  model, from any view or plugin, since it watches `store.pset`) and every
+  transition it hears. A recall to PREVIEW asks `awjHoldFor` first and waits
+  until that destination's take has landed.
+- It gives up after the take time + 3 s, sends nothing and says so. The deadline
+  is read before the recall (a Midra 4K recall overwrites `takeTime`) and only
+  ever lengthened. A later recall into the same parked take gives up at once.
+- A take this page sent that never starts, or a destination that never reports
+  its transition, is let go after 1.5 s.
+- Cues: the whole cue waits, so its own TAKE can't overtake its recall; a GO
+  pressed meanwhile queues behind it, in order; **Hold** cancels a waiting cue,
+  and a cue that was never sent steps "Last fired" back so GO sends it again;
+  **Cut** is never held. Autofollow now counts from when a cue is sent, not from
+  when GO was pressed.
+- Presets: held per destination, so a take on S1 doesn't hold S2's recall. A
+  recall to program is never held.
+- **Live updates off was a hole of its own.** The page hears nothing then, so a
+  take started anywhere else was invisible: in the first test of a T-bar parked
+  from a second client, the page's cache said `AT_DOWN`, the sim was at
+  `EFFECT_FROM_DOWN`, and the cue recalled straight into it. Now a recall with
+  nothing pushing reads the destination's transition first (one round trip,
+  400 ms at most). And while a take is guarded the transitions are subscribed
+  whatever the toggle says, because a hidden tab runs the hold's own reads at
+  the browser's pace: once a second, and after five minutes hidden Chrome can
+  stretch chained timers to a minute.
+
+**Verified after the fix**, same simulators, live updates off:
+
+- Midra: cue 2 with autofollow 1 s. Cue 3 waited and went 128 ms after `AT_UP`,
+  on the polls alone (that run came before the subscription). GO, GO 100 ms
+  apart (inside cue 2's quarter second): cue 3 queued, waited and went 1 ms
+  after `AT_UP`. Both ended with M3 on program and M2 on preview.
+- Midra: T-bar parked half way from a second client, page cache stale. The read
+  caught `EFFECT_FROM_UP`, the cue waited, gave up at 6.0 s, nothing reached the
+  device, and "Last fired" stepped back.
+- Midra: a take from a second client, GO 0.4 s later, Hold at 1.2 s. Cancelled,
+  and nothing was sent after the take landed.
+- Midra, Presets, every screen, a take running on S1 only: S2's recall went at
+  once, S1's 1 ms after `AT_DOWN`, into the new preview ("sent 2.4 s later").
+- Alta: cue 2 with autofollow 1 s. Cue 3's recall went 2 ms after `AT_UP`; end
+  state right.
+- **Not run:** LivePremier. Same code, with the `$screenAuxGroup` spellings, unit
+  tested only. LPP notes that the LivePremier simulator doesn't push the
+  in-flight states, so there the hold rests on `status/take` and its own reads.
+  An auxiliary destination: spelling unit tested, never driven.
+
+**Still exposed, deliberately not touched:**
+
+- **A recall straight to PROGRAM mid-take lands in the buffer fading OUT.** M3 to
+  PROGRAM 0.6 s into a take of M2 loaded the outgoing buffer, and when the take
+  landed M2 was on program and M3 on preview; the cut never really reached air.
+  Same through Presets "to program" mid-take. It is a different failure from the
+  one fixed here, and holding a Cut is a decision (LPP doesn't), so it is left
+  as it was.
+- Editing "preview" layers on Show or Layers mid-take edits the arriving buffer,
+  by the same suffix rule.
+- Recalls from Companion, the front panel or another browser are not this page's
+  and are not held.
+- The quarter second between a cue's recall and its take is a browser timer: in
+  a hidden tab it ran 700 ms. That was true before this change too.
+- The processor keeps one subscription list per connection, and the bridge has
+  one connection for every page, so a page with live updates off that guards a
+  take writes the list twice (transitions, then nothing) and silences another
+  page's live updates. A view opening with live updates off already did that.
+
+**LiveCore / Midra (10500) Cues: the same shape, unproven.** `recallMemory` with
+a take never asks whether a take is running. An untimed LiveCore take is the
+device's own load-and-take verb (`PSlot`/`PMlot`). A timed one loads into "the
+bank not on air" (`PSprf`/`PMprf` 1 + `PSloa`/`PMloa`) and sweeps the T-bar
+300 ms later from the client, and which bank is "not on air" halfway through a
+sweep is the device's call. A Midra re-applies the preset into context 1 and
+pulses `GCtak` 300 ms later. A GO pressed during a running take, or an
+autofollow wait shorter than the fade, is the same exposure on paper. The list's
+own **Standby next** already waits fade + 1.2 s before loading over the bank
+it's leaving, so someone met this before. I have no LiveCore or Midra simulator
+here (the research repo isn't on this machine) and the NeXtage is ask-first, so
+it is left alone and unfixed until something proves it.
+
 ## A still on a layer drew as a green box — 2026-10-09
 
 Reported by Allan on the NeXtage 16 (192.168.2.140): a frame on a layer showed in

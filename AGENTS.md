@@ -56,6 +56,7 @@ crates/openrcs-server/  bridge server (tokio/axum) + web control surface
   src/plus.rs           the plugins' half: shared data, leases, TCP links, OSC, thumbnail relay
   src/remote.rs         remote access: tailscale serve, tailnet/ZeroTier listeners
   web/                  vanilla ES-module SPA, no build step
+  web/awj-hold.js       the AWJ preview hold and cue queue (no DOM; awj-hold.test.mjs)
   web/plugins/<id>/     one folder per plugin (docs/PLUGINS.md); PLUGIN_INDEX in app.js lists them
 protocol/*.json         source of truth for the variable tables
 docs/PROTOCOL.md        the wire protocol
@@ -164,6 +165,16 @@ std binary and may use crates. Keep the split.
   Pulse 4K lost screen memory 1. The surface writes those to the master's own
   slot number first and refuses when any is occupied; `USE_EXISTING_MEMORIES`
   writes no bank slot. Never fire a master save without handling this.
+- **A recall into PREVIEW mid-take loads the buffer fading up**, and rides the
+  take to air: the processor resolves `PREVIEW` against the transition state
+  (Midra 4K and Alta 4K simulators, 2026-10-20). Every AWJ recall to preview goes
+  through `awjHoldFor` (`web/awj-hold.js`): it waits for that destination's take
+  to land and, past the take time + 3 s, sends nothing and says so. The Cues view
+  runs cues through `createCueQueue`, which holds the whole cue and keeps GO
+  order. A new recall path must ask it too. A recall straight to program is
+  never held, though it lands in the buffer fading out (NOTES, same date). The
+  guard learns of takes from `store.pset` and of transitions from `pval`/`psnap`,
+  so an AWJ write that bypasses `store.pset` is a take the hold can't see.
 - **Step Back is an edit undo here**, not LiveCore's return to the previous
   look: `xStepBack` reverts the last change to layer settings and moves nothing
   after a take (simulator, 2026-09-15). Say so wherever it is offered.
@@ -374,6 +385,7 @@ cargo test
 cargo clippy --all-targets        # must be clean
 cargo build --no-default-features # no_std must keep building
 node crates/openrcs-server/web/plugins/console/lang.test.mjs   # the command language
+node crates/openrcs-server/web/awj-hold.test.mjs               # the AWJ preview hold
 ```
 
 The surface itself is checked in a browser against the demo (`demo/build-demo.sh`,
