@@ -358,6 +358,11 @@ std binary and may use crates. Keep the split.
   `osc-input.actions` lease. Do not re-implement a take in Rust.
 - **Links are per page** (the key carries `PAGE_ID`): HyperDeck, LW3 and Turtle
   pair each reply with the command before it.
+- **HyperDeck commands end in LF, not CR LF.** Mitti's emulation answers `103
+  unsupported` to a command ending in `\r` (only `device info` survives), so
+  `hyperdeck/link.js` sends `\n` (LivePremier Plus d0093db). `link.test.mjs`
+  fails if it goes back. A real Mitti 2.8.19 has answered it, with an empty
+  playlist only (NOTES, 2026-10-20).
 - **Plugin data is the show's and lives in the bridge** (`plugin-data.json`,
   keys `<plugin>.<name>`); the hosted demo falls back to localStorage. Cues,
   Keys, the layer bank and working areas are still per-browser localStorage,
@@ -374,6 +379,7 @@ cargo test
 cargo clippy --all-targets        # must be clean
 cargo build --no-default-features # no_std must keep building
 node crates/openrcs-server/web/plugins/console/lang.test.mjs   # the command language
+node crates/openrcs-server/web/plugins/hyperdeck/link.test.mjs # the deck link, against a Mitti stand-in
 ```
 
 The surface itself is checked in a browser against the demo (`demo/build-demo.sh`,

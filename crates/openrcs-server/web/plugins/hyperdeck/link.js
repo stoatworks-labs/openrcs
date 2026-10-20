@@ -93,7 +93,10 @@ export class DeckLink {
       this.pump();
     }, REPLY_TIMEOUT_MS);
     this.inFlight = next;
-    this.link.send(`${next.line}\r\n`);
+    // LF, not CRLF: Mitti's emulation answers `103 unsupported` to a command
+    // that ends in \r — only `device info` survives it (LivePremier Plus
+    // d0093db). A real HyperDeck takes either.
+    this.link.send(`${next.line}\n`);
   }
   failAll(why) {
     const pending = [...(this.inFlight ? [this.inFlight] : []), ...this.queue];

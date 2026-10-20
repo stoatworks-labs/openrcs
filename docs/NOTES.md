@@ -605,6 +605,64 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## HyperDecks: Mitti refused every command, and LivePremier Plus's later fixes — 2026-10-20
+
+The link (`web/plugins/hyperdeck/link.js`, `pump()`) ended every command with CR LF.
+Mitti's HyperDeck emulation answers `103 unsupported` to any command that ends in `\r`,
+and only `device info` gets through. So a Mitti deck connected, showed its model, and
+never got a clip list or a transport state. LivePremier Plus found this on a real Mitti
+2.8.18 on 2026-09-29 (its d0093db) and went to LF, which a real HyperDeck takes too. The
+port had copied the link from before that fix, and the v0.9.0 and v0.10.0 release notes
+listed it as a known issue.
+
+The link ends commands with LF now. `link.test.mjs` runs it over a socket against a
+stand-in that refuses CR as Mitti does, and fails if the link goes back to CR LF (I
+checked).
+
+Then I tried a **real Mitti 2.8.19** on Allan's Mac, launched for the test and quit
+afterwards:
+
+- **A raw probe.** `transport info`, `clips count`, `clips get` and `slot info` ending
+  in CR LF all got `103 unsupported`, while `device info` answered. Ended in LF, they
+  answered. 2.8.19 behaves exactly as 2.8.18 did.
+- **The test's real-deck mode** (`HYPERDECK_AT=127.0.0.1:9993 HYPERDECK_PROFILE=mitti`).
+  Connection info, notify, device info, clips and transport all came back through the
+  link, with nothing refused.
+- **A real `openrcs-server` and a page.** I pointed the bridge at a closed port so the
+  views would show. The deck went to *connected*, with model Mitti and transport
+  stopped, and **stop** was answered OK.
+
+Mitti's playlist was empty, so a real clip list, play and the rules have only met the
+stand-in. I couldn't fill it: its file dialog runs in another process that I couldn't
+drive, and a `.mitti2` file is an NSKeyedArchiver plist too big to fake. Mitti's
+spacing (`protocol version:1.11`, `loop : false`) is as LivePremier Plus recorded it,
+and the parser trims both.
+
+New on 2.8.19, and not fixed: a bare `slot info` gets **no answer at all**, not even a
+103, while `slot info: slot id: 1` answers 202 at once. The link sends `slot info` on
+every connect, so against Mitti it waits out `REPLY_TIMEOUT_MS` (3 s) before the
+`transport info` queued behind it goes out. Nothing breaks; the first transport state
+is just late. The link is LivePremier Plus's (and automitti's), so the fix belongs
+there first.
+
+LivePremier Plus's other fixes since the port, checked here the same day:
+
+- **Thumbnail relay byte count** (LPP 6091d57). LPP counted a frame as sent before it
+  answered 304 with no body. `Plus::snapshot` keeps no byte count, and the route never
+  answers 304, so there's nothing to miscount.
+- **"Switched off" for a missing dependency** (6091d57). LPP's routes said "switched
+  off" for a plugin that was on but needed one that was off. No plugin here declares a
+  dependency, and the bridge doesn't refuse plugin routes at all. The plugins that use
+  another's service (`host.use('groups')`, `host.use('locks')`) already name the plugin
+  they need.
+- **A second CUT doing nothing** (LPP 35c8abe, awj-surface ff32c1d). The AWJ surface
+  engine dropped a write equal to the mirror's value, and the switcher leaves `xCut`
+  true, so every CUT after the first was dropped. The mnemonic surface has no such
+  engine. The Speed Editor, MIDI, OSC and Keys all call `doTake`/`doCut`, and
+  `store.set`, `Hub::set` and OSC `/set` all send every write without looking at the
+  cache. A Midra take pulses `GCtak` 0 then 1, and a LiveCore cut writes `GCtba` every
+  time.
+
 ## A still on a layer drew as a green box — 2026-10-09
 
 Reported by Allan on the NeXtage 16 (192.168.2.140): a frame on a layer showed in

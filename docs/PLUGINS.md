@@ -24,7 +24,7 @@ place is a class of bug not worth having.
 | **Speed Editor** | A DaVinci Resolve Speed Editor over WebHID: CAM keys, the wheel on opacity, position, size, T-bar. | ✓ | ✓ |
 | **EDID builder** | The Otter EDID editor, saving straight onto an input plug (256 bytes). | ✓ | ✓ |
 | **OSC input** | QLab, TouchOSC or a desk driving the processor over UDP. | ✓ | ✓ |
-| **HyperDecks** | Play, cue and record HyperDecks, with rules: play when on air, take or cut when the clip ends. Not Mitti yet: its HyperDeck emulation rejects the CR LF this ends each command with (`103 unsupported`). | ✓ | ✓ |
+| **HyperDecks** | Play, cue and record HyperDecks and decks that emulate one, such as Mitti, with rules: play when on air, take or cut when the clip ends. | ✓ | ✓ |
 | **Matrix routing** | Patch the processor to a Videohub, Lightware or Turtle AV router; feed an input, send an output; plan on a placeholder. | ✓ | ✓ |
 | **Companion** | Press Bitfocus Companion buttons from a key, a cue, MIDI, OSC or a memory recall; its tablet page here. | ✓ | ✓ |
 | **Thumbnail relay** | Input thumbnails fetched once by the bridge for every page, as JPEG. | ✓ | — a Midra serves no pictures |
@@ -65,11 +65,20 @@ Videohub. What that proved, end to end through the real bridge:
 
 Not exercised at all: a real Companion, MIDI and LTC input (the Browser pane
 grants neither), the thumbnail relay against a real LiveCore's web server, and
-Tailscale serve / ZeroTier on a real host. Two have met real kit and don't work
-on it yet: a real Speed Editor, because Chrome can't complete the panel's
-handshake over WebHID, and Mitti, whose HyperDeck emulation rejects the CR LF
-the HyperDecks plugin ends each command with (`103 unsupported`). Prove each on
-your own kit before a show — the take gate in Layer lock in particular.
+Tailscale serve / ZeroTier on a real host. One has met real kit and doesn't
+work on it yet: a real Speed Editor, because Chrome can't complete the panel's
+handshake over WebHID.
+
+Mitti used to be the second. Its HyperDeck emulation answers `103 unsupported`
+to a command ending in CR LF, and that was how the HyperDecks plugin ended every
+one. It ends them with LF now (LivePremier Plus's fix), and a real Mitti 2.8.19
+has answered it through a real bridge and page: connected, its model and
+transport read, and a stop answered. Its playlist was empty, so a clip list,
+play and the rules have still only met a stand-in that answers as Mitti does
+(`web/plugins/hyperdeck/link.test.mjs`). No real HyperDeck has been run at all.
+
+Prove each on your own kit before a show — the take gate in Layer lock in
+particular.
 
 ## Writing one
 

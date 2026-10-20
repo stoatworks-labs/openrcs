@@ -1,6 +1,9 @@
 /*
  * Vendored from livepremier-plus plugins/hyperdeck/protocol.js — same author,
  * same MIT licence. Pure: no I/O. Change it there and copy it here.
+ *
+ * The ⚠️ below is upstream's. In openrcs a real Mitti 2.8.19 has since
+ * answered the link (docs/NOTES.md, 2026-10-20); a real HyperDeck has not.
  */
 /*
  * The Blackmagic HyperDeck Ethernet Protocol — the words, with no socket.

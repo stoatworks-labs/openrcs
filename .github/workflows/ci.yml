@@ -56,7 +56,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: web modules parse, command language holds
+      - name: web modules parse, command language and deck link hold
         run: |
           find crates/openrcs-server/web -name '*.js' -print0 | xargs -0 -n1 node --check
           node crates/openrcs-server/web/plugins/console/lang.test.mjs
+          node crates/openrcs-server/web/plugins/hyperdeck/link.test.mjs
