@@ -38,18 +38,18 @@ describe compatibility.
 
 ## Download
 
-**[v0.10.0](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.10.0)** — prebuilt for macOS, Windows and Linux. Pick your platform:
+**[v0.11.1](https://github.com/stoatworks-labs/openrcs/releases/tag/v0.11.1)** — prebuilt for macOS, Windows and Linux. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image (CLI) | [`openrcs-server-0.10.0-macos-universal-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-macos-universal-cli.dmg) | 4.6 MB |
-| .dmg disk image (app) | [`openrcs-0.10.0-macos-app.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-0.10.0-macos-app.dmg) | 12 MB |
-| Universal (Apple Silicon + Intel) · .pkg installer (CLI) | [`openrcs-server-0.10.0-macos-universal-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-macos-universal-cli.pkg) | 4.0 MB |
-| .pkg installer (app) | [`openrcs-0.10.0-macos-app.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-0.10.0-macos-app.pkg) | 12 MB |
-| Universal (Apple Silicon + Intel) · .tar.gz archive | [`openrcs-server-macos-universal.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-macos-universal.tar.gz) | 4.0 MB |
+| Universal (Apple Silicon + Intel) · .dmg disk image (CLI) | [`openrcs-server-0.11.1-macos-universal-cli.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-macos-universal-cli.dmg) | 4.7 MB |
+| .dmg disk image (app) | [`openrcs-0.11.1-macos-app.dmg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-0.11.1-macos-app.dmg) | 13 MB |
+| Universal (Apple Silicon + Intel) · .pkg installer (CLI) | [`openrcs-server-0.11.1-macos-universal-cli.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-macos-universal-cli.pkg) | 4.2 MB |
+| .pkg installer (app) | [`openrcs-0.11.1-macos-app.pkg`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-0.11.1-macos-app.pkg) | 13 MB |
+| Universal (Apple Silicon + Intel) · .tar.gz archive | [`openrcs-server-macos-universal.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-macos-universal.tar.gz) | 4.2 MB |
 
 </details>
 
@@ -58,11 +58,11 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`openrcs-server-0.10.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-windows-x86_64-setup.exe) | 1.5 MB |
-| x64 · .exe installer | [`openRCS_0.10.0_x64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openRCS_0.10.0_x64-setup.exe) | 3.8 MB |
-| ARM64 · .exe installer | [`openrcs-server-0.10.0-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-windows-aarch64-setup.exe) | 1.4 MB |
-| x64 · .zip archive | [`openrcs-server-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-x86_64.zip) | 1.7 MB |
-| ARM64 · .zip archive | [`openrcs-server-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-aarch64.zip) | 1.7 MB |
+| x64 · .exe installer | [`openrcs-server-0.11.1-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-windows-x86_64-setup.exe) | 1.6 MB |
+| x64 · .exe installer | [`openRCS_0.11.1_x64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openRCS_0.11.1_x64-setup.exe) | 3.9 MB |
+| ARM64 · .exe installer | [`openrcs-server-0.11.1-windows-aarch64-setup.exe`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-windows-aarch64-setup.exe) | 1.4 MB |
+| x64 · .zip archive | [`openrcs-server-windows-x86_64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-x86_64.zip) | 1.8 MB |
+| ARM64 · .zip archive | [`openrcs-server-windows-aarch64.zip`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-windows-aarch64.zip) | 1.8 MB |
 
 </details>
 
@@ -71,14 +71,14 @@ describe compatibility.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.10.0_amd64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server_0.10.0_amd64.deb) | 2.2 MB |
-| x64 · .deb package (Debian/Ubuntu) | [`openRCS_0.10.0_amd64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openRCS_0.10.0_amd64.deb) | 7.5 MB |
-| ARM64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.10.0_arm64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server_0.10.0_arm64.deb) | 2.2 MB |
-| x64 · .rpm package (Fedora/RHEL) | [`openRCS-0.10.0-1.x86_64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openRCS-0.10.0-1.x86_64.rpm) | 7.5 MB |
-| x64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.10.0-1.x86_64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-1.x86_64.rpm) | 2.3 MB |
-| ARM64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.10.0-1.aarch64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.10.0/openrcs-server-0.10.0-1.aarch64.rpm) | 2.3 MB |
-| x64 · .tar.gz archive | [`openrcs-server-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-x86_64.tar.gz) | 2.1 MB |
-| ARM64 · .tar.gz archive | [`openrcs-server-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-aarch64.tar.gz) | 2.2 MB |
+| x64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.11.1_amd64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server_0.11.1_amd64.deb) | 2.3 MB |
+| x64 · .deb package (Debian/Ubuntu) | [`openRCS_0.11.1_amd64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openRCS_0.11.1_amd64.deb) | 7.6 MB |
+| ARM64 · .deb package (Debian/Ubuntu) | [`openrcs-server_0.11.1_arm64.deb`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server_0.11.1_arm64.deb) | 2.4 MB |
+| x64 · .rpm package (Fedora/RHEL) | [`openRCS-0.11.1-1.x86_64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openRCS-0.11.1-1.x86_64.rpm) | 7.6 MB |
+| x64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.11.1-1.x86_64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-1.x86_64.rpm) | 2.4 MB |
+| ARM64 · .rpm package (Fedora/RHEL) | [`openrcs-server-0.11.1-1.aarch64.rpm`](https://github.com/stoatworks-labs/openrcs/releases/download/v0.11.1/openrcs-server-0.11.1-1.aarch64.rpm) | 2.4 MB |
+| x64 · .tar.gz archive | [`openrcs-server-linux-x86_64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-x86_64.tar.gz) | 2.2 MB |
+| ARM64 · .tar.gz archive | [`openrcs-server-linux-aarch64.tar.gz`](https://github.com/stoatworks-labs/openrcs/releases/latest/download/openrcs-server-linux-aarch64.tar.gz) | 2.3 MB |
 
 </details>
 
