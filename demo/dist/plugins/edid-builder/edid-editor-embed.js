@@ -1,11 +1,9 @@
-/* VENDORED — do not edit here. Upstream: stoatworks-labs/edid-editor, which was
- * Otter EDID Editor until 2026-10-24. This is its dist-embed/otter-edid-embed.js at
- * 37695ba71f95e4e366166a312daf0ab7251538ea (2026-09-24), built before the rename, so it
- * still calls itself Otter inside; livepremier-plus vendors a newer build. Edits belong
- * upstream in edid-editor's src/.
+/* VENDORED — do not edit here. Upstream: stoatworks-labs/edid-editor
+ * dist-embed/edid-editor-embed.js at 89583688cdbf75fc98fff6ac531b58286259fb95 (2026-10-24), the same build
+ * livepremier-plus vendors. Edits belong upstream in edid-editor's src/.
  */
 //#region \0rolldown/runtime.js
-var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
+var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod, mod.exports), cb = null), mod.exports);
 //#endregion
 //#region node_modules/react/cjs/react.production.js
 /**
@@ -12395,7 +12393,7 @@ function encodeCta(ext) {
 	const out = [
 		2,
 		ext.revision,
-		dtds.length ? dtdOffset : 0,
+		dtds.length || dbc.length ? dtdOffset : 0,
 		(ext.underscanIt ? 128 : 0) | (ext.basicAudio ? 64 : 0) | (ext.ycbcr444 ? 32 : 0) | (ext.ycbcr422 ? 16 : 0) | nativeDtds,
 		...dbc,
 		...dtds
@@ -12791,9 +12789,17 @@ function decodeEdid(data) {
 			message: `checksum is wrong (sums to ${s})`
 		});
 		switch (block[0]) {
-			case 2:
-				extensions.push(decodeCta(block));
+			case 2: {
+				const cta = decodeCta(block);
+				const blocks = cta.source?.blocks.length ?? 0;
+				if (block[2] === 0 && blocks) issues.push({
+					severity: "warning",
+					where: `extension ${i + 1}`,
+					message: `byte 2 is 0, which says there are no data blocks, but ${blocks} follow it: Linux and edid-decode skip them all, so a source sees no VICs and no HDMI block. Saved unedited it stays that way; any edit to this extension writes the right offset`
+				});
+				extensions.push(cta);
 				break;
+			}
 			case 112:
 				extensions.push(decodeDisplayId(block));
 				break;
@@ -12961,6 +12967,245 @@ function blankEdid() {
 		extensions: []
 	};
 }
+//#endregion
+//#region src/lib/link.ts
+var DEFAULT_SIGNAL = {
+	format: "rgb444",
+	bpc: 8,
+	dsc: false,
+	dscTargetBpp: 12,
+	vrr: false,
+	vrrMinHz: 24,
+	vrrMaxHz: 60
+};
+/**
+* Bits carried per pixel on a given kind of link.
+*
+* 4:2:2 is the odd one, and the two links disagree about it:
+*
+* - HDMI carries 4:2:2 in a fixed 12-bit-per-component container, two
+*   components per pixel, so it costs 24 bits per pixel whatever depth is
+*   asked for — the same as 8-bit 4:4:4. On TMDS that is why the character
+*   rate stays at the pixel clock; FRL charges it the same 24 (K_CD = 1 in
+*   the FRL capacity computation, where every other format has bpc / 8).
+* - DisplayPort packs two components per pixel at the depth asked for, so
+*   2 x bpc: 16, 20 or 24.
+*
+* So 8-bit 4:2:2 is 16 bpp on DisplayPort and 24 on HDMI, and 12-bit is 24 on
+* both. A single figure for both links understates one of them.
+*/
+function bitsPerPixel(s, link) {
+	if (s.dsc) return s.dscTargetBpp;
+	switch (s.format) {
+		case "rgb444":
+		case "ycbcr444": return s.bpc * 3;
+		case "ycbcr422": return link === "hdmi" ? 24 : s.bpc * 2;
+		case "ycbcr420": return s.bpc * 3 / 2;
+	}
+}
+/** Payload rate in bits per second. */
+function payloadBps(t, s, link) {
+	return t.pixelClockHz * bitsPerPixel(s, link);
+}
+/**
+* HDMI TMDS character rate.
+*
+* Deep colour raises the character rate above the pixel clock because the extra
+* bits are clocked out on the same three lanes. 4:2:0 halves it, which is the
+* whole reason 4K60 exists on HDMI 1.4 hardware at all.
+*/
+function tmdsCharacterRateHz(t, s) {
+	if (s.dsc) return Number.POSITIVE_INFINITY;
+	const base = s.format === "ycbcr420" ? t.pixelClockHz / 2 : t.pixelClockHz;
+	if (s.format === "ycbcr422") return base;
+	return base * s.bpc / 8;
+}
+/** 16b/18b line coding on FRL: 16 payload bits per 18 on the wire. */
+var FRL_EFFICIENCY = 16 / 18;
+var HDMI_VERSIONS = [
+	{
+		name: "HDMI 1.0–1.2",
+		maxTmdsHz: 165e6,
+		frlBps: 0,
+		frlRate: 0,
+		lanes: 3
+	},
+	{
+		name: "HDMI 1.3/1.4",
+		maxTmdsHz: 34e7,
+		frlBps: 0,
+		frlRate: 0,
+		lanes: 3
+	},
+	{
+		name: "HDMI 2.0",
+		maxTmdsHz: 6e8,
+		frlBps: 0,
+		frlRate: 0,
+		lanes: 3
+	},
+	{
+		name: "HDMI 2.1 FRL 3×3G (9G)",
+		maxTmdsHz: 6e8,
+		frlBps: 9e9,
+		frlRate: 1,
+		lanes: 3
+	},
+	{
+		name: "HDMI 2.1 FRL 3×6G (18G)",
+		maxTmdsHz: 6e8,
+		frlBps: 18e9,
+		frlRate: 2,
+		lanes: 3
+	},
+	{
+		name: "HDMI 2.1 FRL 4×6G (24G)",
+		maxTmdsHz: 6e8,
+		frlBps: 24e9,
+		frlRate: 3,
+		lanes: 4
+	},
+	{
+		name: "HDMI 2.1 FRL 4×8G (32G)",
+		maxTmdsHz: 6e8,
+		frlBps: 32e9,
+		frlRate: 4,
+		lanes: 4
+	},
+	{
+		name: "HDMI 2.1 FRL 4×10G (40G)",
+		maxTmdsHz: 6e8,
+		frlBps: 4e10,
+		frlRate: 5,
+		lanes: 4
+	},
+	{
+		name: "HDMI 2.1 FRL 4×12G (48G)",
+		maxTmdsHz: 6e8,
+		frlBps: 48e9,
+		frlRate: 6,
+		lanes: 4
+	}
+];
+function hdmiRequirement(t, s) {
+	const payload = payloadBps(t, s, "hdmi");
+	const tmds = tmdsCharacterRateHz(t, s);
+	if (!s.dsc && Number.isFinite(tmds)) {
+		for (const v of HDMI_VERSIONS) if (v.frlBps === 0 && tmds <= v.maxTmdsHz) return {
+			version: v,
+			viaTmds: true,
+			tmdsCharacterRateHz: tmds,
+			payloadBps: payload,
+			utilisation: tmds / v.maxTmdsHz,
+			note: tmds > 34e7 ? "Above 340 MHz the link must be scrambled and the sink must expose SCDC — an HDMI 1.4 cable will not do it." : void 0
+		};
+	}
+	for (const v of HDMI_VERSIONS) {
+		if (v.frlBps === 0) continue;
+		if (payload <= v.frlBps * .8888888888888888) return {
+			version: v,
+			viaTmds: false,
+			tmdsCharacterRateHz: tmds,
+			payloadBps: payload,
+			utilisation: payload / (v.frlBps * FRL_EFFICIENCY),
+			note: s.dsc ? "DSC only travels over FRL — an HDMI 2.0 or earlier link cannot carry it." : void 0
+		};
+	}
+	return {
+		version: null,
+		viaTmds: false,
+		tmdsCharacterRateHz: tmds,
+		payloadBps: payload,
+		utilisation: payload / (48e9 * FRL_EFFICIENCY),
+		note: "Beyond HDMI 2.1 48G even with DSC at this target."
+	};
+}
+var DP_RATES = [
+	{
+		name: "RBR (1.62G)",
+		laneBps: 162e7,
+		efficiency: .8,
+		since: "DP 1.1"
+	},
+	{
+		name: "HBR (2.7G)",
+		laneBps: 27e8,
+		efficiency: .8,
+		since: "DP 1.1"
+	},
+	{
+		name: "HBR2 (5.4G)",
+		laneBps: 54e8,
+		efficiency: .8,
+		since: "DP 1.2"
+	},
+	{
+		name: "HBR3 (8.1G)",
+		laneBps: 81e8,
+		efficiency: .8,
+		since: "DP 1.3"
+	},
+	{
+		name: "UHBR10",
+		laneBps: 1e10,
+		efficiency: 128 / 132,
+		since: "DP 2.0"
+	},
+	{
+		name: "UHBR13.5",
+		laneBps: 135e8,
+		efficiency: 128 / 132,
+		since: "DP 2.0"
+	},
+	{
+		name: "UHBR20",
+		laneBps: 2e10,
+		efficiency: 128 / 132,
+		since: "DP 2.0"
+	}
+];
+function dpRequirement(t, s, lanes = 4) {
+	const payload = payloadBps(t, s, "displayport");
+	for (const r of DP_RATES) {
+		const capacity = r.laneBps * lanes * r.efficiency;
+		if (payload <= capacity) return {
+			rate: r,
+			lanes,
+			payloadBps: payload,
+			utilisation: payload / capacity,
+			note: payload / capacity > .98 ? "Within 2% of the rate ceiling — DisplayPort transfer-unit overhead may put this over in practice." : void 0
+		};
+	}
+	return {
+		rate: null,
+		lanes,
+		payloadBps: payload,
+		utilisation: payload / (2e10 * lanes * (128 / 132)),
+		note: "Beyond UHBR20 on this lane count."
+	};
+}
+/** Single-link DVI tops out at 165 MHz; dual-link doubles it to 330. */
+function dviRequirement(t, s) {
+	const clock = tmdsCharacterRateHz(t, s);
+	if (!Number.isFinite(clock)) return {
+		link: null,
+		clockHz: clock
+	};
+	if (clock <= 165e6) return {
+		link: "single",
+		clockHz: clock
+	};
+	if (clock <= 33e7) return {
+		link: "dual",
+		clockHz: clock
+	};
+	return {
+		link: null,
+		clockHz: clock
+	};
+}
+var formatBps = (bps) => bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : `${(bps / 1e6).toFixed(0)} Mbps`;
+var formatHz = (hz) => hz >= 1e6 ? `${(hz / 1e6).toFixed(2)} MHz` : `${(hz / 1e3).toFixed(1)} kHz`;
 //#endregion
 //#region src/lib/timing/cvt.ts
 /**
@@ -14336,7 +14581,10 @@ function edidAroundTiming(timing, opts) {
 			}
 		}
 		if (!tooFastForDtd && vic === void 0) cta.detailedTimings = [DTD(timing)];
-		const tmdsMHz = Math.min(600, Math.ceil(clockMHz * (s.format === "ycbcr420" ? .5 : s.bpc / 8)));
+		const tmdsMHz = Math.min(600, Math.ceil(tmdsCharacterRateHz(timing, {
+			...s,
+			dsc: false
+		}) / 5e6) * 5);
 		cta.hdmiVsdb = {
 			physicalAddress: [
 				1,
@@ -14352,7 +14600,7 @@ function edidAroundTiming(timing, opts) {
 			dviDual: false,
 			maxTmdsClockMHz: tmdsMHz
 		};
-		if (s.dsc || s.vrr || clockMHz * (s.bpc / 8) > 340) {
+		if (s.dsc || s.vrr || (s.format === "ycbcr422" ? clockMHz : clockMHz * (s.bpc / 8)) > 340) {
 			cta.hdmiForumVsdb = {
 				version: 1,
 				maxTmdsCharacterRateMHz: tmdsMHz,
@@ -14446,7 +14694,7 @@ function aspectFor(t) {
 }
 /** Smallest FRL rate index (1-6) that carries the mode. */
 function frlRateFor(clockHz, s) {
-	const payload = clockHz * (s.dsc ? s.dscTargetBpp : s.format === "ycbcr422" ? 16 : s.format === "ycbcr420" ? s.bpc * 3 / 2 : s.bpc * 3);
+	const payload = clockHz * bitsPerPixel(s, "hdmi");
 	const rates = [
 		9e9,
 		18e9,
@@ -14455,240 +14703,9 @@ function frlRateFor(clockHz, s) {
 		4e10,
 		48e9
 	];
-	for (let i = 0; i < rates.length; i++) if (payload <= rates[i] * (16 / 18)) return i + 1;
+	for (let i = 0; i < rates.length; i++) if (payload <= rates[i] * .8888888888888888) return i + 1;
 	return 6;
 }
-//#endregion
-//#region src/lib/link.ts
-var DEFAULT_SIGNAL = {
-	format: "rgb444",
-	bpc: 8,
-	dsc: false,
-	dscTargetBpp: 12,
-	vrr: false,
-	vrrMinHz: 24,
-	vrrMaxHz: 60
-};
-/**
-* Bits carried per pixel.
-*
-* 4:2:2 is the odd one: it subsamples chroma horizontally but HDMI always
-* transports it in a fixed 12-bit-per-component container, so it costs the same
-* as 8-bit 4:4:4 regardless of the requested depth. Treating it as
-* 2 x bpc would overstate 12-bit 4:2:2 by half.
-*/
-function bitsPerPixel(s) {
-	if (s.dsc) return s.dscTargetBpp;
-	switch (s.format) {
-		case "rgb444":
-		case "ycbcr444": return s.bpc * 3;
-		case "ycbcr422": return 16;
-		case "ycbcr420": return s.bpc * 3 / 2;
-	}
-}
-/** Payload rate in bits per second. */
-function payloadBps(t, s) {
-	return t.pixelClockHz * bitsPerPixel(s);
-}
-/**
-* HDMI TMDS character rate.
-*
-* Deep colour raises the character rate above the pixel clock because the extra
-* bits are clocked out on the same three lanes. 4:2:0 halves it, which is the
-* whole reason 4K60 exists on HDMI 1.4 hardware at all.
-*/
-function tmdsCharacterRateHz(t, s) {
-	if (s.dsc) return Number.POSITIVE_INFINITY;
-	const base = s.format === "ycbcr420" ? t.pixelClockHz / 2 : t.pixelClockHz;
-	if (s.format === "ycbcr422") return base;
-	return base * s.bpc / 8;
-}
-/** 16b/18b line coding on FRL: 16 payload bits per 18 on the wire. */
-var FRL_EFFICIENCY = 16 / 18;
-var HDMI_VERSIONS = [
-	{
-		name: "HDMI 1.0–1.2",
-		maxTmdsHz: 165e6,
-		frlBps: 0,
-		frlRate: 0,
-		lanes: 3
-	},
-	{
-		name: "HDMI 1.3/1.4",
-		maxTmdsHz: 34e7,
-		frlBps: 0,
-		frlRate: 0,
-		lanes: 3
-	},
-	{
-		name: "HDMI 2.0",
-		maxTmdsHz: 6e8,
-		frlBps: 0,
-		frlRate: 0,
-		lanes: 3
-	},
-	{
-		name: "HDMI 2.1 FRL 3×3G (9G)",
-		maxTmdsHz: 6e8,
-		frlBps: 9e9,
-		frlRate: 1,
-		lanes: 3
-	},
-	{
-		name: "HDMI 2.1 FRL 3×6G (18G)",
-		maxTmdsHz: 6e8,
-		frlBps: 18e9,
-		frlRate: 2,
-		lanes: 3
-	},
-	{
-		name: "HDMI 2.1 FRL 4×6G (24G)",
-		maxTmdsHz: 6e8,
-		frlBps: 24e9,
-		frlRate: 3,
-		lanes: 4
-	},
-	{
-		name: "HDMI 2.1 FRL 4×8G (32G)",
-		maxTmdsHz: 6e8,
-		frlBps: 32e9,
-		frlRate: 4,
-		lanes: 4
-	},
-	{
-		name: "HDMI 2.1 FRL 4×10G (40G)",
-		maxTmdsHz: 6e8,
-		frlBps: 4e10,
-		frlRate: 5,
-		lanes: 4
-	},
-	{
-		name: "HDMI 2.1 FRL 4×12G (48G)",
-		maxTmdsHz: 6e8,
-		frlBps: 48e9,
-		frlRate: 6,
-		lanes: 4
-	}
-];
-function hdmiRequirement(t, s) {
-	const payload = payloadBps(t, s);
-	const tmds = tmdsCharacterRateHz(t, s);
-	if (!s.dsc && Number.isFinite(tmds)) {
-		for (const v of HDMI_VERSIONS) if (v.frlBps === 0 && tmds <= v.maxTmdsHz) return {
-			version: v,
-			viaTmds: true,
-			tmdsCharacterRateHz: tmds,
-			payloadBps: payload,
-			utilisation: tmds / v.maxTmdsHz,
-			note: tmds > 34e7 ? "Above 340 MHz the link must be scrambled and the sink must expose SCDC — an HDMI 1.4 cable will not do it." : void 0
-		};
-	}
-	for (const v of HDMI_VERSIONS) {
-		if (v.frlBps === 0) continue;
-		if (payload <= v.frlBps * FRL_EFFICIENCY) return {
-			version: v,
-			viaTmds: false,
-			tmdsCharacterRateHz: tmds,
-			payloadBps: payload,
-			utilisation: payload / (v.frlBps * FRL_EFFICIENCY),
-			note: s.dsc ? "DSC only travels over FRL — an HDMI 2.0 or earlier link cannot carry it." : void 0
-		};
-	}
-	return {
-		version: null,
-		viaTmds: false,
-		tmdsCharacterRateHz: tmds,
-		payloadBps: payload,
-		utilisation: payload / (48e9 * FRL_EFFICIENCY),
-		note: "Beyond HDMI 2.1 48G even with DSC at this target."
-	};
-}
-var DP_RATES = [
-	{
-		name: "RBR (1.62G)",
-		laneBps: 162e7,
-		efficiency: .8,
-		since: "DP 1.1"
-	},
-	{
-		name: "HBR (2.7G)",
-		laneBps: 27e8,
-		efficiency: .8,
-		since: "DP 1.1"
-	},
-	{
-		name: "HBR2 (5.4G)",
-		laneBps: 54e8,
-		efficiency: .8,
-		since: "DP 1.2"
-	},
-	{
-		name: "HBR3 (8.1G)",
-		laneBps: 81e8,
-		efficiency: .8,
-		since: "DP 1.3"
-	},
-	{
-		name: "UHBR10",
-		laneBps: 1e10,
-		efficiency: 128 / 132,
-		since: "DP 2.0"
-	},
-	{
-		name: "UHBR13.5",
-		laneBps: 135e8,
-		efficiency: 128 / 132,
-		since: "DP 2.0"
-	},
-	{
-		name: "UHBR20",
-		laneBps: 2e10,
-		efficiency: 128 / 132,
-		since: "DP 2.0"
-	}
-];
-function dpRequirement(t, s, lanes = 4) {
-	const payload = payloadBps(t, s);
-	for (const r of DP_RATES) {
-		const capacity = r.laneBps * lanes * r.efficiency;
-		if (payload <= capacity) return {
-			rate: r,
-			lanes,
-			payloadBps: payload,
-			utilisation: payload / capacity,
-			note: payload / capacity > .98 ? "Within 2% of the rate ceiling — DisplayPort transfer-unit overhead may put this over in practice." : void 0
-		};
-	}
-	return {
-		rate: null,
-		lanes,
-		payloadBps: payload,
-		utilisation: payload / (2e10 * lanes * (128 / 132)),
-		note: "Beyond UHBR20 on this lane count."
-	};
-}
-/** Single-link DVI tops out at 165 MHz; dual-link doubles it to 330. */
-function dviRequirement(t, s) {
-	const clock = tmdsCharacterRateHz(t, s);
-	if (!Number.isFinite(clock)) return {
-		link: null,
-		clockHz: clock
-	};
-	if (clock <= 165e6) return {
-		link: "single",
-		clockHz: clock
-	};
-	if (clock <= 33e7) return {
-		link: "dual",
-		clockHz: clock
-	};
-	return {
-		link: null,
-		clockHz: clock
-	};
-}
-var formatBps = (bps) => bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : `${(bps / 1e6).toFixed(0)} Mbps`;
-var formatHz = (hz) => hz >= 1e6 ? `${(hz / 1e6).toFixed(2)} MHz` : `${(hz / 1e3).toFixed(1)} kHz`;
 //#endregion
 //#region src/lib/primary.ts
 /**
@@ -15240,7 +15257,7 @@ function SimpleMode({ req, onChange, onBuild, notes }) {
 *
 * This reproduces a reference tiled-EDID builder BYTE FOR BYTE — a test pins
 * it against that builder's own output. The point of copying rather than
-* composing from Otter's own encoder is that the reference's files have
+* composing from the editor's own encoder is that the reference's files have
 * bonded on real Macs (macOS 26 and 27) and synthetic ones did not:
 *
 *   The base and CTA blocks are a PixelHue Q8's EDID verbatim, patched only
@@ -15250,13 +15267,13 @@ function SimpleMode({ req, onChange, onBuild, notes }) {
 *   Mac was ever seen bonding on those files.
 *
 * Nobody isolated WHICH reference bytes matter, so none of them are "tidied".
-* Otter's own CTA encoder does not reproduce this CTA block byte for byte,
+* The editor's own CTA encoder does not reproduce this CTA block byte for byte,
 * which is why a mosaic is carried as raw bytes and never re-encoded.
 *
 * Layout, 384 bytes per tile:
-*   block 0  EDID 1.4 base — a DTD at a representable size (the tile, halved
-*            until it fits 4095 wide), the monitor name, the reference range
-*            limits (23-240 Hz, up to 600 MHz)
+*   block 0  EDID 1.4 base — a DTD at a representable size (the tile, each
+*            axis halved until it fits 4095), the monitor name, the reference
+*            range limits (23-240 Hz, 15-255 kHz, up to 600 MHz)
 *   block 1  the reference CTA-861 extension, untouched
 *   block 2  DisplayID 1.3: a Type I timing (the real tile mode, preferred)
 *            and the Tiled Display Topology block
@@ -15264,8 +15281,30 @@ function SimpleMode({ req, onChange, onBuild, notes }) {
 var REFERENCE_B64 = "AP///////wA59l7kAQEBAQIfAQTFAAB4GjExpVVOoSYMUFQlTwDRwLMAlQCBgIFAgcABAQEBTdAAoPBwPoAwIDUAX1khAAAYAAAA/QAX8A//PAAKICAgICAgAAAA/ABsZWZ0CiAgICAgICAgAAAAEQAAAAAAAAAAAAAAAAAAAnICAyV0SWtakB8iZmVkYyMPBwdn2F3EAXiAAGcDDAAAADhE4gBPKGgAoPBwPoAwIDUAX1khAAAY72gAoKBALmAwIDYA4A4RAAAYNTyAoHCwI0AwIDYA4A4RAAAYAjqAGHE4LUBYLEUA4A4RAAAYAAAAAAAAAAAAAAAAAAAAAAAA9A==";
 var reference = null;
 var ref = () => reference ??= Uint8Array.from(atob(REFERENCE_B64), (c) => c.charCodeAt(0));
+/**
+* The widest anyone has reported bonding, from the reference's bench testing
+* and other people's field reports (read 2026-10-20). Not the editor's own tests,
+* and on macOS 27 nobody has found the edge yet.
+*
+*   6144   the widest canvas reported at 50 or 60 Hz before macOS 27: the
+*          reference on macOS 26, BetterDisplay users since Ventura.
+*   7680   at 30 Hz, before macOS 27: two 3840 x 4320 tiles, reported on M2
+*          Max and M4 Max (BetterDisplay #713) and by PixelHue ("M2 and
+*          above"). That it takes one of those chips is inferred from who
+*          reported it.
+*   12288  on macOS 27, two 6144 tiles, in the reference's testing. That was
+*          the Barco E3's DisplayID ceiling, not macOS's; nobody has tried
+*          wider.
+*   6144   is also the widest TILE reported bonding. Wider builds, with a
+*          warning, so someone can try it.
+*/
+var MAC_ANY_VERSION_MAX_WIDTH = 6144;
+var MAC_30HZ_MAX_WIDTH = 7680;
 var MAC_27_MAX_WIDTH = 12288;
 var MAX_TILE_WIDTH = 6144;
+/** Inferred from third-party reads of M4 and M5 display firmware
+*  (MaxSrcRectWidthForPipe): one display pipe scans out at most 7680 wide. */
+var PIPE_MAX_WIDTH = 7680;
 var MOSAIC_GRIDS = [{
 	cols: 2,
 	rows: 1,
@@ -15337,6 +15376,7 @@ function pnpBytes(pnp) {
 function baseDtd(m) {
 	const clk = Math.round(m.pixelClockMHz * 100);
 	if (clk > 65535) throw new Error(`the base block's stand-in mode needs ${(clk / 100).toFixed(2)} MHz — past the 655.35 MHz a DTD can state`);
+	if (Math.max(m.hActive, m.hBlank, m.vActive, m.vBlank) > 4095) throw new Error(`the base block's stand-in mode, ${m.hActive} x ${m.vActive}, does not fit a DTD's 12-bit fields`);
 	const b = new Array(18).fill(0);
 	b[0] = clk & 255;
 	b[1] = clk >> 8 & 255;
@@ -15382,8 +15422,6 @@ function mosaicErrors(r) {
 	if (r.width % r.cols) out.push(`${r.width} does not divide into ${r.cols} equal columns.`);
 	if (r.height % r.rows) out.push(`${r.height} does not divide into ${r.rows} equal rows.`);
 	if (r.width % 8) out.push(`The canvas width must be a multiple of 8 — ${r.width} is not.`);
-	const tileW = r.width / r.cols;
-	if (tileW > 6144) out.push(`Each tile would be ${tileW} wide. ${MAX_TILE_WIDTH} is the widest tile a Mac composes.`);
 	if (r.cols > 16 || r.rows > 16) out.push("More than 16 tiles on an axis needs the high location bits, which this layout leaves at zero.");
 	if (!/^[A-Z]{3}$/.test(r.vendor)) out.push("The vendor id is three capital letters, A-Z.");
 	if (!(r.product >= 0 && r.product <= 65535)) out.push("The product code is 0-65535.");
@@ -15412,7 +15450,9 @@ function buildMosaic(r, nameFor) {
 	const tile = mosaicTiming(tileW, tileH, r.refreshHz);
 	let safeW = tileW;
 	while (safeW > 4095) safeW = Math.ceil(safeW / 2);
-	const stand = mosaicTiming(safeW, tileH, r.refreshHz);
+	let safeH = tileH;
+	while (safeH > 4095) safeH = Math.ceil(safeH / 2);
+	const stand = mosaicTiming(safeW, safeH, r.refreshHz);
 	const topologyId = mosaicTopologyId(r);
 	const tiles = [];
 	for (let row = 0; row < r.rows; row++) for (let col = 0; col < r.cols; col++) {
@@ -15497,7 +15537,8 @@ function buildMosaic(r, nameFor) {
 }
 /**
 * What a Mac will do with the set, per bench results with the reference files on macOS 26
-* and 27 and the BetterDisplay field reports. Advice, not a build error.
+* and 27, the BetterDisplay field reports and PixelHue's notes. Advice, not a build error.
+* Which chips manage what is inferred from who reported it.
 */
 function checkMosaic(r) {
 	const out = [];
@@ -15520,18 +15561,44 @@ function checkMosaic(r) {
 	if (r.width <= 6144) out.push({
 		level: "ok",
 		what: `${r.width} wide works on any recent macOS`,
-		detail: "Bonded canvases up to 6144 wide were verified on macOS 26 and 27."
+		detail: `${MAC_ANY_VERSION_MAX_WIDTH} is the widest bonded canvas reported at 50 or 60 Hz before macOS 27: the reference files on macOS 26, and BetterDisplay users since Ventura.`
+	});
+	else if (r.width <= 7680 && r.refreshHz <= 30) out.push({
+		level: "warn",
+		what: `Up to ${MAC_30HZ_MAX_WIDTH} wide at 30 Hz has bonded on M2 to M4 Max`,
+		detail: `Before macOS 27, BetterDisplay users report ${MAC_30HZ_MAX_WIDTH} wide bonding at 30 Hz on M2 Max and M4 Max, and PixelHue say M2 and above. Which chips manage it is inferred from who reported it. At 50 or 60 Hz nothing wider than ${MAC_ANY_VERSION_MAX_WIDTH} has bonded before 27.`
 	});
 	else if (r.width <= 12288) out.push({
 		level: "warn",
 		what: `${r.width} wide needs macOS 27`,
-		detail: "macOS 26 composes a bonded display only up to 6144 wide."
+		detail: `Before 27 the widest bonded canvas reported is ${MAC_ANY_VERSION_MAX_WIDTH} at 50 or 60 Hz, or ${MAC_30HZ_MAX_WIDTH} at 30 Hz. On macOS 27 the reference files bonded two ${MAX_TILE_WIDTH} tiles, ${MAC_27_MAX_WIDTH} wide.`
 	});
 	else out.push({
-		level: "bad",
-		what: `${r.width} wide has never been tested`,
-		detail: `${MAC_27_MAX_WIDTH} is the widest bonded canvas anyone has shown working, on macOS 27. Split it across two Macs.`
+		level: "warn",
+		what: `${r.width} wide has never been shown bonding`,
+		detail: `${MAC_27_MAX_WIDTH} is the widest bonded canvas anyone has reported, on macOS 27, and it stopped there because the Barco E3 in that test did, not macOS. Nobody has tried wider, so nobody knows. If it has to work on the night, split it across two Macs.`
 	});
+	const tileW = r.width / r.cols;
+	if (tileW > 6144) out.push({
+		level: "warn",
+		what: `Nobody has shown a Mac bonding tiles ${tileW} wide`,
+		detail: `${MAX_TILE_WIDTH} is the widest tile reported bonding: two of them, ${MAC_27_MAX_WIDTH} wide, on macOS 27. This builds so you can try it, and I’d like to hear how it goes.` + (tileW > 7680 ? ` Inferred from third-party reads of M4 and M5 display firmware: one display pipe scans out at most ${PIPE_MAX_WIDTH} wide, so a tile this wide would need two pipes joined, the way a Mac drives 8K.` : "")
+	});
+	if (r.width > 0 && r.height > 0 && r.refreshHz > 0 && r.cols >= 1 && r.rows >= 1) {
+		const t = toTiming(mosaicTiming(tileW, r.height / r.rows, r.refreshHz));
+		const mhz = t.pixelClockHz / 1e6;
+		if (mhz > 600) out.push({
+			level: "warn",
+			what: `${mhz.toFixed(2)} MHz per plug is past the 600 MHz its EDID allows`,
+			detail: `The base block is a real display’s EDID, copied byte for byte, and its range-limits descriptor says 600 MHz at most. This tile mode needs more, so each file contradicts itself. Whether a Mac minds is untested. A lower rate brings it down.`
+		});
+		const khz = hFreq(t) / 1e3;
+		if (khz > 255) out.push({
+			level: "warn",
+			what: `${khz.toFixed(2)} kHz line rate per plug is past the 255 kHz its EDID allows`,
+			detail: `The same copied range-limits descriptor says 255 kHz at most. A tile ${t.vActive} lines tall at ${r.refreshHz} Hz scans more lines a second than that, so each file contradicts itself. Whether a Mac minds is untested. A lower rate brings it down.`
+		});
+	}
 	out.push({
 		level: "ok",
 		what: "Frame sync comes from bonding",
@@ -16041,7 +16108,7 @@ function MosaicMode({ req, onChange, result, errors, selected, onSelect }) {
 				children: "Each plug gets its own EDID. All of them carry a DisplayID Tiled Display Topology block with the same id and grid, and each one’s own position. A Mac that reads matching blocks on several connectors joins them into a single display. It then drives the outputs as one, so they stay frame synced with no tearing at the seams."
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "note",
-				children: "The layout copies, byte for byte, reference files that have bonded on macOS 26 and 27. Their base and CTA blocks come from a real display’s EDID, because EDIDs built from scratch never bonded on a Mac. Nothing Otter builds elsewhere has been tried on hardware."
+				children: "The layout copies, byte for byte, reference files that have bonded on macOS 26 and 27. Their base and CTA blocks come from a real display’s EDID, because EDIDs built from scratch never bonded on a Mac. Nothing the editor builds elsewhere has been tried on hardware."
 			})]
 		})
 	] });
@@ -16065,7 +16132,7 @@ function MosaicChecks({ checks }) {
 			})] })]
 		}, i)), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "note",
-			children: "From bench testing of the reference files on macOS 26 and 27, and BetterDisplay users’ field reports. The DisplayID block layout is checked against the Linux kernel’s parser."
+			children: "From bench testing of the reference files on macOS 26 and 27, BetterDisplay users’ field reports and PixelHue’s notes. The widths are the widest anyone has reported, not limits anyone has found, and which chips manage them is inferred from who reported it. The DisplayID block layout is checked against the Linux kernel’s parser."
 		})]
 	});
 }
@@ -17370,6 +17437,9 @@ function LinkSummary({ timing, signal }) {
 	const dp4 = dpRequirement(timing, signal, 4);
 	const dp2 = dpRequirement(timing, signal, 2);
 	const dvi = dviRequirement(timing, signal);
+	const hdmiBpp = bitsPerPixel(signal, "hdmi");
+	const dpBpp = bitsPerPixel(signal, "displayport");
+	const perLink = (f) => hdmiBpp === dpBpp ? f(hdmiBpp) : `${f(hdmiBpp)} HDMI, ${f(dpBpp)} DP`;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Panel, {
 		title: "Signal cost and required interface",
 		children: [
@@ -17398,11 +17468,11 @@ function LinkSummary({ timing, signal }) {
 					}) : null,
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Stat, {
 						k: "Bits per pixel",
-						v: `${bitsPerPixel(signal)}`
+						v: perLink((bpp) => `${bpp}`)
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Stat, {
 						k: "Payload",
-						v: formatBps(timing.pixelClockHz * bitsPerPixel(signal))
+						v: perLink((bpp) => formatBps(timing.pixelClockHz * bpp))
 					})
 				]
 			}),
@@ -17713,6 +17783,15 @@ var DEVICES = [
 		model: "Aquilon RS / C (HDMI 2.0 input card)",
 		role: "sink",
 		maxRefreshHz: 144,
+		namedFormats: [{
+			width: 4096,
+			height: 2160,
+			label: "4K60"
+		}, {
+			width: 8192,
+			height: 1080,
+			label: "custom formats such as 8192 × 1080 @ 60"
+		}],
 		capacityModes: [{
 			id: "hdmi20",
 			label: "4x HDMI 2.0",
@@ -17738,6 +17817,23 @@ var DEVICES = [
 		model: "Aquilon RS / C (DisplayPort input card)",
 		role: "sink",
 		maxRefreshHz: 144,
+		namedFormats: [
+			{
+				width: 4096,
+				height: 2160,
+				label: "4K60"
+			},
+			{
+				width: 5120,
+				height: 2880,
+				label: "5K60 in DP 1.4 mode"
+			},
+			{
+				width: 8192,
+				height: 1080,
+				label: "custom formats to 8192 × 1080 @ 60"
+			}
+		],
 		capacityModes: [{
 			id: "dp12x4",
 			label: "4x DisplayPort 1.2",
@@ -18196,6 +18292,196 @@ var DEVICES = [
 		}]
 	},
 	{
+		id: "novastar-mx2000pro",
+		vendor: "NovaStar",
+		family: "COEX MX Pro",
+		model: "MX2000 Pro",
+		role: "sink",
+		minRefreshHz: 23.98,
+		maxRefreshHz: 240,
+		maxHActive: 8192,
+		maxVActive: 8192,
+		namedFormats: [
+			{
+				width: 4096,
+				height: 2160,
+				label: "4096 × 2160 @ 60 on the 4K cards"
+			},
+			{
+				width: 8192,
+				height: 4320,
+				label: "forced 8192 × 4320 on the 8K cards, 8192 × 1080 @ 60 on the 4K cards"
+			},
+			{
+				width: 4320,
+				height: 8192,
+				label: "forced 4320 × 8192 portrait on the 8K cards, 1080 × 8192 on the 4K cards"
+			}
+		],
+		capacityModes: [
+			{
+				id: "hdmi20x4",
+				label: "MX_4×HDMI 2.0 input card",
+				connectors: [{
+					...HDMI_20(4, 6e8, 12),
+					hdcp: [
+						"1.3",
+						"1.4",
+						"2.2",
+						"2.3"
+					]
+				}]
+			},
+			{
+				id: "dp12x4",
+				label: "MX_4×DP 1.2 input card",
+				connectors: [{
+					...DP_12(4, Number.POSITIVE_INFINITY, 12),
+					hdcp: [
+						"1.3",
+						"1.4",
+						"2.2",
+						"2.3"
+					]
+				}]
+			},
+			{
+				id: "hdmi21x2",
+				label: "MX_2×HDMI 2.1 input card",
+				connectors: [{
+					kind: "hdmi",
+					label: "HDMI 2.1",
+					count: 2,
+					maxPixelClockHz: 6e8,
+					frlBps: 48e9,
+					maxBpc: 12,
+					formats: [
+						"rgb444",
+						"ycbcr444",
+						"ycbcr422",
+						"ycbcr420"
+					],
+					hdcp: [
+						"1.3",
+						"1.4",
+						"2.2",
+						"2.3"
+					],
+					dsc: false,
+					vrr: false
+				}]
+			},
+			{
+				id: "dp14x2",
+				label: "MX_2×DP 1.4 input card",
+				connectors: [{
+					kind: "displayport",
+					label: "DisplayPort 1.4",
+					count: 2,
+					maxPixelClockHz: Number.POSITIVE_INFINITY,
+					dpLaneBps: 81e8,
+					dpLanes: 4,
+					maxBpc: 12,
+					formats: [
+						"rgb444",
+						"ycbcr444",
+						"ycbcr422",
+						"ycbcr420"
+					],
+					hdcp: [
+						"1.3",
+						"1.4",
+						"2.2",
+						"2.3"
+					],
+					dsc: false,
+					vrr: false
+				}]
+			},
+			{
+				id: "dp14-8k60",
+				label: "MX_1×DP 1.4 (8K@60Hz) input card",
+				connectors: [{
+					kind: "displayport",
+					label: "DisplayPort 1.4 (8K@60)",
+					count: 1,
+					maxPixelClockHz: Number.POSITIVE_INFINITY,
+					dpLaneBps: 81e8,
+					dpLanes: 4,
+					maxBpc: 12,
+					formats: [
+						"rgb444",
+						"ycbcr444",
+						"ycbcr422",
+						"ycbcr420"
+					],
+					hdcp: [
+						"1.3",
+						"1.4",
+						"2.2",
+						"2.3"
+					],
+					dsc: true,
+					vrr: false
+				}]
+			}
+		],
+		notes: [
+			"Card-based: two input slots. Each mode above is a card type, and the verdict names the card the mode needs.",
+			"4K cards (4×HDMI 2.0, 4×DP 1.2): 4096×2160 @60, or forced 8192×1080 @60. 8K cards (2×HDMI 2.1, 2×DP 1.4): forced 8192×4320 @30 on HDMI 2.1, 7680×4320 @30 or 8192×4320 @25 on DP 1.4.",
+			"The MX_1×DP 1.4 (8K@60Hz) card takes 7680×4320 @60, 12-bit 4:4:4 included, and nothing wider than 7680 (a per-card width this verdict does not check). That cannot fit HBR3 uncompressed, so DSC is INFERRED — NovaStar never say DSC. Their 3840×2160 @240 on it fits only at a DSC target of 11 bpp or less.",
+			"HDMI 2.1 FRL rate is INFERRED as 48G: NovaStar list 8192×4320 @30 12-bit 4:4:4 on that card, and nothing slower carries it.",
+			"No pixel-clock ceiling on the DP cards is INFERRED from NovaStar stating none: the link budget (HBR2 on DP 1.2, HBR3 on DP 1.4) is the only limit applied. Their own table lists 4096×2160 @75 8-bit on the DP 1.2 card, about 700 MHz.",
+			"EDID presets reach only 3840×2160 @60 (7680×4320 @60 on the 8K@60 card); anything bigger is a custom EDID, which NovaStar say the cards accept.",
+			"Also 4×12G-SDI and ST 2110 cards, and a 1×DP 1.4 + 1×HDMI 2.1 card with the same per-port limits as the 2-port 8K cards. HDCP 2.3 on every HDMI and DP card. No interlaced input on HDMI or DP."
+		],
+		confidence: "documented",
+		citations: [{
+			claim: "2x input card slots. 4K cards 4×HDMI 2.0, 4×DP 1.2: max 4096×2160@60 or 8192×1080@60 (forced). 2×HDMI 2.1: max 8192×4320@30 (forced). 2×DP 1.4: max 7680×4320@30 (forced), 8192×4320@25. 1×DP 1.4 (8K@60Hz): max 7680×4320@60, max width 7680, 8/10/12-bit 4:4:4 to 60 Hz. Frame rates 23.98 to 240 Hz. HDCP 2.3, backwards compatible with 2.2/1.4/1.3. Video source table gives 12-bit, and 4:2:0 on HDMI 2.0, HDMI 2.1 and DP 1.4; its DP 1.2 rows include 4096×2160 and 3840×2160 @75 8-bit 4:4:4 (forced).",
+			source: "NovaStar — MX2000 Pro LED Display Controller Specifications V1.5.0 (2025-09-30), Input Card and Video Source Specifications",
+			url: "https://oss.novastar.tech/uploads/2025/09/MX2000-Pro-LED-Display-Controller-Specifications-V1.5.0.pdf",
+			read: "2026-10-23"
+		}]
+	},
+	{
+		id: "novastar-mx6000pro",
+		vendor: "NovaStar",
+		family: "COEX MX Pro",
+		model: "MX6000 Pro",
+		role: "sink",
+		minRefreshHz: 23.98,
+		maxRefreshHz: 240,
+		maxHActive: 8192,
+		maxVActive: 8192,
+		namedFormats: [
+			{
+				width: 4096,
+				height: 2160,
+				label: "4096 × 2160 @ 60 on the 4K cards"
+			},
+			{
+				width: 8192,
+				height: 4320,
+				label: "forced 8192 × 4320 on the 8K cards, 8192 × 1080 @ 60 on the 4K cards"
+			},
+			{
+				width: 4320,
+				height: 8192,
+				label: "forced 4320 × 8192 portrait on the 8K cards, 1080 × 8192 on the 4K cards"
+			}
+		],
+		capacityModes: [],
+		inheritsFrom: "novastar-mx2000pro",
+		notes: ["The MX2000 Pro’s input cards in a 6U chassis with eight input slots: up to 32x 4K@60, 16x 8K@30 or 8x 8K@60 inputs.", "Per-port limits, and the inferred DSC, FRL and DP clock figures, are the MX2000 Pro’s. See that entry."],
+		confidence: "documented",
+		citations: [{
+			claim: "8x input card slots taking the same card types as the MX2000 Pro (4×HDMI 2.0, 4×DP 1.2, 4×12G-SDI; 1×DP 1.4 (8K@60Hz), 2×HDMI 2.1, 2×DP 1.4, 1×DP 1.4 + 1×HDMI 2.1; ST 2110), with the same per-card resolution limits; up to 32x 4K@60Hz, 16x 8K@30Hz or 8x 8K@60Hz inputs.",
+			source: "NovaStar — MX6000 Pro LED Display Controller Specifications V1.5.0 (2025-09-30), Features and Input Card",
+			url: "https://oss.novastar.tech/uploads/2025/09/MX6000-Pro-LED-Display-Controller-Specifications-V1.5.0.pdf",
+			read: "2026-10-23"
+		}]
+	},
+	{
 		id: "disguise-vx4",
 		vendor: "disguise",
 		family: "vx",
@@ -18282,7 +18568,13 @@ function checkConnector(c, t, s) {
 	if (s.vrr && !c.vrr) reasons.push("no variable refresh support — the source will be held to a fixed rate");
 	if (c.kind === "hdmi" || c.kind === "dvi") {
 		const rate = tmdsCharacterRateHz(t, s);
-		if (!Number.isFinite(rate)) {
+		const fitsTmds = Number.isFinite(rate) && rate <= c.maxPixelClockHz;
+		if (c.frlBps && !fitsTmds) {
+			const capacity = c.frlBps * FRL_EFFICIENCY;
+			const payload = payloadBps(t, s, "hdmi");
+			headroom = payload / capacity;
+			if (payload > capacity) reasons.push(`needs ${(payload / 1e9).toFixed(2)} Gbps at ${bitsPerPixel(s, "hdmi")} bpp, FRL carries ${(capacity / 1e9).toFixed(2)} Gbps`);
+		} else if (!Number.isFinite(rate)) {
 			reasons.push("DSC needs an FRL link; this connector is TMDS only");
 			headroom = 1;
 		} else {
@@ -18295,9 +18587,9 @@ function checkConnector(c, t, s) {
 		let linkRatio = 0;
 		if (c.dpLaneBps && c.dpLanes) {
 			const capacity = c.dpLaneBps * c.dpLanes * DP_EFFICIENCY;
-			const payload = payloadBps(t, s);
+			const payload = payloadBps(t, s, "displayport");
 			linkRatio = payload / capacity;
-			if (payload > capacity) reasons.push(`needs ${(payload / 1e9).toFixed(2)} Gbps at ${bitsPerPixel(s)} bpp, link carries ${(capacity / 1e9).toFixed(2)} Gbps`);
+			if (payload > capacity) reasons.push(`needs ${(payload / 1e9).toFixed(2)} Gbps at ${bitsPerPixel(s, "displayport")} bpp, link carries ${(capacity / 1e9).toFixed(2)} Gbps`);
 			else if (linkRatio > .98) reasons.push(`at ${pct(linkRatio)} of the link budget — DisplayPort transfer-unit overhead may push this over in practice`);
 		}
 		headroom = Math.max(clockRatio, linkRatio);
@@ -18329,6 +18621,7 @@ function evaluateDevice(d, t, s) {
 	if (d.minRefreshHz !== void 0 && rate < d.minRefreshHz - .01) warnings.push(`${rate.toFixed(2)} Hz is below the documented ${d.minRefreshHz} Hz minimum.`);
 	if (d.maxRefreshHz !== void 0 && rate > d.maxRefreshHz + .01) warnings.push(`${rate.toFixed(2)} Hz exceeds the documented ${d.maxRefreshHz} Hz maximum.`);
 	if (d.maxHActive !== void 0 && t.hActive > d.maxHActive) warnings.push(`${t.hActive} px wide exceeds the documented ${d.maxHActive} px maximum.`);
+	if (d.namedFormats?.length && !d.namedFormats.some((f) => t.hActive <= f.width && t.vActive <= f.height)) warnings.push(`${t.hActive} × ${t.vActive} is not a format ${d.vendor} names for these inputs (${d.namedFormats.map((f) => f.label).join("; ")}), so it may not be accepted. Untested here.`);
 	const modes = d.capacityModes.map((m) => checkMode(m, t, s));
 	const working = modes.filter((m) => m.ok);
 	if (working.length === 0) return {
@@ -18974,7 +19267,7 @@ function App({ host } = {}) {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 				className: "top",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Otter EDID Editor" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "EDID Editor" }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 						className: "tag",
 						children: "Build an EDID from a resolution, or edit every field — then see which processors will take it."
@@ -19170,7 +19463,7 @@ var styles_default = ":root {\n  --bg: #12151a;\n  --panel: #1a1f27;\n  --panel-
 /**
 * The editor as a module another application embeds.
 *
-* `npm run build:embed` makes `dist-embed/otter-edid-embed.js` from this: one
+* `npm run build:embed` makes `dist-embed/edid-editor-embed.js` from this: one
 * dependency-free ES module — React, the stylesheet and the library inside it —
 * that a host with no build step of its own can copy in and import. LivePremier
 * Plus is the first: it vendors the file, mounts the editor in a window beside
@@ -19187,7 +19480,7 @@ var styles_default = ":root {\n  --bg: #12151a;\n  --panel: #1a1f27;\n  --panel-
 * the editor's own (a popped-out window), not into somebody else's page.
 */
 var version = "v0.1.0";
-var STYLE_ID = "otter-edid-embed-css";
+var STYLE_ID = "edid-editor-embed-css";
 /** Put the editor in `el`. Returns a function that takes it out again. */
 function mount(el, host) {
 	const doc = el.ownerDocument;
