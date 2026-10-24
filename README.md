@@ -315,7 +315,7 @@ under `crates/openrcs-server/web/plugins/`, and each can be switched on or off
 on the **Plugins** page. Most are ported from LivePremier Plus: field
 arithmetic, layer names, layer groups with a gang and Send to, layer lock and
 take-one-layer-alone, a command line, timecode (MTC, LTC, OSC), MIDI mapping,
-the DaVinci Resolve Speed Editor, an EDID builder (the Otter editor), OSC input,
+the DaVinci Resolve Speed Editor, an EDID builder (EDID Editor), OSC input,
 HyperDecks with Mitti-style rules, matrix routing (Videohub, Lightware, Turtle
 AV), Companion buttons, a thumbnail relay, remote access over Tailscale or
 ZeroTier, and a setup file. They run on LiveCore and Midra, but none has met a

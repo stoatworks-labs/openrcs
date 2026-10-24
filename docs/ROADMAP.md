@@ -65,7 +65,7 @@ each whether the LiveCore/Midra protocol already exposes what it needs.
   Midra, each a switchable folder under `web/plugins/`: field arithmetic,
   layer names, layer groups (gang + Send to), layer lock and take-alone, a
   command line, timecode (MTC/LTC/OSC), MIDI mapping, the Speed Editor, the
-  Otter EDID builder, OSC input, HyperDecks with rules, matrix routing,
+  EDID builder, OSC input, HyperDecks with rules, matrix routing,
   Companion, a thumbnail relay, remote access (Tailscale/ZeroTier) and a setup
   file. The bridge grew the half a browser cannot do: shared plugin data,
   leases, TCP links and an OSC listener (`src/plus.rs`, `src/remote.rs`).

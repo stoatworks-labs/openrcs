@@ -26,13 +26,13 @@ Copyright: 2024 Julian Waller
 
 The Speed Editor's key and LED tables in speed-editor.js follow node-blackmagic-controller, the library Bitfocus Companion drives the panel with.
 
-### Otter EDID editor — Stoatworks otter-edid-editor
+### EDID Editor — Stoatworks edid-editor
 
-<https://github.com/stoatworks-labs/otter-edid-editor>  
+<https://github.com/stoatworks-labs/edid-editor>  
 Licence: MIT  
 Copyright: Stoatworks Labs
 
-Same fleet, copied rather than shared: the EDID Builder plugin's otter-edid-embed.js is otter-edid-editor's embed build, vendored unchanged. It bundles React, React DOM and Scheduler, credited below.
+Same fleet, copied rather than shared: the EDID Builder plugin's edid-editor-embed.js is edid-editor's embed build, vendored unchanged. It bundles React, React DOM and Scheduler, credited below.
 
 ## Third-party code this project uses
 
@@ -54,7 +54,7 @@ Wraps a web front end in a native desktop app using the platform's own webview r
 Licence: MIT  
 Copyright: Meta Platforms, Inc. and affiliates
 
-Compiled into the vendored Otter EDID editor build, otter-edid-embed.js, with each package's MIT header kept in place (React 19.3.0 at the pinned build).
+Compiled into the vendored EDID Editor build, edid-editor-embed.js, with each package's MIT header kept in place (React 19.3.0 at the pinned build).
 
 The UI layer of the embedded EDID editor. The repo does not depend on React itself; it arrives only inside that one vendored file.
 

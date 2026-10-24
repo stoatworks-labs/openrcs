@@ -1,18 +1,18 @@
 /*
- * EDID builder — the Otter EDID editor, saving straight onto an input.
+ * EDID builder — EDID Editor, saving straight onto an input.
  *
  * Ported from LivePremier Plus. There the editor saves into the LivePremier's
  * EDID bank; a LiveCore or a Midra has no bank to speak of, but every input
  * plug holds an EDID of its own that can be written byte by byte —
  * EDID_IN_DATA (`EIdat[input, plug, 256]`) and then EDID_IN_STORE (`EIstr`).
- * So the slots Otter offers are the input plugs, and a save is 256 writes and
+ * So the slots the editor offers are the input plugs, and a save is 256 writes and
  * a store, read back to check.
  *
  * - **256 bytes, two blocks.** That is all `EIdat` holds. An EDID with more
  *   than one extension block is refused with a sentence, not truncated —
  *   which is also why the LivePremier's tiled-display (Mosaic) EDIDs, 384
  *   bytes, cannot go onto these inputs.
- * - The editor is Otter's, vendored whole (otter-edid-embed.js). Its
+ * - The editor is EDID Editor, vendored whole (edid-editor-embed.js). Its
  *   stylesheet styles `body`, so it opens in a window of its own
  *   (editor.html), which reaches back to this page for its host.
  * - Writing an input's EDID changes what every source plugged into it is
@@ -22,7 +22,7 @@
 export default {
   id: 'edid-builder',
   name: 'EDID builder',
-  description: 'Build or edit an EDID in the Otter EDID editor and save it straight onto an input plug — 256 bytes, read back to check.',
+  description: 'Build or edit an EDID in EDID Editor and save it straight onto an input plug — 256 bytes, read back to check.',
   requires: (h) => h.store.byMnem.has('EIdat') || 'this processor cannot be sent an EDID',
   setup(host) {
     const { el, store } = host;
@@ -31,8 +31,8 @@ export default {
     const listeners = new Set();
     const changed = () => { for (const fn of listeners) { try { fn(); } catch { /* window gone */ } } host.notify(); };
     const status = new Map();          // "i.p" -> text
-    let otter = null;
-    const loadOtter = () => (otter ??= import('./otter-edid-embed.js'));
+    let editorModule = null;
+    const loadEditor = () => (editorModule ??= import('./edid-editor-embed.js'));
     const names = new Map();           // "i.p" -> product name read back
 
     const plugLabel = (i, p) => `IN ${i + 1} · ${host.plugName(p)}`;
@@ -72,7 +72,7 @@ export default {
       const back = await readBytes(i, p);
       const same = back.length >= bytes.length && bytes.every((v, k) => back[k] === v);
       status.set(slotId, same ? `stored and read back identical (${bytes.length} bytes)` : 'written, but the read-back differs — the input may have refused it');
-      try { const o = await loadOtter(); names.set(slotId, o.describeEdid(back)?.name || ''); } catch { /* cosmetic */ }
+      try { const o = await loadEditor(); names.set(slotId, o.describeEdid(back)?.name || ''); } catch { /* cosmetic */ }
       changed();
       if (!same) throw new Error('The processor did not keep those bytes.');
     }
@@ -106,7 +106,7 @@ export default {
         const list = plugs();
         return el('div', {},
           el('div', { class: 'view-head' }, el('h1', { text: 'EDID builder' }),
-            el('span', { class: 'hint', text: 'The Otter EDID editor, saving onto an input plug' }),
+            el('span', { class: 'hint', text: 'EDID Editor, saving onto an input plug' }),
             el('div', { class: 'spacer' }),
             el('button', { class: 'btn primary', onclick: () => openEditor(null) }, 'New EDID…')),
           el('div', { class: 'panel hint', text: 'An input here holds 256 bytes: the base block and one extension. Saving overwrites what that plug offers every source plugged into it — the EDID page has Factory to undo it. Opens in a window of its own.' }),

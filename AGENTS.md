@@ -422,7 +422,7 @@ std binary and may use crates. Keep the split.
   as they always were.
 - **Vendored files say where from** — livepremier-plus (arithmetic/expr.js,
   timecode/, hyperdeck/protocol.js, the four router drivers), awj-surface
-  (speed-editor.js), otter-edid-editor (otter-edid-embed.js). Change them
+  (speed-editor.js), edid-editor (edid-editor-embed.js). Change them
   upstream and copy.
 
 ## Verifying

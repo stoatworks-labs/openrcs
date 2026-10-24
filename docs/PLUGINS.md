@@ -22,7 +22,7 @@ place is a class of bug not worth having.
 | **Timecode** | Fire cues from MIDI Time Code, LTC on an audio input, or timecode sent over OSC. | ✓ | ✓ |
 | **MIDI mapping** | A MIDI controller firing any action; a fader riding a T-bar. Learn by moving the control. | ✓ | ✓ |
 | **Speed Editor** | A DaVinci Resolve Speed Editor plugged into the machine openrcs runs on: CAM keys, the wheel on opacity, position, size, T-bar. The bridge holds the panel; one page drives it, with Take over. | ✓ | ✓ |
-| **EDID builder** | The Otter EDID editor, saving straight onto an input plug (256 bytes). | ✓ | ✓ |
+| **EDID builder** | EDID Editor, saving straight onto an input plug (256 bytes). | ✓ | ✓ |
 | **OSC input** | QLab, TouchOSC or a desk driving the processor over UDP. | ✓ | ✓ |
 | **HyperDecks** | Play, cue and record HyperDecks and decks that emulate one, such as Mitti, with rules: play when on air, take or cut when the clip ends. | ✓ | ✓ |
 | **Matrix routing** | Patch the processor to a Videohub, Lightware or Turtle AV router; feed an input, send an output; plan on a placeholder. | ✓ | ✓ |

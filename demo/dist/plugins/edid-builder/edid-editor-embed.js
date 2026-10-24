@@ -1,6 +1,8 @@
-/* VENDORED — do not edit here. Upstream: stoatworks-labs/otter-edid-editor
- * dist-embed/otter-edid-embed.js at 37695ba71f95e4e366166a312daf0ab7251538ea (2026-09-24), the same build
- * livepremier-plus vendors. Edits belong upstream in otter-edid-editor's src/.
+/* VENDORED — do not edit here. Upstream: stoatworks-labs/edid-editor, which was
+ * Otter EDID Editor until 2026-10-24. This is its dist-embed/otter-edid-embed.js at
+ * 37695ba71f95e4e366166a312daf0ab7251538ea (2026-09-24), built before the rename, so it
+ * still calls itself Otter inside; livepremier-plus vendors a newer build. Edits belong
+ * upstream in edid-editor's src/.
  */
 //#region \0rolldown/runtime.js
 var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
