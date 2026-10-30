@@ -43,7 +43,7 @@ jobs:
           # exists only on this row. universal-apple-darwin is a Tauri bundling
           # target, not a cargo one, so unlike the launcher repos this cannot be
           # expressed by changing `target` — cargo would reject it.
-          - { name: macos-universal, os: macos-14,         target: aarch64-apple-darwin, target2: x86_64-apple-darwin }
+          - { name: macos-universal, os: macos-15,         target: aarch64-apple-darwin, target2: x86_64-apple-darwin }
     steps:
       - uses: actions/checkout@v7
 
@@ -204,7 +204,7 @@ jobs:
           # universal-apple-darwin builds both slices and lipos them. It is a
           # Tauri bundling target and not a rustup one, so `rust_targets` is
           # what rustup installs and `target` stays what tauri build is given.
-          - { name: macos,   os: macos-14,       target: universal-apple-darwin,   rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin', bundles: app }
+          - { name: macos,   os: macos-15,       target: universal-apple-darwin,   rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin', bundles: app }
           # AppImage bundling (linuxdeploy) is unreliable on CI runners; ship deb + rpm.
           - { name: linux,   os: ubuntu-latest,  target: x86_64-unknown-linux-gnu, bundles: 'deb,rpm' }
           - { name: windows, os: windows-latest, target: x86_64-pc-windows-msvc,   bundles: nsis }
