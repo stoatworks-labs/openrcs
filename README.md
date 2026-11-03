@@ -13,6 +13,8 @@ A Rust library for controlling **Analog Way Midra, LiveCore, PLS300,
 LivePremier, Midra 4K and Alta 4K** video processors over their own TCP
 control protocols, with a browser control surface on top.
 
+The [project page](https://stoatworks-labs.com/software/openrcs/) has the downloads, the [user guide](https://stoatworks-labs.com/software/openrcs/guide/), the video and a demo you can click around in the browser.
+
 It covers the Midra family (Pulse2, Eikos2, Saphyr, SmartMatriX2, QuickMatriX,
 QuickVu) and the LiveCore family (Ascender 16/32/48, NeXtage 8/16, SmartMatriX
 Ultra), giving you a modern, dependency-light way to drive hardware whose
