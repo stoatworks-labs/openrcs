@@ -3410,7 +3410,7 @@ VIEWS.layers = (() => {
     if (isMidra() && store.byMnem.has('PSfrv')) store.scan('PSfrv');
     if (store.byMnem.has('GCqly')) store.get('GCqly', [screen, ctxOf()]);
     store.scan('SCmly'); store.scan('SCssh'); store.scan('SCssv');
-    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [screen, ctxOf()]);
+    if (NATIVE_BG.has()) { NATIVE_BG.fetch(screen, ctxOf()); NATIVE_BG.fetchSets(screen); }
     const n = count();
     for (let l = 0; l < n; l++)
       for (const m of LAYER_VARS) if (store.byMnem.has(m)) store.get(m, [screen, ctxOf(), l]);
@@ -3418,11 +3418,9 @@ VIEWS.layers = (() => {
 
   function background() {
     const i = [screen, ctxOf()];
-    const src = store.val('PNinp', ...i);
     return el('div', { class: 'editor' },
       el('div', { class: 'row' },
-        el('label', { class: 'field' }, 'Source',
-          enumSelect('PNinp', i, ['Colour', ...Array.from({ length: 8 }, (_, k) => 'BG set ' + (k + 1))])),
+        el('label', { class: 'field' }, 'Source', enumSelect('PNinp', i, NATIVE_BG.options(screen))),
         el('label', { class: 'field' }, 'Colour', colorPicker('PNbcr', 'PNbcg', 'PNbcb', i))),
       bind('Opacity', 'PNalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'));
   }
@@ -3447,6 +3445,7 @@ VIEWS.layers = (() => {
     const s = screenPx();
     const CW = 720, scale = CW / s.w, CH = s.h * scale;
     const cv = el('div', { class: 'screen-canvas', style: `width:${CW}px;height:${Math.round(CH)}px` });
+    if (NATIVE_BG.has()) cv.append(NATIVE_BG.ground(screen, ctxOf(), s.w, s.h));
     cv.append(workOverlay(screen, s.w, s.h) || '');
     const n = count();
     for (let l = 0; l < n; l++) {
@@ -3614,6 +3613,105 @@ function srcColor(n) {
   return `hsl(${hue} 55% 45%)`;
 }
 
+// ---------- LiveCore native background ----------
+// Under a LiveCore screen's layers sits one native background per bank:
+// PNinp[s,c] is 0 (the colour PNbc* shows, at PNalp) or 1–8, a background set
+// built in the unit's Preconfig. A set holds one source PER OUTPUT, not per
+// screen — NSsec[s,k,o] is 1–24 an input, 25–32 a frame, 33–40 a logo, 41
+// nothing — shown at its own size, unscaled, at NSpos[s,k,o], one of nine
+// places. Only the outputs that carry the screen are valid there
+// (NSpva[s,k,o] is 0 elsewhere) and index 0 is no set at all. Read off a
+// NeXtage 16 on 2026-11-12: S1 on output 1, S2 on output 2, each set an
+// 800×600 frame at position 4. That 4 is the middle of nine is all that has
+// been seen of NSpos; the other eight are taken to run row by row from the
+// top left, as the Workspace's own nine-way place grid does.
+const NATIVE_POSITIONS = ['top left', 'top', 'top right', 'left', 'centre', 'right', 'bottom left', 'bottom', 'bottom right'];
+const NATIVE_BG = (() => {
+  const NONE = 41, SETS = 8;
+  const has = () => store.byMnem.has('PNinp');
+  /** The outputs that carry screen s, each with its tile in the screen's grid (0-based). */
+  function outputs(s) {
+    const n = store.byMnem.get('OSsou')?.dims[0] || 0, o = [];
+    for (let k = 0; k < n; k++)
+      if (store.val('OSsou', k) === s) o.push({ o: k, col: (store.val('OSpoh', k) || 1) - 1, row: (store.val('OSpov', k) || 1) - 1 });
+    return o;
+  }
+  /** One bank's background: its set, colour and opacity. */
+  function fetch(s, c) {
+    for (const m of ['PNinp', 'PNalp', 'PNbcr', 'PNbcg', 'PNbcb']) if (store.byMnem.has(m)) store.get(m, [s, c]);
+  }
+  /**
+   * What each of screen s's sets holds, and what is needed to draw it: the
+   * output map, the screen's tile grid and the sources' own sizes. Until the
+   * output map has arrived every output is asked, once.
+   */
+  function fetchSets(s) {
+    if (!store.byMnem.has('NSsec')) return;
+    for (const m of ['OSsou', 'OSpoh', 'OSpov', 'LSdwi', 'LSdhe', 'INish', 'INisv']) if (store.byMnem.has(m)) store.scan(m);
+    for (const m of ['SCsih', 'SCsiv']) if (store.byMnem.has(m)) store.get(m, [s]);
+    const known = outputs(s).map(x => x.o);
+    const outs = known.length ? known : Array.from({ length: store.byMnem.get('NSsec').dims[2] || 0 }, (_, k) => k);
+    for (let k = 1; k <= SETS; k++)
+      for (const o of outs) { store.get('NSsec', [s, k, o]); if (store.byMnem.has('NSpos')) store.get('NSpos', [s, k, o]); }
+  }
+  /** [{o, col, row, src, pos}] — what set k shows on each output of screen s. */
+  const content = (s, k) => outputs(s).map(x => ({ ...x, src: store.val('NSsec', s, k, x.o), pos: store.val('NSpos', s, k, x.o) ?? 4 }));
+  const holds = (x) => x.src != null && x.src > 0 && x.src !== NONE;
+  /** "Frame 1", "Frame 1 + Frame 3" or "empty"; null until it has been read. */
+  function describe(s, k) {
+    const cs = content(s, k);
+    if (!cs.length || cs.some(x => x.src == null)) return null;
+    const names = [...new Set(cs.filter(holds).map(x => sourceName(x.src)))];
+    return names.length ? names.join(' + ') : 'empty';
+  }
+  const setName = (s, k) => { const d = describe(s, k); return `Set ${k}${d ? ' · ' + d : ''}`; };
+  /** The PNinp choices, each set named for what it holds. */
+  const options = (s) => ['Colour', ...Array.from({ length: SETS }, (_, i) => setName(s, i + 1))];
+  const label = (s, c) => { const k = store.val('PNinp', s, c) || 0; return k ? setName(s, k) : 'colour'; };
+  const rgb = (s, c) => `rgb(${['PNbcr', 'PNbcg', 'PNbcb'].map(m => (store.val(m, s, c) ?? 0) & 255).join(',')})`;
+  /** A source's own size, where the device reports one (the same reads Content size uses). */
+  function nativeSize(src) {
+    if (src >= 1 && src <= 24) return { w: store.val('INish', src - 1) || 0, h: store.val('INisv', src - 1) || 0 };
+    if (src >= 25 && src <= 32) return { w: store.val('LSdwi', src - 25) || 0, h: store.val('LSdhe', src - 25) || 0 };
+    return { w: 0, h: 0 };
+  }
+  /**
+   * The ground of one bank's canvas, under every layer: the colour, and over
+   * it what the set shows on each output — at the source's own size where the
+   * device reports it, the whole output where it does not. In percentages, so
+   * it follows the canvas however it is fitted. `onSelect(e)` makes a press on
+   * bare canvas pick the background.
+   */
+  function ground(s, c, sw, sh, { onSelect = null, tags = true } = {}) {
+    const k = store.val('PNinp', s, c) || 0;
+    const alpha = (store.val('PNalp', s, c) ?? 256) / 256;
+    const pc = (v, of) => (v / of * 100) + '%';
+    // background-color, not the shorthand — a picture's size and repeat must survive (see srcTile)
+    const body = el('div', { class: 'nbg-body', style: `background-color:${rgb(s, c)};opacity:${alpha}` });
+    if (k) {
+      const cols = Math.max(1, store.val('SCsih', s) || 1), rows = Math.max(1, store.val('SCsiv', s) || 1);
+      const tw = sw / cols, th = sh / rows;
+      for (const x of content(s, k)) {
+        if (!holds(x)) continue;
+        const n = nativeSize(x.src), sized = n.w > 0 && n.h > 0;
+        const w = sized ? Math.min(n.w, tw) : tw, h = sized ? Math.min(n.h, th) : th;
+        const left = x.col * tw + (x.pos % 3) * (tw - w) / 2, top = x.row * th + Math.floor(x.pos / 3) * (th - h) / 2;
+        const shot = snapshotUrl(x.src);
+        body.append(el('div', {
+          key: 'o' + x.o, class: 'nbg-pic' + (shot ? ' shot' : ''),
+          style: `left:${pc(left, sw)};top:${pc(top, sh)};width:${pc(w, sw)};height:${pc(h, sh)};background-color:${srcColor(x.src)}`
+               + (shot ? `;background-image:url("${shot}")` : ''),
+        }));
+      }
+    }
+    return el('div', {
+      key: 'bg', class: 'nbg' + (onSelect ? ' pick' : ''), title: `Background · ${label(s, c)}`,
+      onpointerdown: onSelect ? (e) => { e.stopPropagation(); onSelect(e); } : null,
+    }, body, tags ? el('span', { class: 'lrect-tag bg-tag', text: `BG · ${label(s, c)}` }) : null);
+  }
+  return { has, fetch, fetchSets, content, holds, options, label, rgb, nativeSize, ground };
+})();
+
 // ---------- Stage (all screens at a glance) ----------
 VIEWS.stage = (() => {
   // Which role to show, resolved to a preset index per screen — the bank that is
@@ -3635,6 +3733,7 @@ VIEWS.stage = (() => {
           for (const m of ['PRinp', 'PRpoh', 'PRpov', 'PRsih', 'PRsiv'])
             store.get(m, [s, c, l]);
     }
+    if (NATIVE_BG.has()) for (const s of active()) { NATIVE_BG.fetch(s, 0); NATIVE_BG.fetch(s, 1); NATIVE_BG.fetchSets(s); }
   }
 
   function screenCard(s) {
@@ -3642,6 +3741,7 @@ VIEWS.stage = (() => {
     const sw = store.val('SCssh', s) || 1920, sh = store.val('SCssv', s) || 1080;
     const CW = 380, scale = CW / sw, CH = Math.round(sh * scale);
     const cv = el('div', { class: 'stage-screen', style: `width:${CW}px;height:${CH}px` });
+    if (NATIVE_BG.has()) cv.append(NATIVE_BG.ground(s, ctx, sw, sh, { tags: false }));
     cv.append(workOverlay(s, sw, sh, false) || '');
     const max = store.val('SCmly', s) || 0;
     for (let l = 0; l < max; l++) {
@@ -8940,7 +9040,8 @@ VIEWS.softedge = (() => {
 // edit every property of the selected layer, take it to air, and store/recall the look.
 VIEWS.workspace = (() => {
   let sel = null;            // { s, c, l } selected layer
-  let armed = null;          // armed source number (click-to-place, the touch-friendly path)
+  let bgSel = null;          // { s, c } — a bank's native background, selected instead of a layer
+  let armed = null;         // armed source number (click-to-place, the touch-friendly path)
   let hidden = new Set();    // screens hidden from the page
   let srcTab = 'inputs';     // source rail tab
   let showLive = true, showEdit = true;   // which banks are drawn
@@ -9003,11 +9104,13 @@ VIEWS.workspace = (() => {
     if (store.byMnem.has('PSval')) { store.scan('PSval'); store.scan('PSssm'); }
     if (store.byMnem.has('PMscw')) store.scan('PMscw');
     if (store.byMnem.has('PMpst')) store.scan('PMpst');
+    // the native background under each bank, and what its sets hold
+    if (NATIVE_BG.has()) for (const s of active()) { NATIVE_BG.fetch(s, 0); NATIVE_BG.fetch(s, 1); NATIVE_BG.fetchSets(s); }
     if (sel) fetchLayer(sel.s, sel.c, sel.l);
     enableSnapshots();
     startSnapshots();
     // land on the page with something in the properties panel rather than an empty one
-    if (!sel) setTimeout(selectSomething, 700);
+    if (!sel && !bgSel) setTimeout(selectSomething, 700);
   }
 
   // every per-layer variable the inspector can show
@@ -9025,10 +9128,12 @@ VIEWS.workspace = (() => {
     if (store.byMnem.has('Plsgr')) store.get('Plsgr', [s, l]);
     if (store.byMnem.has('GCfrl')) store.get('GCfrl', [s, l]);
   }
-  function select(s, c, l) { sel = { s, c, l }; fetchLayer(s, c, l); store.notify(); }
+  function select(s, c, l) { sel = { s, c, l }; bgSel = null; fetchLayer(s, c, l); store.notify(); }
+  function selectBg(s, c) { bgSel = { s, c }; sel = null; NATIVE_BG.fetch(s, c); NATIVE_BG.fetchSets(s); store.notify(); }
+  const bgSelected = (s, c) => !!bgSel && bgSel.s === s && bgSel.c === c;
   /** First layer worth showing: the editable bank of the first visible screen. */
   function selectSomething() {
-    if (sel) return;
+    if (sel || bgSel) return;
     for (const s of active()) {
       if (hidden.has(s)) continue;
       for (const c of [editCtx(s), liveCtx(s)])
@@ -9357,7 +9462,7 @@ VIEWS.workspace = (() => {
       return { x: (e.clientX - b.left) / (b.width || 1) * sw, y: (e.clientY - b.top) / (b.height || 1) * sh };
     };
     const cv = el('div', {
-      class: 'screen-canvas ws-cv-' + role, 'data-ar': String(sw / sh), 'data-fit': s + ':' + c,
+      class: 'screen-canvas ws-cv-' + role + (bgSelected(s, c) ? ' bg-sel' : ''), 'data-ar': String(sw / sh), 'data-fit': s + ':' + c,
       // dropping on bare canvas places the source on the first free layer, where you let go
       ...dropTarget((e) => {
         const src = droppedSource(e);
@@ -9369,6 +9474,11 @@ VIEWS.workspace = (() => {
     // never on screen unsized between a render and the pass that follows it
     const fs = fitted.get(s + ':' + c);
     if (fs) { cv.style.width = fs.w + 'px'; cv.style.height = fs.h + 'px'; }
+    // the native background is the bottom of the stack: a press on bare canvas
+    // picks it, or with a source armed places that source where you pressed
+    if (NATIVE_BG.has()) cv.append(NATIVE_BG.ground(s, c, sw, sh, {
+      onSelect: (e) => { if (armed != null) drop(s, c, armed, pointFromEvent(e)); else selectBg(s, c); },
+    }));
     cv.append(workOverlay(s, sw, sh, false) || '');
 
     for (let l = 0; l < n; l++) {
@@ -9419,6 +9529,17 @@ VIEWS.workspace = (() => {
 
   function slotRow(s, c) {
     const row = el('div', { class: 'ws-slots' });
+    // the native background first, as the bottom of the stack
+    if (NATIVE_BG.has()) {
+      const k = store.val('PNinp', s, c) || 0;
+      const first = k ? NATIVE_BG.content(s, k).find(NATIVE_BG.holds) : null;
+      row.append(el('button', {
+        class: 'ws-slot' + (bgSelected(s, c) ? ' sel' : '') + (k ? ' filled' : ''),
+        style: `--c:${first ? srcColor(first.src) : NATIVE_BG.rgb(s, c)}`,
+        title: `Background · ${NATIVE_BG.label(s, c)}`,
+        onclick: () => selectBg(s, c),
+      }, 'BG'));
+    }
     for (let l = 0; l < maxLayers(s); l++) {
       const src = store.val('PRinp', s, c, l), isSel = sel && sel.s === s && sel.c === c && sel.l === l;
       row.append(el('button', {
@@ -9536,7 +9657,29 @@ VIEWS.workspace = (() => {
       el('span', { text: label }));
   }
 
+  /** A bank's native background: which set (or the colour), the colour, and its opacity. */
+  function bgInspector(s, c) {
+    const i = [s, c], role = ctxRole(s, c), k = store.val('PNinp', s, c) || 0;
+    const what = (x) => {
+      if (!NATIVE_BG.holds(x)) return 'nothing, so the colour shows';
+      const n = NATIVE_BG.nativeSize(x.src);
+      return `${sourceName(x.src)}${n.w && n.h ? ` · ${n.w}×${n.h}` : ''} · ${NATIVE_POSITIONS[x.pos] || 'position ' + x.pos}`;
+    };
+    return el('div', { key: 'insp-bg', class: 'panel ws-insp' },
+      el('div', { class: 'insp-title' },
+        el('h2', 'Background'),
+        el('span', { class: 'ws-ctx-tag ' + role }, ctxName(s, c)),
+        el('span', { class: 'hint', text: screenLabel(s) })),
+      el('div', { class: 'insp-src' },
+        el('label', { class: 'field' }, 'Source', enumSelect('PNinp', i, NATIVE_BG.options(s))),
+        ...(k ? NATIVE_BG.content(s, k).map(x => el('div', { class: 'hint', text: `Output ${x.o + 1}: ${what(x)}` })) : []),
+        el('label', { class: 'field' }, 'Colour', colorPicker('PNbcr', 'PNbcg', 'PNbcb', i))),
+      bind('Opacity', 'PNalp', i, 0, 256, 1, v => Math.round(v / 256 * 100) + '%'),
+      el('div', { class: 'hint', text: 'Under every layer. A set is built in the unit’s Preconfig — one source for each output, shown at its own size — and with no set the colour shows.' }));
+  }
+
   function inspector() {
+    if (bgSel) return bgInspector(bgSel.s, bgSel.c);
     if (!sel) {
       return el('div', { class: 'panel ws-insp' }, el('h2', 'Layer'),
         el('div', { class: 'empty-state', text: 'Select a layer to edit its properties.' }));

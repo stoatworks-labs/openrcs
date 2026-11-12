@@ -605,6 +605,46 @@ repos committed+pushed to main; companion CI green. Device restored (both screen
 GCtba=65535/bank B). The [companion openrcs](https://github.com/stoatworks-labs/companion-module-openrcs/blob/main/docs/NOTES.md) (`companion-module-openrcs`) "not tested from Companion
 vs real HW" caveat is now partially lifted (take path proven via direct api.js probe).
 
+## The background layer was missing from the Workspace — 2026-11-12
+
+Reported by Allan while building a show on a NeXtage 16 (192.168.8.195, the 0.11.2
+tray app on 192.168.8.199:1434): "I don't have the background layers showing up".
+They were nowhere but the Layers view's Background panel. The Workspace, Stage and
+Layers canvases drew the `PR*` layers only, the Workspace had no way to pick the
+background, and the panel's menu said "BG set 1".."BG set 8" with no word of what a
+set held — `NS*` (NATIVE_SET) had never been read.
+
+Read off the unit through the running bridge, gets only:
+
+- `PNinp`/`PNalp`/`PNbc*` are `[screen, bank]`: 0 on every bank (colour, black, 256).
+- `NSsec[s,k,o]` is indexed by **output**, not by position. S1's sets 1 and 2 held
+  25 and 26 (Frames 1 and 2) at `o`=0; S2's held 27 and 28 at `o`=1; every other
+  entry 41 (nothing). `OSsou` = 0..7 (output n carries screen n) and `NSpva` = 511
+  only where the output carries the screen, 0 elsewhere — and 0 for set index 0 on
+  both screens, so index 0 is no set and `PNinp` k reads `NSsec[s,k,·]` directly.
+- `NSpos` 4 on every entry: the middle of nine (0–8, validity 511). Only 4 has been
+  seen; the other eight are taken to run row by row from the top left.
+- Frames 1–4 are loaded (`LSval` 1) at 800×600 (`LSdwi`/`LSdhe`) — a set shows its
+  source at its own size, so on a 1920×1080 output those are centred boxes.
+
+`NATIVE_BG` in app.js now holds all of it: the Workspace, Layers and Stage canvases
+draw each bank's background as the ground under its layers (the colour at its
+opacity, and a set's source per output at its own size and position, with its
+picture when the unit serves one), the Workspace has a **BG** slot and a Background
+inspector (pressing bare canvas selects it too, or places an armed source), and the
+set menus read "Set 1 · Frame 1", "Set 3 · empty". The writes are the same `PNinp`,
+`PNbc*` and `PNalp` the Layers panel always made, so `GCupd` follows each one.
+
+The demo fixture never recorded `NSsec`, and the demo device answers an unrecorded
+variable with the bottom of its range — 1, input 1 — so every set read "Input 1";
+the 32 values above were added to `demo/fixtures.json` (see demo/README.md).
+
+**Verified in the demo only** (set picked through the inspector, opacity, the
+800×600 size and a corner position, all three views); not yet on the unit. Not done:
+building a set (`NSsec`/`NSpos` are writable) and the background's cross transition
+(`PNotr` 0–2, `PNowa`, `PNoso`/`PNoeo`) — `NATIVE_TRANSITIONS` sits unused in app.js
+with no record of where its three names came from.
+
 ## A cut made while a take was running — 2026-10-20
 
 The open item from the preview hold (further down, same date): a memory recalled

@@ -1354,8 +1354,8 @@
         "text": "native background sets (input, frame or colour) with position, transparency, cut or fade"
        },
        "openrcs": {
-        "state": "F",
-        "text": "background set or colour per screen"
+        "state": "P",
+        "text": "the set or colour and its opacity per screen bank, drawn under the layers on Workspace, Layers and Stage with each set named for what it holds; building a set (its source and position per output) and its cut or fade stay on the unit"
        }
       },
       "livepremier": {

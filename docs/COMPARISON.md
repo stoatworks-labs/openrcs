@@ -19,7 +19,7 @@ This page describes **openrcs v0.8.3** (`224b993`) as of 2026-09-18, read from t
 | Family | Stock tool | Full | Partial | Beyond stock | Missing | n/a |
 |---|---|--:|--:|--:|--:|--:|
 | Midra | RCS² | 15 | 8 | 16 | 5 | 14 |
-| LiveCore | Web RCS | 18 | 13 | 13 | 8 | 6 |
+| LiveCore | Web RCS | 17 | 14 | 13 | 8 | 6 |
 | LivePremier | Web RCS | 2 | 6 | 2 | 45 | 3 |
 | Midra 4K | Web RCS | 28 | 18 | 3 | 5 | 4 |
 | PLS300 | RCS | 18 | 7 | 7 | 8 | 18 |
@@ -159,7 +159,7 @@ This page describes **openrcs v0.8.3** (`224b993`) as of 2026-09-18, read from t
 | Layer properties | Yes — pos/size (+Z on PL), transparency, crop + aspect override, five border styles, transitions, timing bars, speed, Bézier flying curve, flip, B&W / negative / sepia / solarise, strobe, copy-paste per group | **Full** — all 40 leaves: nine-point pad, aspect presets, borders, transitions with direction / timing / speed, flying curve, force transition, smooth move, flip, effects, strobe |
 | Layout presets | Yes — 1–6 PIP layouts; perspective layouts on PL | **Full** — Fill / 2-up / 3-up / Quad / PiP / Stack, dividing the working area |
 | Snap, align, multi-select | Yes — snap to grid, snap to layer, alignment guides, multi-select, align, copy layer, raise/lower | **Partial** — snap presets, raise/lower; no grid magnet, multi-select or align |
-| Native background / background sets | Yes — native background sets (input, frame or colour) with position, transparency, cut or fade | **Full** — background set or colour per screen |
+| Native background / background sets | Yes — native background sets (input, frame or colour) with position, transparency, cut or fade | **Partial** — the set or colour and its opacity per screen bank, drawn under the layers on Workspace, Layers and Stage with each set named for what it holds; building a set (its source and position per output) and its cut or fade stay on the unit |
 | Input keying | Yes — colour, luma and CremaTTe, assistant with masks, invert, DSK | **Missing** — same |
 | Cut & Fill | Yes — a layer keyed by the next layer's content | **Missing** — the mnemonics beyond PRmcv are unknown |
 | Perspective / 3D layers | Yes — Ascender 32/48-4K-PL: X/Y/Z, RotX/Y/Z, anchor point, Z mixing, perspective layouts | **Partial** — Depth and Rotate X/Y/Z appear when a screen enables perspective; no anchor point or perspective layouts |

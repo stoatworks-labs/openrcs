@@ -38,12 +38,16 @@ is the same code the bridge server serves.
 
 ## The fixture is recorded, not written
 
-`fixtures.json` holds 1,014 variable definitions and 3,813 values. 3,797 of them
+`fixtures.json` holds 1,014 variable definitions and 3,845 values. 3,797 of them
 were captured from `openrcs-server` connected to a real LiveCore device session —
 driven into a show-like state first (two screens, four layers each, six master
 and five screen memories), then every view visited so each one's own requests
-populated the bridge's cache. The other 16 are four loaded stills (`LSval`,
+populated the bridge's cache. 16 are four loaded stills (`LSval`,
 `LSusd`, `LSdwi`, `LSdhe`), added afterwards so the Stills tab has something on it.
+The last 32 are the background sets (`NSsec`, `NSpos`) of screens 1 and 2 on their
+own outputs, as a NeXtage 16 answered them on 2026-11-12 — sets 1 and 2 of each
+screen hold a frame, the rest nothing. Before they were added the demo device
+answered every set as input 1, the bottom of the variable's range.
 
 Hand-authoring that would be a guess about what the device does, and guesses
 drift away from the protocol without anything failing loudly. If the fixture

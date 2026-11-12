@@ -306,6 +306,11 @@ std binary and may use crates. Keep the split.
   own enumerations, spelled in `monName`/`capName`.
 - **A capability probe compares `store.errCount`**, never a slice of
   `store.log` — the log is a ring.
+- **A LiveCore background set is per OUTPUT.** `PNinp[s,c]` 0 is the colour,
+  1–8 a set; `NSsec[s,k,o]`/`NSpos[s,k,o]` give set k's source (41 = nothing)
+  and place on output `o`, valid only where `OSsou[o]` is `s` (`NSpva` 0
+  elsewhere, and for k = 0). A set's source is shown at its own size, not
+  scaled. `NATIVE_BG` is the one reader; read off a NeXtage 16, 2026-11-12.
 - **The bridge drops a silent link after 20 s** and the browser re-runs
   `onReady()` when it returns. Do not add a "quiet" code path that stops the
   probe.

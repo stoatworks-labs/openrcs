@@ -217,6 +217,14 @@ menu with the button top-left (it stays collapsed) for more space still.
   transition, smooth move, flip, black & white, negative, sepia, solarise, strobe).
   A Midra unit shows its own equivalents instead, including per-layer opening and
   closing durations and a layer freeze.
+- **The background is the bottom layer.** On a LiveCore each bank has a native
+  background under its layers: a colour, or one of the eight background sets
+  built in the unit's Preconfig. The canvas draws it, with a set's frame or input
+  at its own size and position on each output. Pick it with the **BG** slot at
+  the start of the slot row, or press bare canvas, and the properties panel turns
+  into the background's: which set (each named for what it holds, so "Set 1 ·
+  Frame 1" or "Set 3 · empty"), the colour, and the opacity. Like a layer edit,
+  it goes to the bank you picked, and a take carries it on air.
 - **Program sits above preview** for each screen, tagged red and green, with the
   live one marked **ON AIR**. Each canvas edits its own context, so you can build
   the next look underneath what's on air. **Show** picks which of the two you
@@ -247,7 +255,7 @@ menu with the button top-left (it stays collapsed) for more space still.
 ![All screens at a glance](screenshots/stage.png)
 
 A mission-control overview: every active screen, drawn to scale with its live
-layers, in one place. Layers are coloured by source, so the same input looks the
+layers and, on a LiveCore, its background, in one place. Layers are coloured by source, so the same input looks the
 same across screens. Toggle **Program / Preview**, and click any screen to jump
 straight into its layer editor.
 
@@ -380,7 +388,8 @@ the snap presets to fill the screen or drop a layer into a quadrant. The layer
 stack on the right mirrors the canvas. Assign a source and fine-tune position,
 size, opacity, border, crop and per-layer transitions, and raise or lower a
 layer in the stack. A **Program / Preview** toggle picks which buffer you're
-editing, and each screen has a native **Background** (colour or a background set).
+editing, and each screen has a native **Background** (colour or a background set),
+drawn under the layers on the canvas, with each set named for what it holds.
 
 On **Midra**, a **Layout** picker offers the processor's built-in arrangements:
 choose one and the device lays the layers out for you, ready for sources.

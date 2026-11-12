@@ -814,6 +814,12 @@ td.acts .btn { margin-right: 4px; }
 img.thumb { display: block; width: 96px; height: 54px; object-fit: cover; border-radius: 3px; background: #000; }
 .screen-canvas.bg-sel { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lrect-tag.bg-tag { position: absolute; left: 0; bottom: 0; border-radius: 0 3px 0 0; opacity: .8; }
+/* LiveCore native background: the ground of a bank's canvas, under every layer */
+.nbg { position: absolute; inset: 0; z-index: 0; }
+.nbg.pick { cursor: pointer; }
+.nbg-body { position: absolute; inset: 0; }
+.nbg-pic { position: absolute; box-sizing: border-box; border: 1px dashed #ffffff38; }
+.nbg-pic.shot { background-size: cover; background-position: center; background-repeat: no-repeat; }
 .lrect.top { border-color: var(--armed); }
 .sel-chrome.top { box-shadow: 0 0 0 1px var(--armed), 0 0 14px color-mix(in srgb, var(--armed) 60%, transparent); }
 .slot.still { min-height: 58px; }
